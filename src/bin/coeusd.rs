@@ -1,14 +1,13 @@
 use clap::Parser;
 use coeus::{
     cli::daemon::DaemonCLIArgs,
-    utils::{
-        config::{Config, config},
-        log::Logger,
-    },
+    config::{ServerConfig, server_config},
+    server::CoeusServer,
+    utils::log::Logger,
 };
 use colored::Colorize;
 use eyre::Result;
-use log::info;
+use log::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -20,10 +19,17 @@ async fn main() -> Result<()> {
         format!("v{}", env!("CARGO_PKG_VERSION")).magenta()
     );
 
-    let config: Config = config(args.config)?;
-    // let manager = Manager::new(config).await?;
+    let config: ServerConfig = server_config(args.config).inspect_err(|e| {
+        error!("failed to load server configuration: {}", e);
+    })?;
 
-    // manager.run().await?;
+    let server = CoeusServer::new(config).await.inspect_err(|e| {
+        error!("failed to initialize server: {}", e);
+    })?;
+
+    if let Err(e) = server.run().await {
+        error!("fatal server runtime error: {}", e);
+    }
 
     Ok(())
 }

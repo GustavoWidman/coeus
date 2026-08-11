@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use crate::deploy::options::DeployOptions;
 use clap::Parser;
 use log::LevelFilter;
@@ -9,6 +11,9 @@ pub struct MainCLIArgs {
     #[arg(short, long, value_name = "VERBOSITY", default_value_t = LevelFilter::Info)]
     pub verbosity: LevelFilter,
 
-    #[command(flatten)]
-    pub options: DeployOptions,
+    /// Path to the configuration file
+    #[arg(short, long, value_name = "FILE", default_value = "config.client.toml")]
+    pub config: PathBuf,
+    // #[command(flatten)]
+    // pub options: DeployOptions,
 }

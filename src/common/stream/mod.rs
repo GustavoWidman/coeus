@@ -12,7 +12,7 @@ pub use listener::EncryptedListener;
 use snow::{Builder, HandshakeState, TransportState, params::NoiseParams};
 use std::net::SocketAddr;
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
+    io::{self, AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
@@ -37,6 +37,14 @@ impl EncryptedStream {
     pub async fn accept(address: SocketAddr, psk: &[u8; 32]) -> Result<(Self, SocketAddr)> {
         let listener = EncryptedListener::bind(address, psk).await?;
         listener.accept().await
+    }
+
+    pub fn peer_addr(&self) -> io::Result<SocketAddr> {
+        self.framed.get_ref().peer_addr()
+    }
+
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.framed.get_ref().local_addr()
     }
 
     async fn handshake(mut stream: TcpStream, psk: &[u8; 32], initiator: bool) -> Result<Self> {
