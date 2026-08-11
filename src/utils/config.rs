@@ -31,6 +31,9 @@ pub fn config(path: PathBuf) -> Result<Config> {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]
 pub struct ConfigInner {
+    #[serde(with = "super::psk")]
+    pub key: [u8; 32],
+
     host: IpAddr,
     port: u16,
 }
@@ -44,6 +47,13 @@ impl ConfigInner {
 impl Default for ConfigInner {
     fn default() -> Self {
         let mut config = DEFAULT_CONFIG.clone();
+
+        // generate a truly random key to avoid using the default key
+        // this should serve as a general safeguard against accidentally
+        // using the default key in production
+        config.key = rand::random();
+
+        warn!("using default configuration, generating random key");
 
         config
     }
