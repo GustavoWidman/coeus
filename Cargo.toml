@@ -3,6 +3,14 @@ name = "coeus"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "coeus"
+path = "src/bin/coeus.rs"
+
+[[bin]]
+name = "coeusd"
+path = "src/bin/coeusd.rs"
+
 [dependencies]
 bon = "3.9.3"
 bytes = "1.12.1"
