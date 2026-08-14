@@ -1,8 +1,9 @@
 use std::path::PathBuf;
 
-use crate::deploy::options::DeployOptions;
 use clap::Parser;
 use log::LevelFilter;
+
+use crate::common::proto::DeployRequest;
 
 #[derive(Parser, Debug)]
 #[command(name = "coeus")]
@@ -14,6 +15,7 @@ pub struct MainCLIArgs {
     /// Path to the configuration file
     #[arg(short, long, value_name = "FILE", default_value = "config.client.toml")]
     pub config: PathBuf,
-    // #[command(flatten)]
-    // pub options: DeployOptions,
+
+    #[command(flatten)]
+    pub options: DeployRequest,
 }

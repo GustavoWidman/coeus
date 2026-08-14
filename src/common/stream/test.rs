@@ -144,7 +144,7 @@ async fn round_trips_registered_packets() -> TestResult {
 
         match packet {
             Some(Packet::DeployRequest(request)) => {
-                assert_eq!(request.revision, "abc123");
+                assert_eq!(request.rev, "abc123");
                 assert!(request.dry_run);
             }
             other => panic!("unexpected packet: {other:?}"),
@@ -162,8 +162,9 @@ async fn round_trips_registered_packets() -> TestResult {
     let mut client = EncryptedStream::connect(address, &PSK).await?;
     client
         .send(Packet::DeployRequest(Box::new(DeployRequest {
-            revision: "abc123".into(),
+            rev: "abc123".into(),
             dry_run: true,
+            clean_substituters: false,
         })))
         .await?;
 

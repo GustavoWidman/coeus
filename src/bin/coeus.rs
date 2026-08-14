@@ -2,7 +2,6 @@ use clap::Parser;
 use coeus::{
     cli::main::MainCLIArgs,
     client::CoeusClient,
-    common::proto::types::DeployRequest,
     config::{ClientConfig, client_config},
     utils::log::Logger,
 };
@@ -22,12 +21,7 @@ async fn main() -> Result<()> {
         error!("failed to initialize server: {}", e);
     })?;
 
-    client
-        .send(DeployRequest {
-            dry_run: false,
-            revision: "test".to_string(),
-        })
-        .await?;
+    client.send(args.options).await?;
 
     Ok(())
 }
