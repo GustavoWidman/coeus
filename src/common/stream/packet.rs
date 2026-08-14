@@ -15,12 +15,15 @@ impl EncryptedStream {
         self.send_encrypted_frame(&plaintext).await
     }
 
-    pub async fn recv(&mut self) -> Result<Packet> {
-        let plaintext = self.recv_encrypted_frame().await?;
-        let envelope: PacketEnvelope = postcard::from_bytes(&plaintext)?;
+    pub async fn recv(&mut self) -> Result<Option<Packet>> {
+        let Some(plaintext) = self.recv_encrypted_frame().await? else {
+            return Ok(None);
+        };
 
+        let envelope: PacketEnvelope = postcard::from_bytes(&plaintext)?;
         envelope.validate()?;
-        Ok(envelope.packet)
+
+        Ok(Some(envelope.packet))
     }
 
     async fn send_encrypted_frame(&mut self, plaintext: &[u8]) -> Result<()> {
@@ -36,17 +39,17 @@ impl EncryptedStream {
         Ok(())
     }
 
-    async fn recv_encrypted_frame(&mut self) -> Result<Vec<u8>> {
-        let ciphertext = self
-            .framed
-            .next()
-            .await
-            .ok_or_else(|| eyre!("encrypted stream closed"))??;
+    async fn recv_encrypted_frame(&mut self) -> Result<Option<Vec<u8>>> {
+        let Some(ciphertext) = self.framed.next().await else {
+            return Ok(None);
+        };
+
+        let ciphertext = ciphertext?;
 
         let mut plaintext = vec![0u8; Self::MAX_FRAME];
         let length = self.transport.read_message(&ciphertext, &mut plaintext)?;
         plaintext.truncate(length);
 
-        Ok(plaintext)
+        Ok(Some(plaintext))
     }
 }

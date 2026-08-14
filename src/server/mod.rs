@@ -63,22 +63,37 @@ impl CoeusServer {
                 );
             })?;
 
-            self.handle_packet(&stream, packet).await.inspect_err(|e| {
-                error!(
-                    "error handling packet from {}:\n{}",
-                    stream
-                        .peer_addr()
-                        .map(|addr| addr.to_string().magenta().to_string())
-                        .unwrap_or_else(|_| "unknown".to_string()),
-                    e
-                );
-            })?;
+            match packet {
+                Some(packet) => {
+                    self.handle_packet(&stream, packet).await.inspect_err(|e| {
+                        error!(
+                            "error handling packet from {}:\n{}",
+                            stream
+                                .peer_addr()
+                                .map(|addr| addr.to_string().magenta().to_string())
+                                .unwrap_or_else(|_| "unknown".to_string()),
+                            e
+                        );
+                    })?;
+                }
+                None => {
+                    debug!(
+                        "connection from {} closed",
+                        stream
+                            .peer_addr()
+                            .map(|addr| addr.to_string().magenta().to_string())
+                            .unwrap_or_else(|_| "unknown".to_string())
+                    );
+
+                    return Ok(());
+                }
+            }
         }
     }
 
     pub async fn handle_packet(&self, owner: &EncryptedStream, packet: Packet) -> Result<()> {
         debug!(
-            "handling packet from {}: {:?}",
+            "handling packet from {}:\n{:?}",
             owner
                 .peer_addr()
                 .map(|addr| addr.to_string().magenta().to_string())

@@ -143,7 +143,7 @@ async fn round_trips_registered_packets() -> TestResult {
         let packet = stream.recv().await?;
 
         match packet {
-            Packet::DeployRequest(request) => {
+            Some(Packet::DeployRequest(request)) => {
                 assert_eq!(request.revision, "abc123");
                 assert!(request.dry_run);
             }
@@ -168,7 +168,7 @@ async fn round_trips_registered_packets() -> TestResult {
         .await?;
 
     match client.recv().await? {
-        Packet::DeployAccepted(accepted) => {
+        Some(Packet::DeployAccepted(accepted)) => {
             assert_eq!(accepted.message, "accepted");
         }
         other => panic!("unexpected packet: {other:?}"),
