@@ -76,7 +76,7 @@ impl CommandRunner {
             .envs(env.iter().map(|(key, value)| (key, value)));
 
         if let Some(path) = path {
-            command.env("PATH", path);
+            command.current_dir(path);
         }
 
         let status = command
@@ -89,5 +89,22 @@ impl CommandRunner {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn path_sets_the_child_working_directory() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        std::fs::write(dir.path().join("marker"), [])?;
+
+        CommandRunner::new("sh")
+            .path(dir.path())
+            .args(["-c", "test -f marker", "sh"])
+            .call()
+            .await
     }
 }
