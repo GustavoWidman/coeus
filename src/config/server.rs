@@ -4,6 +4,7 @@ use std::{net::IpAddr, path::PathBuf};
 
 use easy_config_store::ConfigStore;
 use eyre::Result;
+
 use lazy_static::lazy_static;
 use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,8 @@ pub struct ConfigInner {
 
     #[serde(default = "super::default_config_path")]
     port: u16,
+
+    pub repo_url: String,
 }
 
 impl ConfigInner {

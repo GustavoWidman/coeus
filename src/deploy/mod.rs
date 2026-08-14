@@ -1,134 +1,126 @@
 mod command;
-pub mod options;
+mod constants;
 mod utils;
 
+use colored::Colorize;
 use eyre::Result;
+use git2::{Repository, build::CheckoutBuilder};
+use log::debug;
+use tempfile::TempDir;
 
-use crate::deploy::{command::CommandRunner, options::DeployOptions};
+use crate::{common::proto::DeployRequest, config::ServerConfig, deploy::command::CommandRunner};
+use constants::{CLEAN_SUBSTITUTERS, CLEAN_TRUSTED_PUBLIC_KEYS, SYSTEM};
 
-const CLEAN_SUBSTITUTERS: &str = "https://cache.nixos.org https://nix-community.cachix.org https://r3dlust.cachix.org https://install.determinate.systems";
-const CLEAN_TRUSTED_PUBLIC_KEYS: &str = "cache.flakehub.com-3:hJuILl5sVK4iKm86JzgdXW12Y2Hwd5G07qKtHTOcDCM= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= r3dlust.cachix.org-1:/R3S8pW/nr7kOBJKcGPsZ0zCepvldTUEgbrqa4O3cW0=";
-const SYSTEM: &str = if cfg!(target_os = "macos") {
-    "darwin"
-} else {
-    "os"
-};
+pub struct Deployer {
+    config: ServerConfig,
+}
 
-pub async fn deploy(options: &DeployOptions) -> Result<()> {
-    let mut runner = CommandRunner::new("nh")
-        .args([SYSTEM, "build", "."])
-        .arg("--quiet");
-
-    // TODO detect when running in daemon mode
-    if false {
-        // depends on the sudoers configuration defined in the flake for coeusd
-        runner = runner.args(["--elevation-strategy", "passwordless"]);
+impl Deployer {
+    pub async fn new(config: ServerConfig) -> Result<Self> {
+        Ok(Self { config })
     }
 
-    runner = runner
-        .args(["--hostname", options.hostname()])
-        .arg("--")
-        .args(["--extra-experimental-features", "pipe-operators"])
-        .args(["--option", "accept-flake-config", "true"]);
+    pub async fn checkout(&self, rev: String) -> eyre::Result<TempDir> {
+        let dir = tempfile::tempdir()?;
+        debug!(
+            "cloning repo {} into {}",
+            self.config.repo_url.blue(),
+            dir.path().display().to_string().purple()
+        );
 
-    if let Some(remote) = &options.remote {
-        sync_files(options, remote).await?;
+        tokio::task::spawn_blocking({
+            let url = self.config.repo_url.clone();
+            let path = dir.path().to_path_buf();
+
+            move || -> eyre::Result<Repository> {
+                let repo = Repository::clone(&url, &path)?;
+
+                repo.checkout_tree(
+                    &repo
+                        .revparse_single(&rev)
+                        .or_else(|_| repo.revparse_single(&format!("origin/{rev}")))?,
+                    Some(CheckoutBuilder::new().force()),
+                )?;
+
+                debug!(
+                    "checked out revision {} in {}",
+                    rev.magenta(),
+                    path.display().to_string().purple()
+                );
+
+                Ok(repo)
+            }
+        })
+        .await??;
+
+        Ok(dir)
+    }
+
+    pub async fn deploy(&self, options: &DeployRequest) -> Result<()> {
+        debug!("deploying with options:\n{:?}", options);
+
+        let repo = self.checkout(options.rev.clone()).await?;
+
+        let mut runner = CommandRunner::new("nh")
+            .path(repo.path())
+            .args([SYSTEM, "build", "."])
+            .arg("--quiet");
+
+        // TODO detect when running in daemon mode
+        if false {
+            // depends on the sudoers configuration defined in the flake for coeusd
+            runner = runner.args(["--elevation-strategy", "passwordless"]);
+        }
 
         runner = runner
-            .ssh(
-                remote,
-                None,
-                options
-                    .ssh_key
-                    .as_ref()
-                    .map(|key| key.display().to_string())
-                    .as_deref(),
-            )
-            .path("~/.nix");
-    }
+            .arg("--")
+            .args(["--extra-experimental-features", "pipe-operators"])
+            .args(["--option", "accept-flake-config", "true"]);
 
-    let action = match (options.boot || options.initial) && SYSTEM == "os" {
-        true => "boot",
-        false => "switch",
-    };
+        // let action = match (options.boot || options.initial) && SYSTEM == "os" {
+        //     true => "boot",
+        //     false => "switch",
+        // };
+        let action = "switch";
 
-    if options.clean_substituters {
-        runner = runner
-            .args(["--option", "substituters", CLEAN_SUBSTITUTERS])
-            .args(["--option", "extra-substituters", ""])
-            .args(["--option", "trusted-public-keys", CLEAN_TRUSTED_PUBLIC_KEYS])
-            .args(["--option", "extra-trusted-public-keys", ""]);
-    }
+        if options.clean_substituters {
+            runner = runner
+                .args(["--option", "substituters", CLEAN_SUBSTITUTERS])
+                .args(["--option", "extra-substituters", ""])
+                .args(["--option", "trusted-public-keys", CLEAN_TRUSTED_PUBLIC_KEYS])
+                .args(["--option", "extra-trusted-public-keys", ""]);
+        }
 
-    if options.dry_run {
-        runner = runner.args(["--option", "eval-cache", "false"]);
-    }
+        if options.dry_run {
+            runner = runner.args(["--option", "eval-cache", "false"]);
+        }
 
-    if !options.apply_only {
+        debug!(
+            "running deployment command: {}",
+            format!("{:?}", runner).blue()
+        );
+
+        // built-then-switch pattern
         runner.clone().call().await?;
-    }
 
-    if !options.build_only {
         runner
             .replace_arg_at(1, action) // replace "build" with "switch" or "boot"
             .call()
             .await?;
+
+        // if !options.apply_only {
+        //     runner.clone().call().await?;
+        // }
+
+        // if !options.build_only {
+        //     runner
+        //         .replace_arg_at(1, action) // replace "build" with "switch" or "boot"
+        //         .call()
+        //         .await?;
+        // }
+
+        drop(repo); // only cleanup the temporary directory after the deployment is complete
+
+        Ok(())
     }
-
-    Ok(())
-}
-
-async fn sync_files(options: &DeployOptions, remote: &str) -> Result<()> {
-    // TODO replace with ferrisync
-    CommandRunner::new("rsync")
-        .args(vec![
-            "--archive",
-            "--compress",
-            "--delete",
-            "--recursive",
-            "--force",
-            "--delete-excluded",
-            "--no-owner",
-            "--no-group",
-            "--rsh",
-        ])
-        .arg(utils::ssh_string(options.ssh_key.as_deref()))
-        .arg("./")
-        .arg(format!("{remote}:.nix/"))
-        .call()
-        .await
-
-    // let action = if options.boot || options.initial {
-    //     "--boot"
-    // } else {
-    //     ""
-    // };
-    // let mut nh_args = vec![
-    //     "os",
-    //     if options.build_only {
-    //         "build"
-    //     } else {
-    //         "switch"
-    //     },
-    //     ".nix",
-    //     "--hostname",
-    //     options.hostname.as_str(),
-    // ];
-    // if !action.is_empty() {
-    //     nh_args.push(action);
-    // }
-
-    // CommandRunner::new("nh")
-    //     .ssh(
-    //         remote,
-    //         None,
-    //         options
-    //             .ssh_key
-    //             .as_ref()
-    //             .map(|key| key.display().to_string())
-    //             .as_deref(),
-    //     )
-    //     .args(nh_args)
-    //     .call()
-    //     .await2
 }

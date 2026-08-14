@@ -3,6 +3,7 @@ use std::sync::Arc;
 use colored::Colorize;
 use eyre::Result;
 use log::{debug, error, info};
+use tokio::sync::Mutex;
 
 use crate::{
     common::{
@@ -10,18 +11,31 @@ use crate::{
         stream::{EncryptedListener, EncryptedStream},
     },
     config::ServerConfig,
+    deploy::Deployer,
 };
 
 pub struct CoeusServer {
     listener: EncryptedListener,
+
+    /// IMPORTANT:
+    /// this is a [tokio::sync::Mutex] on purpose as it is a FIFO/"fair" mutex,
+    /// which is important for proper ordering of deploy requests,
+    /// as they are processed in the order they are received
+    deployer: Mutex<Deployer>,
+
     config: ServerConfig,
 }
 
 impl CoeusServer {
     pub async fn new(config: ServerConfig) -> Result<Self> {
         let listener = EncryptedListener::bind(config.address(), &config.key).await?;
+        let deployer = Deployer::new(config.clone()).await?.into();
 
-        Ok(Self { listener, config })
+        Ok(Self {
+            listener,
+            deployer,
+            config,
+        })
     }
 
     pub async fn run(self) -> Result<()> {
@@ -65,6 +79,7 @@ impl CoeusServer {
 
             match packet {
                 Some(packet) => {
+                    // TODO: handle packets asynchronously
                     self.handle_packet(&stream, packet).await.inspect_err(|e| {
                         error!(
                             "error handling packet from {}:\n{}",
@@ -100,6 +115,17 @@ impl CoeusServer {
                 .unwrap_or_else(|_| "unknown".to_string()),
             packet
         );
+
+        match packet {
+            Packet::DeployRequest(request) => {
+                debug!("received deploy request: {:?}", request);
+                self.deployer.lock().await.deploy(request.as_ref()).await?;
+            }
+            _ => {
+                debug!("received unknown packet: {:?}", packet);
+                // handle other packets here
+            }
+        }
 
         // handle the packet here
         Ok(())

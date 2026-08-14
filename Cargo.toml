@@ -38,3 +38,10 @@ snow = { version = "0.10.0", default-features = false, features = [
 tokio = { version = "1.53.1", features = ["full"] }
 tokio-util = { version = "0.7.19", features = ["codec"] }
 toml = "1.1.4"
+tempfile = "3.27.0"
+git2 = { version = "0.21.0", features = [
+    "ssh",
+    "vendored-libgit2",
+    "vendored-openssl"
+] }
+arc-swap = "1.9.2"
