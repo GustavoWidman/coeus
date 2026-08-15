@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 
 use crate::{
     common::{
-        proto::Packet,
+        proto::{DeployAccepted, Packet},
         stream::{EncryptedListener, EncryptedStream},
     },
     config::ServerConfig,
@@ -80,16 +80,18 @@ impl CoeusServer {
             match packet {
                 Some(packet) => {
                     // TODO: handle packets asynchronously
-                    self.handle_packet(&stream, packet).await.inspect_err(|e| {
-                        error!(
-                            "error handling packet from {}:\n{}",
-                            stream
-                                .peer_addr()
-                                .map(|addr| addr.to_string().magenta().to_string())
-                                .unwrap_or_else(|_| "unknown".to_string()),
-                            e
-                        );
-                    })?;
+                    self.handle_packet(&mut stream, packet)
+                        .await
+                        .inspect_err(|e| {
+                            error!(
+                                "error handling packet from {}:\n{}",
+                                stream
+                                    .peer_addr()
+                                    .map(|addr| addr.to_string().magenta().to_string())
+                                    .unwrap_or_else(|_| "unknown".to_string()),
+                                e
+                            );
+                        })?;
                 }
                 None => {
                     debug!(
@@ -106,7 +108,7 @@ impl CoeusServer {
         }
     }
 
-    pub async fn handle_packet(&self, owner: &EncryptedStream, packet: Packet) -> Result<()> {
+    pub async fn handle_packet(&self, owner: &mut EncryptedStream, packet: Packet) -> Result<()> {
         debug!(
             "handling packet from {}:\n{:?}",
             owner
@@ -119,7 +121,15 @@ impl CoeusServer {
         match packet {
             Packet::DeployRequest(request) => {
                 debug!("received deploy request: {:?}", request);
-                self.deployer.lock().await.deploy(request.as_ref()).await?;
+                let deployer = self.deployer.lock().await;
+
+                owner
+                    .send(DeployAccepted {
+                        message: "deploy request accepted".into(),
+                    })
+                    .await?;
+
+                deployer.deploy(request.as_ref()).await?;
             }
             _ => {
                 debug!("received unknown packet: {:?}", packet);

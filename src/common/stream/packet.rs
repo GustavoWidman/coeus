@@ -8,8 +8,8 @@ use crate::common::{
 };
 
 impl EncryptedStream {
-    pub async fn send(&mut self, packet: Packet) -> Result<()> {
-        let envelope = PacketEnvelope::new(packet);
+    pub async fn send(&mut self, packet: impl Into<Packet>) -> Result<()> {
+        let envelope = PacketEnvelope::new(packet.into());
         let plaintext = postcard::to_stdvec(&envelope)?;
 
         self.send_encrypted_frame(&plaintext).await
