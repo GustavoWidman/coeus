@@ -33,10 +33,11 @@
           ...
         }:
         let
-          toolchain = fenix.packages.${system}.combine [
-            fenix.packages.${system}.default.toolchain
-            fenix.packages.${system}.latest.rust-src
-          ];
+          toolchain = fenix.packages.${system}.fromToolchainFile {
+            file = ./rust-toolchain.toml;
+            sha256 = "sha256-3MyLNjhfHtXhOj0hzUe3wrwfX6h7B3JURIfNHuSu19w=";
+          };
+
           craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
           root = ./.;
 
