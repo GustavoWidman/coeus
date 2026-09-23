@@ -1,6 +1,8 @@
+use std::{future::poll_fn, pin::Pin};
+
 use bytes::Bytes;
 use eyre::{Result, eyre};
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{Sink, SinkExt, StreamExt};
 
 use crate::common::proto::{Packet, envelope::PacketEnvelope};
 
@@ -29,6 +31,8 @@ impl EncryptedWriteHalf {
             return Err(eyre!("packet is too large"));
         }
 
+        poll_fn(|cx| Pin::new(&mut self.framed).poll_ready(cx)).await?;
+
         let mut ciphertext = vec![0u8; EncryptedStream::MAX_FRAME];
         let length = self
             .transport
@@ -36,7 +40,8 @@ impl EncryptedWriteHalf {
         advance_nonce(&mut self.nonce)?;
         ciphertext.truncate(length);
 
-        self.framed.send(Bytes::from(ciphertext)).await?;
+        Pin::new(&mut self.framed).start_send(Bytes::from(ciphertext))?;
+        self.framed.flush().await?;
         Ok(())
     }
 }
