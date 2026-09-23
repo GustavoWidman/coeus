@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
         error!("failed to initialize server: {}", e);
     })?;
 
-    client.send(args.options).await?;
+    client.send_and_listen(args.options).await?;
 
     Ok(())
 }

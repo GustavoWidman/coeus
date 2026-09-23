@@ -9,18 +9,37 @@ mod test;
 use bytes::BytesMut;
 use eyre::{Result, eyre};
 pub use listener::EncryptedListener;
-use snow::{Builder, HandshakeState, TransportState, params::NoiseParams};
-use std::net::SocketAddr;
+use snow::{Builder, HandshakeState, StatelessTransportState, params::NoiseParams};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::{
     io::{self, AsyncReadExt, AsyncWriteExt},
-    net::TcpStream,
+    net::{
+        TcpStream,
+        tcp::{OwnedReadHalf, OwnedWriteHalf},
+    },
 };
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
+use tokio_util::codec::{FramedRead, FramedWrite, LengthDelimitedCodec};
 
 pub struct EncryptedStream {
-    framed: Framed<TcpStream, LengthDelimitedCodec>,
-    transport: TransportState,
+    reader: EncryptedReadHalf,
+    writer: EncryptedWriteHalf,
+}
+
+/// An owned receive half with its own inbound Noise nonce sequence.
+pub struct EncryptedReadHalf {
+    framed: FramedRead<OwnedReadHalf, LengthDelimitedCodec>,
+    transport: Arc<StatelessTransportState>,
+    nonce: u64,
     plaintext: BytesMut,
+    peer_addr: SocketAddr,
+    local_addr: SocketAddr,
+}
+
+/// An owned send half with its own outbound Noise nonce sequence.
+pub struct EncryptedWriteHalf {
+    framed: FramedWrite<OwnedWriteHalf, LengthDelimitedCodec>,
+    transport: Arc<StatelessTransportState>,
+    nonce: u64,
 }
 
 impl EncryptedStream {
@@ -40,15 +59,26 @@ impl EncryptedStream {
     }
 
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
-        self.framed.get_ref().peer_addr()
+        Ok(self.reader.peer_addr)
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.framed.get_ref().local_addr()
+        Ok(self.reader.local_addr)
+    }
+
+    /// Consume the stream and return independently owned receive and send halves.
+    pub fn split(self) -> (EncryptedReadHalf, EncryptedWriteHalf) {
+        (self.reader, self.writer)
+    }
+
+    pub(crate) fn split_mut(&mut self) -> (&mut EncryptedReadHalf, &mut EncryptedWriteHalf) {
+        (&mut self.reader, &mut self.writer)
     }
 
     async fn handshake(mut stream: TcpStream, psk: &[u8; 32], initiator: bool) -> Result<Self> {
         stream.set_nodelay(true)?;
+        let peer_addr = stream.peer_addr()?;
+        let local_addr = stream.local_addr()?;
 
         let params: NoiseParams = Self::PATTERN.parse()?;
         let builder = Builder::new(params).prologue(Self::PROLOGUE)?.psk(0, psk)?;
@@ -82,15 +112,42 @@ impl EncryptedStream {
             }
         }
 
-        let codec = LengthDelimitedCodec::builder()
-            .length_field_type::<u16>()
-            .max_frame_length(Self::MAX_FRAME)
-            .new_codec();
+        // Snow derives independent initiator and responder cipher states at the Noise
+        // Split() step. StatelessTransportState leaves nonce sequencing to each owned
+        // half, so reads and writes can use those states concurrently without a lock.
+        // Coeus does not currently rekey transport states; add coordinated directional
+        // rekeying before introducing a rekey policy.
+        let transport = Arc::new(state.into_stateless_transport_mode()?);
+        let (read_stream, write_stream) = stream.into_split();
 
         Ok(Self {
-            framed: Framed::new(stream, codec),
-            transport: state.into_transport_mode()?,
-            plaintext: BytesMut::new(),
+            reader: EncryptedReadHalf {
+                framed: FramedRead::new(read_stream, codec()),
+                transport: Arc::clone(&transport),
+                nonce: 0,
+                plaintext: BytesMut::new(),
+                peer_addr,
+                local_addr,
+            },
+            writer: EncryptedWriteHalf {
+                framed: FramedWrite::new(write_stream, codec()),
+                transport,
+                nonce: 0,
+            },
         })
     }
+}
+
+pub(super) fn advance_nonce(nonce: &mut u64) -> Result<()> {
+    *nonce = nonce
+        .checked_add(1)
+        .ok_or_else(|| eyre!("Noise transport nonce exhausted"))?;
+    Ok(())
+}
+
+fn codec() -> LengthDelimitedCodec {
+    LengthDelimitedCodec::builder()
+        .length_field_type::<u16>()
+        .max_frame_length(EncryptedStream::MAX_FRAME)
+        .new_codec()
 }

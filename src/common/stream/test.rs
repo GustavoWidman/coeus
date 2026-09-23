@@ -178,3 +178,78 @@ async fn round_trips_registered_packets() -> TestResult {
     server.await??;
     Ok(())
 }
+
+#[tokio::test]
+async fn owned_halves_send_and_receive_packets_concurrently() -> TestResult {
+    const PACKET_COUNT: usize = 8;
+
+    timeout(Duration::from_secs(2), async {
+        let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
+        let address = listener.local_addr()?;
+
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let (mut reader, mut writer) = stream.split();
+
+            let receive_requests = async {
+                for sequence in 0..PACKET_COUNT {
+                    match reader.recv().await? {
+                        Some(Packet::DeployRequest(request)) => {
+                            assert_eq!(request.rev, format!("revision-{sequence}"));
+                        }
+                        other => panic!("unexpected request: {other:?}"),
+                    }
+                }
+                Ok::<_, eyre::Report>(())
+            };
+
+            let send_responses = async {
+                for sequence in 0..PACKET_COUNT {
+                    writer
+                        .send(Packet::DeployAccepted(Box::new(DeployAccepted {
+                            message: format!("accepted-{sequence}"),
+                        })))
+                        .await?;
+                }
+                Ok::<_, eyre::Report>(())
+            };
+
+            tokio::try_join!(receive_requests, send_responses)?;
+            Ok::<_, Box<dyn Error + Send + Sync>>(())
+        });
+
+        let stream = EncryptedStream::connect(address, &PSK).await?;
+        let (mut reader, mut writer) = stream.split();
+
+        let send_requests = async {
+            for sequence in 0..PACKET_COUNT {
+                writer
+                    .send(Packet::DeployRequest(Box::new(DeployRequest {
+                        rev: format!("revision-{sequence}"),
+                        dry_run: true,
+                        clean_substituters: false,
+                    })))
+                    .await?;
+            }
+            Ok::<_, eyre::Report>(())
+        };
+
+        let receive_responses = async {
+            for sequence in 0..PACKET_COUNT {
+                match reader.recv().await? {
+                    Some(Packet::DeployAccepted(response)) => {
+                        assert_eq!(response.message, format!("accepted-{sequence}"));
+                    }
+                    other => panic!("unexpected response: {other:?}"),
+                }
+            }
+            Ok::<_, eyre::Report>(())
+        };
+
+        tokio::try_join!(send_requests, receive_responses)?;
+        server.await??;
+        Ok::<_, Box<dyn Error + Send + Sync>>(())
+    })
+    .await??;
+    Ok(())
+}
