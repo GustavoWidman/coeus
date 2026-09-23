@@ -71,6 +71,10 @@ impl EncryptedStream {
         (self.reader, self.writer)
     }
 
+    pub(crate) fn split_mut(&mut self) -> (&mut EncryptedReadHalf, &mut EncryptedWriteHalf) {
+        (&mut self.reader, &mut self.writer)
+    }
+
     async fn handshake(mut stream: TcpStream, psk: &[u8; 32], initiator: bool) -> Result<Self> {
         stream.set_nodelay(true)?;
         let peer_addr = stream.peer_addr()?;
