@@ -100,6 +100,7 @@ mod tests {
             let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
             let address = listener.local_addr()?;
 
+            let (release_server, server_release) = tokio::sync::oneshot::channel();
             let server = tokio::spawn(async move {
                 let (mut stream, _) = listener.accept().await?;
                 match stream.recv().await? {
@@ -113,6 +114,7 @@ mod tests {
                         message: "accepted".into(),
                     })))
                     .await?;
+                let _ = server_release.await;
                 Ok::<_, Box<dyn Error + Send + Sync>>(())
             });
 
@@ -125,6 +127,9 @@ mod tests {
                     clean_substituters: false,
                 })
                 .await?;
+            release_server
+                .send(())
+                .expect("server should still be waiting after its response");
             server.await??;
             Ok::<_, Box<dyn Error + Send + Sync>>(())
         })
