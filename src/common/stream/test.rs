@@ -181,56 +181,60 @@ async fn round_trips_registered_packets() -> TestResult {
 
 #[tokio::test]
 async fn owned_halves_send_and_receive_packets_concurrently() -> TestResult {
-    let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
-    let address = listener.local_addr()?;
+    timeout(Duration::from_secs(2), async {
+        let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
+        let address = listener.local_addr()?;
 
-    let server = tokio::spawn(async move {
-        let (stream, _) = listener.accept().await?;
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await?;
+            let (mut reader, mut writer) = stream.split();
+
+            let receive_request = async {
+                match reader.recv().await? {
+                    Some(Packet::DeployRequest(request)) => {
+                        assert_eq!(request.rev, "abc123");
+                    }
+                    other => panic!("unexpected request: {other:?}"),
+                }
+                Ok::<_, eyre::Report>(())
+            };
+
+            let send_response = async {
+                writer
+                    .send(Packet::DeployAccepted(Box::new(DeployAccepted {
+                        message: "accepted".into(),
+                    })))
+                    .await?;
+                Ok::<_, eyre::Report>(())
+            };
+
+            tokio::try_join!(receive_request, send_response)?;
+            Ok::<_, Box<dyn Error + Send + Sync>>(())
+        });
+
+        let stream = EncryptedStream::connect(address, &PSK).await?;
         let (mut reader, mut writer) = stream.split();
 
-        let receive_request = async {
+        let send_request = writer.send(Packet::DeployRequest(Box::new(DeployRequest {
+            rev: "abc123".into(),
+            dry_run: true,
+            clean_substituters: false,
+        })));
+
+        let receive_response = async {
             match reader.recv().await? {
-                Some(Packet::DeployRequest(request)) => {
-                    assert_eq!(request.rev, "abc123");
+                Some(Packet::DeployAccepted(response)) => {
+                    assert_eq!(response.message, "accepted");
                 }
-                other => panic!("unexpected request: {other:?}"),
+                other => panic!("unexpected response: {other:?}"),
             }
             Ok::<_, eyre::Report>(())
         };
 
-        let send_response = async {
-            writer
-                .send(Packet::DeployAccepted(Box::new(DeployAccepted {
-                    message: "accepted".into(),
-                })))
-                .await?;
-            Ok::<_, eyre::Report>(())
-        };
-
-        tokio::try_join!(receive_request, send_response)?;
+        tokio::try_join!(send_request, receive_response)?;
+        server.await??;
         Ok::<_, Box<dyn Error + Send + Sync>>(())
-    });
-
-    let stream = EncryptedStream::connect(address, &PSK).await?;
-    let (mut reader, mut writer) = stream.split();
-
-    let send_request = writer.send(Packet::DeployRequest(Box::new(DeployRequest {
-        rev: "abc123".into(),
-        dry_run: true,
-        clean_substituters: false,
-    })));
-
-    let receive_response = async {
-        match reader.recv().await? {
-            Some(Packet::DeployAccepted(response)) => {
-                assert_eq!(response.message, "accepted");
-            }
-            other => panic!("unexpected response: {other:?}"),
-        }
-        Ok::<_, eyre::Report>(())
-    };
-
-    tokio::try_join!(send_request, receive_response)?;
-    server.await??;
+    })
+    .await??;
     Ok(())
 }
