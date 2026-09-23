@@ -31,30 +31,27 @@ impl CoeusClient {
         Ok(())
     }
 
-    /// Handle packets from the server until it closes the connection.
+    /// Receive and handle the next packet from the server.
     ///
     /// The current daemon keeps the connection open after its deploy acknowledgement, so
-    /// the CLI uses [`Self::send_and_listen`] for that one-shot exchange. This loop is for
-    /// response streams whose server closes the connection when they are complete.
+    /// this handles one response instead of waiting for EOF.
     pub async fn listen(&mut self) -> Result<()> {
-        loop {
-            let peer = self.peer_address();
-            let packet = self.stream.recv().await.inspect_err(|error| {
-                error!("error receiving packet from {peer}:\n{error}");
-            })?;
+        let peer = self.peer_address();
+        let packet = self.stream.recv().await.inspect_err(|error| {
+            error!("error receiving packet from {peer}:\n{error}");
+        })?;
 
-            match packet {
-                Some(packet) => {
-                    self.handle_packet(packet).await.inspect_err(|error| {
-                        error!("error handling packet from {peer}:\n{error}");
-                    })?;
-                }
-                None => {
-                    debug!("connection from {peer} closed");
-                    return Ok(());
-                }
+        match packet {
+            Some(packet) => {
+                self.handle_packet(packet).await.inspect_err(|error| {
+                    error!("error handling packet from {peer}:\n{error}");
+                })?;
+            }
+            None => {
+                debug!("connection from {peer} closed");
             }
         }
+        Ok(())
     }
 
     /// Send a request while listening for the server's response concurrently.
@@ -118,25 +115,42 @@ mod tests {
     const PSK: [u8; 32] = [0x42; 32];
 
     #[tokio::test]
-    async fn listener_handles_packets_until_server_closes() -> TestResult {
+    async fn listener_handles_response_while_server_keeps_connection_open() -> TestResult {
         timeout(Duration::from_secs(2), async {
             let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
             let address = listener.local_addr()?;
+            let (release_server, server_release) = tokio::sync::oneshot::channel();
 
             let server = tokio::spawn(async move {
                 let (mut stream, _) = listener.accept().await?;
+                match stream.recv().await? {
+                    Some(Packet::DeployRequest(request)) => {
+                        assert_eq!(request.rev, "abc123");
+                    }
+                    other => panic!("unexpected request: {other:?}"),
+                }
                 stream
                     .send(Packet::DeployAccepted(Box::new(DeployAccepted {
                         message: "accepted".into(),
                     })))
                     .await?;
-                drop(stream);
+                let _ = server_release.await;
                 Ok::<_, Box<dyn Error + Send + Sync>>(())
             });
 
             let stream = EncryptedStream::connect(address, &PSK).await?;
             let mut client = CoeusClient { stream };
+            client
+                .send(DeployRequest {
+                    rev: "abc123".into(),
+                    dry_run: true,
+                    clean_substituters: false,
+                })
+                .await?;
             client.listen().await?;
+            release_server
+                .send(())
+                .expect("server should still be waiting after its response");
             server.await??;
             Ok::<_, Box<dyn Error + Send + Sync>>(())
         })
