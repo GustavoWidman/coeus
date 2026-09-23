@@ -177,13 +177,14 @@ C toolchain with `make` and `perl`. If `openssl-sys` reports `make` missing, fix
 extend the development shell rather than changing dependency features just to bypass
 the check.
 
-The current baseline has two known clippy failures under `-D warnings`: the unused
-`CoeusClient::config` field and the unused `deploy::utils::ssh_string` function.
-`cargo test --all-targets` passes once the native build tools are available, but
-`cargo clippy --all-targets --all-features -- -D warnings` currently fails on those
-existing dead-code warnings. Do not add broad warning suppressions. When touching
-these paths, either remove obsolete code, wire it into a real use, or add a narrow,
-reviewed justification tied to an intentional API boundary.
+The current baseline has one known clippy failure under `-D warnings`: the unused
+`deploy::utils::ssh_string` function. `cargo test --all-targets` passes once the
+native build tools are available, but
+`cargo clippy --all-targets --all-features -- -D warnings` currently fails on that
+existing dead-code warning. Do not add broad
+warning suppressions. When touching this path, either remove obsolete code, wire it
+into a real use, or add a narrow, reviewed justification tied to an intentional API
+boundary.
 
 `nix build .#default --no-link` currently fails before compiling Coeus because the
 sandbox cannot find `perl` while building vendored OpenSSL. The flake's default
