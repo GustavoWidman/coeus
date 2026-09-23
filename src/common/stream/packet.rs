@@ -2,12 +2,21 @@ use bytes::Bytes;
 use eyre::{Result, eyre};
 use futures_util::{SinkExt, StreamExt};
 
-use crate::common::{
-    proto::{Packet, envelope::PacketEnvelope},
-    stream::EncryptedStream,
-};
+use crate::common::proto::{Packet, envelope::PacketEnvelope};
+
+use super::{EncryptedReadHalf, EncryptedStream, EncryptedWriteHalf, advance_nonce};
 
 impl EncryptedStream {
+    pub async fn send(&mut self, packet: impl Into<Packet>) -> Result<()> {
+        self.writer.send(packet).await
+    }
+
+    pub async fn recv(&mut self) -> Result<Option<Packet>> {
+        self.reader.recv().await
+    }
+}
+
+impl EncryptedWriteHalf {
     pub async fn send(&mut self, packet: impl Into<Packet>) -> Result<()> {
         let envelope = PacketEnvelope::new(packet.into());
         let plaintext = postcard::to_stdvec(&envelope)?;
@@ -15,41 +24,44 @@ impl EncryptedStream {
         self.send_encrypted_frame(&plaintext).await
     }
 
+    async fn send_encrypted_frame(&mut self, plaintext: &[u8]) -> Result<()> {
+        if plaintext.len() > EncryptedStream::MAX_FRAME - EncryptedStream::TAG_LEN {
+            return Err(eyre!("packet is too large"));
+        }
+
+        let mut ciphertext = vec![0u8; EncryptedStream::MAX_FRAME];
+        let length = self
+            .transport
+            .write_message(self.nonce, plaintext, &mut ciphertext)?;
+        advance_nonce(&mut self.nonce)?;
+        ciphertext.truncate(length);
+
+        self.framed.send(Bytes::from(ciphertext)).await?;
+        Ok(())
+    }
+}
+
+impl EncryptedReadHalf {
     pub async fn recv(&mut self) -> Result<Option<Packet>> {
-        let Some(plaintext) = self.recv_encrypted_frame().await? else {
+        let Some(ciphertext) = self.framed.next().await else {
             return Ok(None);
         };
 
+        let ciphertext = ciphertext?;
+        let plaintext = self.decrypt_frame(&ciphertext)?;
         let envelope: PacketEnvelope = postcard::from_bytes(&plaintext)?;
         envelope.validate()?;
 
         Ok(Some(envelope.packet))
     }
 
-    async fn send_encrypted_frame(&mut self, plaintext: &[u8]) -> Result<()> {
-        if plaintext.len() > Self::MAX_FRAME - Self::TAG_LEN {
-            return Err(eyre!("packet is too large"));
-        }
-
-        let mut ciphertext = vec![0u8; Self::MAX_FRAME];
-        let length = self.transport.write_message(plaintext, &mut ciphertext)?;
-        ciphertext.truncate(length);
-
-        self.framed.send(Bytes::from(ciphertext)).await?;
-        Ok(())
-    }
-
-    async fn recv_encrypted_frame(&mut self) -> Result<Option<Vec<u8>>> {
-        let Some(ciphertext) = self.framed.next().await else {
-            return Ok(None);
-        };
-
-        let ciphertext = ciphertext?;
-
-        let mut plaintext = vec![0u8; Self::MAX_FRAME];
-        let length = self.transport.read_message(&ciphertext, &mut plaintext)?;
+    pub(super) fn decrypt_frame(&mut self, ciphertext: &[u8]) -> Result<Vec<u8>> {
+        let mut plaintext = vec![0u8; EncryptedStream::MAX_FRAME];
+        let length = self
+            .transport
+            .read_message(self.nonce, ciphertext, &mut plaintext)?;
+        advance_nonce(&mut self.nonce)?;
         plaintext.truncate(length);
-
-        Ok(Some(plaintext))
+        Ok(plaintext)
     }
 }
