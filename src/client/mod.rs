@@ -48,7 +48,8 @@ impl CoeusClient {
                 })?;
             }
             None => {
-                debug!("connection from {peer} closed");
+                debug!("connection from {peer} closed before sending a response");
+                return Err(eyre!("server closed before sending a response"));
             }
         }
         Ok(())
@@ -151,6 +152,49 @@ mod tests {
             release_server
                 .send(())
                 .expect("server should still be waiting after its response");
+            server.await??;
+            Ok::<_, Box<dyn Error + Send + Sync>>(())
+        })
+        .await??;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn listener_errors_if_server_closes_before_a_response() -> TestResult {
+        timeout(Duration::from_secs(2), async {
+            let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
+            let address = listener.local_addr()?;
+
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await?;
+                match stream.recv().await? {
+                    Some(Packet::DeployRequest(request)) => {
+                        assert_eq!(request.rev, "abc123");
+                    }
+                    other => panic!("unexpected request: {other:?}"),
+                }
+                drop(stream);
+                Ok::<_, Box<dyn Error + Send + Sync>>(())
+            });
+
+            let stream = EncryptedStream::connect(address, &PSK).await?;
+            let mut client = CoeusClient { stream };
+            client
+                .send(DeployRequest {
+                    rev: "abc123".into(),
+                    dry_run: true,
+                    clean_substituters: false,
+                })
+                .await?;
+            let error = client
+                .listen()
+                .await
+                .expect_err("closing before a response must fail");
+            assert!(
+                error
+                    .to_string()
+                    .contains("closed before sending a response")
+            );
             server.await??;
             Ok::<_, Box<dyn Error + Send + Sync>>(())
         })
