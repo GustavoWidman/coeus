@@ -137,6 +137,9 @@ impl DeploymentExecutor for QuickExecutor {
                 "fail" => {
                     eyre::bail!("isolated failure");
                 }
+                "long-fail" => {
+                    eyre::bail!("{}\n\x1b[31m", "á".repeat(2000));
+                }
                 "logs" => {
                     for _ in 0..300 {
                         context
@@ -149,6 +152,67 @@ impl DeploymentExecutor for QuickExecutor {
             }
         })
     }
+}
+
+#[tokio::test]
+async fn failure_cause_is_visible_in_bounded_attachment_logs() -> Result<()> {
+    let jobs = DeploymentJobs::new(Arc::new(QuickExecutor));
+    for rev in ["fail", "long-fail"] {
+        let id = jobs.accept(request(rev)).await?;
+        let status = terminal(&jobs, id).await;
+        let message = status.message.as_ref().unwrap();
+        assert!(message.len() <= 1024);
+        let logs = jobs.logs(id, 0).await?;
+        let entry = logs.entries.last().unwrap();
+        assert!(matches!(entry.source, LogSource::Lifecycle));
+        assert!(entry.text.starts_with("Failed — "));
+        assert!(entry.text.len() <= 1024);
+        assert!(!entry.text.chars().any(char::is_control));
+        if rev == "fail" {
+            assert_eq!(entry.text, "Failed — isolated failure");
+        }
+    }
+    jobs.shutdown().await;
+    Ok(())
+}
+
+struct MissingCommandExecutor;
+impl DeploymentExecutor for MissingCommandExecutor {
+    fn execute(&self, request: DeployRequest, context: JobContext) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move {
+            crate::deploy::command::CommandRunner::new(request.rev)
+                .envs([("COEUS_FIXTURE_PRIVATE", "not-for-logs")])
+                .call_with_output(&context)
+                .await
+        })
+    }
+}
+
+#[tokio::test]
+async fn failed_spawn_is_inspectable_without_child_output() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let missing = dir.path().join("coeus-fixture-missing-command");
+    let jobs = DeploymentJobs::new(Arc::new(MissingCommandExecutor));
+    let id = jobs.accept(request(&missing.to_string_lossy())).await?;
+    let status = terminal(&jobs, id).await;
+    assert_eq!(status.phase, DeployPhase::Failed);
+    let message = status.message.as_ref().unwrap();
+    assert!(message.contains("starting deployment command"));
+    assert!(message.contains("coeus-fixture-missing-command"));
+    assert!(message.contains("No such file or directory"));
+    assert!(!message.contains("not-for-logs"));
+    let logs = jobs.logs(id, 0).await?;
+    assert!(
+        logs.entries
+            .iter()
+            .all(|entry| matches!(entry.source, LogSource::Lifecycle))
+    );
+    assert_eq!(
+        logs.entries.last().unwrap().text,
+        format!("Failed — {message}")
+    );
+    jobs.shutdown().await;
+    Ok(())
 }
 
 #[tokio::test]

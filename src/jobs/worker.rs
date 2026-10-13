@@ -42,7 +42,14 @@ pub(super) async fn run(
             record.status.message = result
                 .err()
                 .map(|error| bounded_text(&format!("{error:#}")));
-            record.append(LogSource::Lifecycle, &format!("{:?}", record.status.phase));
+            let outcome = match &record.status.message {
+                Some(message) => format!("{:?} — {message}", record.status.phase),
+                None => format!("{:?}", record.status.phase),
+            };
+            // Attachments need the same failure cause as status, even when the
+            // command never started and therefore produced no stdout/stderr.
+            // append applies the existing chunk/count/control-character bounds.
+            record.append(LogSource::Lifecycle, &outcome);
             if let Err(error) = ledger.persist(job.context.id).await {
                 log::error!("job completion persistence failed: {error:#}");
             }

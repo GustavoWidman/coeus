@@ -16,7 +16,7 @@ cancellation notification. An older cancelled log write cannot overwrite a newer
 terminal snapshot.
 
 Production admission is durable. The caller supplies a nonzero 64-bit request ID,
-which is also the job handle. Before sending, the CLI prints and flushes the ID;
+which is also the job handle. Before sending, the CLI logs and flushes the ID;
 `--request-id` lets it be reused after a lost acknowledgement. The daemon stores
 the full revision/flags and validates duplicate content before checking queue
 capacity: identical retries return the original handle, conflicting reuse fails.
@@ -52,6 +52,22 @@ connection on interruption. No automatic deploy retry occurs. The CLI reports
 queued/checkout/build/switch/terminal **phases**, not invented Nix percentages.
 A mutable `main` resolves during checkout, not admission: use a full SHA for
 exact-revision semantics. The checkout's HEAD is detached at the resolved commit.
+An exact 40-hex commit ID must already be a commit in the configured repository's
+clone: publish it and make it reachable from advertised refs first. Local-only
+commits or staged files on the requesting machine are not included. Missing IDs
+fail with their original Git error and explicit repository-clone context; they
+are never reinterpreted as `origin/<SHA>` branches or fetched separately. Named
+revisions still resolve normally, with an exact remote-branch fallback for
+non-default branches.
+
+Human acceptance, status, lifecycle and gap-warning messages use the existing
+logger, including its timestamps, levels and `--verbosity` filter. One explicit
+safety exception: the pre-send `request-id` INFO message remains visible and
+flushed even at `--verbosity off`, so a lost ACK cannot hide the retry key.
+`logs` child stdout/stderr chunks are requested payload data: they retain their
+cursor/source labels on stdout even at quiet verbosity, without a second logger
+timestamp or level. This CLI has no machine-output mode; normal logger output
+also goes to stdout.
 
 ## storage, bounds and restart
 
@@ -97,6 +113,11 @@ it is not a power-cut test or proof of host recovery. Hard kill does not guarant
 child cleanup. Coeus does not inspect/reap an old process tree on restart.
 
 ## logs, cancellation and performance tradeoffs
+
+Terminal lifecycle log entries include the bounded failure/cancellation cause,
+not only the phase name, so attaching after a checkout/spawn failure is useful
+even when no child output exists. Spawn errors identify the requested program,
+without dumping arguments or the daemon environment.
 
 Logs are cursor-paginated pull (32 chunks/page; 500ms follow), not unbounded
 subscriber broadcasts. Old chunks are evicted with an explicit gap. Terminal log

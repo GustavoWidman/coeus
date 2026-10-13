@@ -69,6 +69,21 @@ impl CologStyle for CustomLevelTokens {
 pub struct Logger;
 
 impl Logger {
+    /// Log and flush the retry key before any deployment request is sent. Only
+    /// this safety-critical message bypasses the ordinary verbosity filter.
+    pub fn retry_id(request_id: u64) -> std::io::Result<()> {
+        // Use this logger's presentation directly for the safety exception:
+        // log's facade discards output errors, whereas a failed write/flush
+        // must prevent submission (just as the former println + flush did).
+        let mut stdout = std::io::stdout().lock();
+        writeln!(
+            stdout,
+            "{} request-id: {request_id} (retry with identical options)",
+            CustomLevelTokens.prefix_token(&Level::Info)
+        )?;
+        stdout.flush()
+    }
+
     pub fn init(level: LevelFilter) {
         Builder::new()
             .filter("coeus".into(), level)

@@ -1,7 +1,8 @@
 use super::CoeusClient;
-use crate::{cli::main::ClientCommand, common::proto::*};
+use crate::{cli::main::ClientCommand, common::proto::*, utils::log::Logger};
 use colored::Colorize;
 use eyre::{Result, bail};
+use log::{info, warn};
 use std::time::Duration;
 
 impl CoeusClient {
@@ -12,14 +13,10 @@ impl CoeusClient {
                     request.request_id = rand::random::<u64>().max(1);
                 }
                 // Emit and flush before sending: a dropped ACK must not hide the retry key.
-                println!(
-                    "request-id: {} (retry with identical options)",
-                    request.request_id
-                );
-                std::io::Write::flush(&mut std::io::stdout())?;
+                Logger::retry_id(request.request_id)?;
                 match self.request(request).await? {
                     Packet::DeployAccepted(accepted) => {
-                        println!(
+                        info!(
                             "{} {} — {}",
                             "accepted".green(),
                             accepted.job_id,
@@ -85,15 +82,17 @@ impl CoeusClient {
                 bail!("unexpected logs response");
             };
             if response.gap {
-                eprintln!("{} older output was evicted", "warning:".yellow());
+                warn!("older output was evicted");
             }
             for entry in &response.entries {
-                let prefix = match entry.source {
-                    LogSource::Lifecycle => "phase".cyan(),
-                    LogSource::Stdout => "stdout".normal(),
-                    LogSource::Stderr => "stderr".yellow(),
-                };
-                println!("{} [{prefix}] {}", entry.cursor, entry.text);
+                match entry.source {
+                    LogSource::Lifecycle => info!("{} [phase] {}", entry.cursor, entry.text),
+                    // Child output is requested data, not a Coeus diagnostic:
+                    // retain its cursor/source labels and do not hide it at quiet
+                    // verbosity. There is no machine-output mode in this CLI.
+                    LogSource::Stdout => println!("{} [stdout] {}", entry.cursor, entry.text),
+                    LogSource::Stderr => println!("{} [stderr] {}", entry.cursor, entry.text),
+                }
             }
             after = response.next_cursor;
             // Drain all retained pages, including after a terminal status.
@@ -119,7 +118,7 @@ fn print_status(jobs: &[JobStatus]) {
             DeployPhase::Cancelled => phase.yellow(),
             _ => phase.cyan(),
         };
-        println!(
+        info!(
             "{} {} {phase}{}{}",
             job.job_id,
             job.revision,

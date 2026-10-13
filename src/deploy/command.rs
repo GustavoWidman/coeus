@@ -79,7 +79,8 @@ impl CommandRunner {
     }
 
     pub async fn call(self) -> Result<()> {
-        let mut process = DeploymentProcess::spawn(&mut self.command())?;
+        let mut process = DeploymentProcess::spawn(&mut self.command())
+            .wrap_err_with(|| format!("starting deployment command {:?}", self.program))?;
         let status = process.child.wait().await?;
         if !status.success() {
             bail!("command failed with {status}");
@@ -101,8 +102,8 @@ impl CommandRunner {
         debug!("starting deployment command");
         let mut command = self.command();
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
-        let mut process =
-            DeploymentProcess::spawn(&mut command).wrap_err("starting deployment command")?;
+        let mut process = DeploymentProcess::spawn(&mut command)
+            .wrap_err_with(|| format!("starting deployment command {:?}", self.program))?;
         let stdout = process
             .child
             .stdout
@@ -144,6 +145,26 @@ impl CommandRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn missing_program_identifies_executable_without_dumping_environment() {
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("coeus-fixture-missing-command");
+        let error = CommandRunner::new(&missing)
+            .envs([("COEUS_FIXTURE_PRIVATE", "not-for-logs")])
+            .call()
+            .await
+            .unwrap_err();
+        let message = format!("{error:#}");
+        assert!(message.contains("starting deployment command"));
+        assert!(message.contains("coeus-fixture-missing-command"));
+        assert!(!message.contains("COEUS_FIXTURE_PRIVATE"));
+        assert!(!message.contains("not-for-logs"));
+        assert_eq!(
+            error.downcast_ref::<std::io::Error>().unwrap().kind(),
+            std::io::ErrorKind::NotFound
+        );
+    }
 
     #[tokio::test]
     async fn path_sets_the_child_working_directory() -> Result<()> {

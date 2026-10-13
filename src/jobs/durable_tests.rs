@@ -16,6 +16,31 @@ async fn open(path: &Path) -> Result<DeploymentJobs> {
 }
 
 #[tokio::test]
+async fn terminal_failure_cause_survives_restart_in_status_and_logs() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let state = directory.path().join("state");
+    let jobs = open(&state).await?;
+    let original = request("fail");
+    let id = jobs.accept(original.clone()).await?;
+    assert_eq!(terminal(&jobs, id).await.phase, DeployPhase::Failed);
+    jobs.shutdown().await;
+    drop(jobs);
+    let recovered = open(&state).await?;
+    assert_eq!(recovered.accept(original).await?, id);
+    let status = &recovered.status(Some(id)).await?[0];
+    assert_eq!(status.phase, DeployPhase::Failed);
+    assert_eq!(status.message.as_deref(), Some("isolated failure"));
+    let logs = recovered.logs(id, 0).await?;
+    assert!(logs.finished);
+    assert_eq!(
+        logs.entries.last().unwrap().text,
+        "Failed — isolated failure"
+    );
+    recovered.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
 async fn durable_admission_deduplicates_and_conflicts_across_restart() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let state = directory.path().join("state");
