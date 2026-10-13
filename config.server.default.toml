@@ -1,2 +1,4 @@
 [settings]
 key = "02717b611d53bb48834bf8d24f3a51eb79bc3f3ece07d714652f39d8ec0ac5b2" # openssl rand -hex 32
+# Parent directory must exist; daemon creates this private durable ledger.
+state_directory = ".coeus-state"

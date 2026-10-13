@@ -9,6 +9,7 @@ mod test;
 use bytes::BytesMut;
 use eyre::{Result, eyre};
 pub use listener::EncryptedListener;
+pub(crate) use listener::PendingConnection;
 use snow::{Builder, HandshakeState, StatelessTransportState, params::NoiseParams};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{
@@ -44,12 +45,17 @@ pub struct EncryptedWriteHalf {
 
 impl EncryptedStream {
     const PATTERN: &'static str = "Noise_NNpsk0_25519_ChaChaPoly_BLAKE2s";
-    const PROLOGUE: &'static [u8] = b"coeus-control/v1";
+    const PROLOGUE: &'static [u8] = b"coeus-control/v3";
     const MAX_FRAME: usize = u16::MAX as usize;
     const TAG_LEN: usize = 16;
 
     pub async fn connect(address: SocketAddr, psk: &[u8; 32]) -> Result<Self> {
         let stream = TcpStream::connect(address).await?;
+        Self::initiate(stream, psk).await
+    }
+
+    /// Initiate Noise on an already owned TCP socket.
+    pub(crate) async fn initiate(stream: TcpStream, psk: &[u8; 32]) -> Result<Self> {
         Self::handshake(stream, psk, true).await
     }
 

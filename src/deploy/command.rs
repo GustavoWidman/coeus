@@ -1,5 +1,11 @@
-use std::ffi::{OsStr, OsString};
+use std::{
+    ffi::{OsStr, OsString},
+    process::Stdio,
+    time::Duration,
+};
 
+use super::{output, process::DeploymentProcess};
+use crate::{common::proto::LogSource, jobs::JobContext};
 use eyre::{Result, WrapErr, bail};
 use log::debug;
 use tokio::process::Command;
@@ -60,35 +66,78 @@ impl CommandRunner {
         self
     }
 
-    pub async fn call(self) -> Result<()> {
-        let Self {
-            program,
-            args,
-            env,
-            path,
-        } = self;
-        let program_name = program.to_string_lossy();
-        debug!("running {program_name}");
-
-        let mut command = Command::new(&program);
+    fn command(&self) -> Command {
+        let mut command = Command::new(&self.program);
         command
-            .args(&args)
-            .envs(env.iter().map(|(key, value)| (key, value)));
-
-        if let Some(path) = path {
+            .args(&self.args)
+            .envs(self.env.iter().map(|(key, value)| (key, value)))
+            .stdin(Stdio::null());
+        if let Some(path) = &self.path {
             command.current_dir(path);
         }
+        command
+    }
 
-        let status = command
-            .status()
-            .await
-            .wrap_err_with(|| format!("failed to start {program_name}"))?;
-
+    pub async fn call(self) -> Result<()> {
+        let mut process = DeploymentProcess::spawn(&mut self.command())?;
+        let status = process.child.wait().await?;
         if !status.success() {
-            bail!("{program_name} failed with {status}");
+            bail!("command failed with {status}");
         }
-
         Ok(())
+    }
+
+    pub async fn call_with_output(self, context: &JobContext) -> Result<()> {
+        self.call_with_deadline(context, Duration::from_secs(3600))
+            .await
+    }
+
+    pub(crate) async fn call_with_deadline(
+        self,
+        context: &JobContext,
+        deadline: Duration,
+    ) -> Result<()> {
+        context.check_cancelled()?;
+        debug!("starting deployment command");
+        let mut command = self.command();
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        let mut process =
+            DeploymentProcess::spawn(&mut command).wrap_err("starting deployment command")?;
+        let stdout = process
+            .child
+            .stdout
+            .take()
+            .ok_or_else(|| eyre::eyre!("missing stdout pipe"))?;
+        let stderr = process
+            .child
+            .stderr
+            .take()
+            .ok_or_else(|| eyre::eyre!("missing stderr pipe"))?;
+        let output = async {
+            tokio::try_join!(
+                output::drain(stdout, LogSource::Stdout, context.clone()),
+                output::drain(stderr, LogSource::Stderr, context.clone())
+            )?;
+            Ok::<_, eyre::Report>(())
+        };
+        let execution = async { Ok::<_, eyre::Report>(process.child.wait().await?) };
+        let result = tokio::select! {
+            biased;
+            _ = context.cancelled() => Err(eyre::eyre!("deployment cancellation requested")),
+            _ = tokio::time::sleep(deadline) => Err(eyre::eyre!("deployment command deadline exceeded")),
+            result = async {
+                let (status, ()) = tokio::try_join!(execution, output)?;
+                if !status.success() { bail!("command failed with {status}"); }
+                Ok(())
+            } => result,
+        };
+        if result.is_err() {
+            process
+                .terminate()
+                .await
+                .wrap_err("terminating deployment process group")?;
+        }
+        result
     }
 }
 

@@ -3,3 +3,5 @@
 config.client.toml
 config.server.toml
 config.toml
+
+/.coeus-state/

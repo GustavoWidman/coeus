@@ -6,7 +6,7 @@ use easy_config_store::ConfigStore;
 use eyre::Result;
 
 use lazy_static::lazy_static;
-use log::{debug, info, warn};
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
 lazy_static! {
@@ -22,10 +22,6 @@ pub fn server_config(path: PathBuf) -> Result<ServerConfig> {
     let config = ConfigStore::<ConfigInner>::read(path, "settings".to_string())?;
 
     info!("config parsing successful");
-    debug!(
-        "loaded configuration:\n{}",
-        toml::to_string_pretty(&*config)?
-    );
 
     Ok(config.arc())
 }
@@ -41,6 +37,10 @@ pub struct ConfigInner {
     port: u16,
 
     pub repo_url: String,
+
+    /// Private durable ledger, relative to daemon working directory unless absolute.
+    #[serde(default = "default_state_directory")]
+    pub state_directory: PathBuf,
 }
 
 impl ConfigInner {
@@ -62,4 +62,8 @@ impl Default for ConfigInner {
 
         config
     }
+}
+
+fn default_state_directory() -> PathBuf {
+    PathBuf::from(".coeus-state")
 }

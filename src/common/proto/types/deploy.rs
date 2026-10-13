@@ -3,12 +3,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::proto::Packet;
 
-#[derive(Args, Debug, Serialize, Deserialize)]
+#[derive(Args, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeployRequest {
+    /// Reuse this ID with identical options after a lost ACK; never generate a new ID for a retry.
+    #[arg(long, default_value_t = 0)]
+    pub request_id: u64,
+
     #[arg(short, long, value_name = "REVISION", default_value = "main")]
     pub rev: String,
 
-    /// Sets "eval-cache" to false in nix options
+    /// Disable Nix eval-cache. STILL builds and switches; NOT a deployment simulation.
     #[arg(long, value_name = "DRY_RUN", default_value_t = false)]
     pub dry_run: bool,
 
@@ -25,6 +29,7 @@ impl From<DeployRequest> for Packet {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DeployAccepted {
+    pub job_id: super::JobId,
     pub message: String,
 }
 

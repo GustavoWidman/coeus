@@ -28,6 +28,7 @@ any section inaccurate.
 - `src/common/stream/` — Noise-encrypted, length-delimited stream and I/O adapters.
 - `src/config/` — client/server configuration loading and defaults.
 - `src/deploy/` — repository checkout and deployment command orchestration.
+- `src/jobs/` — bounded FIFO admission, execution ownership and bounded durable job/log ledger.
 - `src/utils/` — logging and PSK serialization helpers.
 - `proto-macros/` — the procedural macro that generates packet serialization code.
 
@@ -46,36 +47,40 @@ files merely because they are already public entry points.
    replaced with a random key.
 3. `CoeusClient::new` opens a TCP connection and performs the Noise
    `Noise_NNpsk0_25519_ChaChaPoly_BLAKE2s` handshake.
-4. `CoeusClient::send` serializes a `PacketEnvelope` and sends the encrypted frame.
+4. `run_command` uses `CoeusClient::request` to concurrently send an envelope and
+   receive one response. Cancellation/errors poison the connection against reuse;
+   no deployment is automatically retried after an ambiguous acknowledgement.
 
 ### Server
 
 1. `coeusd` parses `DaemonCLIArgs` and loads `ServerConfig`.
 2. `CoeusServer::new` binds an `EncryptedListener` and constructs a `Deployer`.
-3. `run` accepts connections and handles each connection in a spawned Tokio task.
+3. `run` accepts TCP sockets cancellation-safely. Each tracked Tokio task owns a
+   ten-second Noise handshake followed by its authenticated session; both pending and
+   established sessions share a 64-task cap. Shutdown aborts and joins those tasks.
 4. `handle_connection` receives packets in order and delegates them to
    `handle_packet`.
-5. Deploy requests acquire the FIFO `tokio::sync::Mutex` around `Deployer`, acknowledge
-   the request, clone the configured repository into a temporary directory, check out
-   the requested revision, then run the build and switch commands.
+5. Deploy requests enter `jobs::DeploymentJobs`, a bounded FIFO queue; acknowledgement
+   returns a job handle without waiting for earlier deployments or client attachment.
+6. One daemon-owned worker executes checkout/build/switch. Status, bounded cursor logs,
+   and cancellation requests are handled independently through response packets.
 
-The ordering and blocking boundaries in this flow are intentional:
-
-- Deployment requests are serialized by the fair Tokio mutex. Do not replace it with
-  an unordered mechanism without a design for preserving deployment order.
-- Git operations run inside `spawn_blocking`; do not move blocking libgit2 work onto
-  the async executor.
-- External commands go through `deploy::command::CommandRunner` and Tokio's process
-  API. Preserve argument boundaries; do not concatenate untrusted values into shell
-  command strings.
-- The temporary checkout must live until deployment commands finish. Keep cleanup
-  after the build/switch sequence.
+`src/jobs/` owns admission, lifecycle and the versioned durable ledger. Ordering is
+admission order under its FIFO Tokio mutex, not network arrival time. File/rename/
+directory sync precedes ACK and executable queue insertion. Writes own their tasks:
+disconnecting/cancelling an await must not reorder snapshots. One private state-directory
+lease excludes another daemon. Restart persists every unfinished record as Interrupted,
+never replays it, and blocks new admission pending operator reconciliation. Durable IDs
+are not silently evicted. Git remains joined `spawn_blocking` with cooperative transfer
+cancellation, not a hard checkout deadline. Child commands own Unix process groups.
+See `docs/async-deployments.md` for crash windows, storage bounds and remaining gates.
 
 ## Protocol and stream invariants
 
 Treat the wire format as a compatibility boundary, not an implementation detail.
 
-- `PROTOCOL_VERSION` is carried by `PacketEnvelope`; reject unsupported versions.
+- Protocol v3 changes the request-id payload and Noise prologue; both peers
+  must upgrade together. `PROTOCOL_VERSION` is carried by `PacketEnvelope`; reject unsupported versions.
 - Packet IDs in `src/common/proto/mod.rs` are stable protocol identifiers. Never reuse
   an old ID for a different meaning.
 - Add packet payload structs under `src/common/proto/types/`, register the variant in
@@ -177,20 +182,10 @@ C toolchain with `make` and `perl`. If `openssl-sys` reports `make` missing, fix
 extend the development shell rather than changing dependency features just to bypass
 the check.
 
-The current baseline has one known clippy failure under `-D warnings`: the unused
-`deploy::utils::ssh_string` function. `cargo test --all-targets` passes once the
-native build tools are available, but
-`cargo clippy --all-targets --all-features -- -D warnings` currently fails on that
-existing dead-code warning. Do not add broad
-warning suppressions. When touching this path, either remove obsolete code, wire it
-into a real use, or add a narrow, reviewed justification tied to an intentional API
-boundary.
-
-`nix build .#default --no-link` currently fails before compiling Coeus because the
-sandbox cannot find `perl` while building vendored OpenSSL. The flake's default
-`devshell` also does not expose `make`. Treat these as development-environment gaps
-to fix in the flake; do not claim a clean package build or weaken the `git2` dependency
-just to bypass the native build.
+The baseline's obsolete `deploy::utils::ssh_string` has been removed; do not reintroduce
+unused insecure SSH helpers or broad warning suppressions. Native builds require
+make/perl for vendored OpenSSL. The flake now supplies these tools and includes the
+embedded default TOML files in its filtered package source.
 
 ## Change and commit workflow
 

@@ -27,9 +27,7 @@ async fn main() -> Result<()> {
         error!("failed to initialize server: {}", e);
     })?;
 
-    if let Err(e) = server.run().await {
-        error!("fatal server runtime error: {}", e);
-    }
-
-    Ok(())
+    server.run().await.inspect_err(|error| {
+        error!("fatal server runtime error: {error}");
+    })
 }

@@ -5,7 +5,7 @@ use std::{net::IpAddr, path::PathBuf};
 use easy_config_store::ConfigStore;
 use eyre::Result;
 use lazy_static::lazy_static;
-use log::{debug, info, warn};
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
 lazy_static! {
@@ -21,10 +21,6 @@ pub fn client_config(path: PathBuf) -> Result<ClientConfig> {
     let config = ConfigStore::<ConfigInner>::read(path, "settings".to_string())?;
 
     info!("config parsing successful");
-    debug!(
-        "loaded configuration:\n{}",
-        toml::to_string_pretty(&*config)?
-    );
 
     Ok(config.arc())
 }

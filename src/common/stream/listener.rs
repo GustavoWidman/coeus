@@ -1,7 +1,10 @@
 use std::net::SocketAddr;
 
 use eyre::Result;
-use tokio::{io, net::TcpListener};
+use tokio::{
+    io,
+    net::{TcpListener, TcpStream},
+};
 
 use crate::common::stream::EncryptedStream;
 
@@ -23,11 +26,29 @@ impl EncryptedListener {
     }
 
     pub async fn accept(&self) -> Result<(EncryptedStream, SocketAddr)> {
-        let (stream, addr) = self.listener.accept().await?;
+        let pending = self.accept_pending().await?;
+        let address = pending.stream.peer_addr()?;
+        Ok((pending.authenticate().await?, address))
+    }
 
-        Ok((
-            EncryptedStream::handshake(stream, &self.psk, false).await?,
-            addr,
-        ))
+    /// Only TCP acceptance: cancellation cannot discard an in-flight handshake.
+    pub(crate) async fn accept_pending(&self) -> io::Result<PendingConnection> {
+        let (stream, _) = self.listener.accept().await?;
+        Ok(PendingConnection {
+            stream,
+            psk: self.psk,
+        })
+    }
+}
+
+/// Own the accepted socket until authentication completes or its task is cancelled.
+pub(crate) struct PendingConnection {
+    stream: TcpStream,
+    psk: [u8; 32],
+}
+
+impl PendingConnection {
+    pub(crate) async fn authenticate(self) -> Result<EncryptedStream> {
+        EncryptedStream::handshake(self.stream, &self.psk, false).await
     }
 }

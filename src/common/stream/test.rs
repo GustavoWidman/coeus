@@ -152,6 +152,7 @@ async fn round_trips_registered_packets() -> TestResult {
 
         stream
             .send(Packet::DeployAccepted(Box::new(DeployAccepted {
+                job_id: 42,
                 message: "accepted".into(),
             })))
             .await?;
@@ -162,6 +163,7 @@ async fn round_trips_registered_packets() -> TestResult {
     let mut client = EncryptedStream::connect(address, &PSK).await?;
     client
         .send(Packet::DeployRequest(Box::new(DeployRequest {
+            request_id: rand::random(),
             rev: "abc123".into(),
             dry_run: true,
             clean_substituters: false,
@@ -207,6 +209,7 @@ async fn owned_halves_send_and_receive_packets_concurrently() -> TestResult {
                 for sequence in 0..PACKET_COUNT {
                     writer
                         .send(Packet::DeployAccepted(Box::new(DeployAccepted {
+                            job_id: 42,
                             message: format!("accepted-{sequence}"),
                         })))
                         .await?;
@@ -225,6 +228,7 @@ async fn owned_halves_send_and_receive_packets_concurrently() -> TestResult {
             for sequence in 0..PACKET_COUNT {
                 writer
                     .send(Packet::DeployRequest(Box::new(DeployRequest {
+                        request_id: rand::random(),
                         rev: format!("revision-{sequence}"),
                         dry_run: true,
                         clean_substituters: false,

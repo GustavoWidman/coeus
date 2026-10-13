@@ -1,3 +1,4 @@
+mod commands;
 use colored::Colorize;
 use eyre::{Result, eyre};
 use log::{debug, error, info};
@@ -12,22 +13,46 @@ use crate::{
 
 pub struct CoeusClient {
     stream: EncryptedStream,
+    usable: bool,
 }
 
 impl CoeusClient {
     pub async fn new(config: ClientConfig) -> Result<Self> {
-        let stream = EncryptedStream::connect(config.address(), &config.key).await?;
+        let stream = Self::connect(
+            config.address(),
+            &config.key,
+            std::time::Duration::from_secs(10),
+        )
+        .await?;
 
         info!(
             "connected to coeus peer at {}",
             config.address().to_string().magenta()
         );
 
-        Ok(Self { stream })
+        Ok(Self {
+            stream,
+            usable: true,
+        })
+    }
+
+    async fn connect(
+        address: std::net::SocketAddr,
+        key: &[u8; 32],
+        deadline: std::time::Duration,
+    ) -> Result<EncryptedStream> {
+        tokio::time::timeout(deadline, EncryptedStream::connect(address, key))
+            .await
+            .map_err(|_| eyre!("connection/Noise handshake deadline exceeded"))?
     }
 
     pub async fn send(&mut self, packet: impl Into<Packet>) -> Result<()> {
+        if !self.usable {
+            return Err(eyre!("connection unusable; reconnect"));
+        }
+        self.usable = false;
         self.stream.send(packet.into()).await?;
+        self.usable = true;
         Ok(())
     }
 
@@ -36,6 +61,10 @@ impl CoeusClient {
     /// The current daemon keeps the connection open after its deploy acknowledgement, so
     /// this handles one response instead of waiting for EOF.
     pub async fn listen(&mut self) -> Result<()> {
+        if !self.usable {
+            return Err(eyre!("connection unusable; reconnect"));
+        }
+        self.usable = false;
         let peer = self.peer_address();
         let packet = self.stream.recv().await.inspect_err(|error| {
             error!("error receiving packet from {peer}:\n{error}");
@@ -43,6 +72,7 @@ impl CoeusClient {
 
         match packet {
             Some(packet) => {
+                self.usable = true;
                 self.handle_packet(packet).await.inspect_err(|error| {
                     error!("error handling packet from {peer}:\n{error}");
                 })?;
@@ -55,21 +85,54 @@ impl CoeusClient {
         Ok(())
     }
 
-    /// Send a request while listening for the server's response concurrently.
-    pub async fn send_and_listen(&mut self, packet: impl Into<Packet>) -> Result<()> {
-        let response = {
+    /// One outstanding request per connection; framing is cancelled only by closing
+    /// the connection if the response deadline expires.
+    pub async fn request(&mut self, packet: impl Into<Packet>) -> Result<Packet> {
+        if !self.usable {
+            return Err(eyre!(
+                "connection is unusable; reconnect without blindly resubmitting a deployment"
+            ));
+        }
+        // Poison before the await too: a caller may cancel/drop this future at
+        // any point, leaving a partial frame or an unmatched server reply.
+        self.usable = false;
+        let result = tokio::time::timeout(std::time::Duration::from_secs(15), async {
             let (reader, writer) = self.stream.split_mut();
-            let receive_response = async {
+            let receive = async {
                 reader
                     .recv()
                     .await?
                     .ok_or_else(|| eyre!("server closed before sending a response"))
             };
+            let (_, response) = tokio::try_join!(writer.send(packet), receive)?;
+            Ok::<_, eyre::Report>(response)
+        })
+        .await;
+        match result {
+            Ok(Ok(Packet::RequestRejected(rejected))) => {
+                self.usable = true;
+                Err(eyre!("request rejected: {}", rejected.message))
+            }
+            Ok(Ok(response)) => {
+                self.usable = true;
+                Ok(response)
+            }
+            Ok(Err(error)) => {
+                self.usable = false;
+                Err(error)
+            }
+            Err(_) => {
+                self.usable = false;
+                Err(eyre!(
+                    "response deadline exceeded; acceptance may have happened; reconnect and query status"
+                ))
+            }
+        }
+    }
 
-            let (_, response) = tokio::try_join!(writer.send(packet), receive_response)?;
-            response
-        };
-
+    /// Send a request while listening for the server's response concurrently.
+    pub async fn send_and_listen(&mut self, packet: impl Into<Packet>) -> Result<()> {
+        let response = self.request(packet).await?;
         self.handle_packet(response).await
     }
 
@@ -79,10 +142,13 @@ impl CoeusClient {
 
         match packet {
             Packet::DeployAccepted(accepted) => {
-                info!("deployment request accepted: {}", accepted.message);
+                info!(
+                    "deployment {} accepted: {}",
+                    accepted.job_id, accepted.message
+                );
                 Ok(())
             }
-            Packet::DeployRequest(_) => Err(eyre!("received a deploy request from the server")),
+            _ => Err(eyre!("unexpected response from the server")),
         }
     }
 
@@ -99,149 +165,4 @@ impl CoeusClient {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::error::Error;
-
-    use tokio::time::{Duration, timeout};
-
-    use crate::common::{
-        proto::{DeployAccepted, DeployRequest, Packet},
-        stream::{EncryptedListener, EncryptedStream},
-    };
-
-    use super::CoeusClient;
-
-    type TestResult<T = ()> = Result<T, Box<dyn Error + Send + Sync>>;
-
-    const PSK: [u8; 32] = [0x42; 32];
-
-    #[tokio::test]
-    async fn listener_handles_response_while_server_keeps_connection_open() -> TestResult {
-        timeout(Duration::from_secs(2), async {
-            let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
-            let address = listener.local_addr()?;
-            let (release_server, server_release) = tokio::sync::oneshot::channel();
-
-            let server = tokio::spawn(async move {
-                let (mut stream, _) = listener.accept().await?;
-                match stream.recv().await? {
-                    Some(Packet::DeployRequest(request)) => {
-                        assert_eq!(request.rev, "abc123");
-                    }
-                    other => panic!("unexpected request: {other:?}"),
-                }
-                stream
-                    .send(Packet::DeployAccepted(Box::new(DeployAccepted {
-                        message: "accepted".into(),
-                    })))
-                    .await?;
-                let _ = server_release.await;
-                Ok::<_, Box<dyn Error + Send + Sync>>(())
-            });
-
-            let stream = EncryptedStream::connect(address, &PSK).await?;
-            let mut client = CoeusClient { stream };
-            client
-                .send(DeployRequest {
-                    rev: "abc123".into(),
-                    dry_run: true,
-                    clean_substituters: false,
-                })
-                .await?;
-            client.listen().await?;
-            release_server
-                .send(())
-                .expect("server should still be waiting after its response");
-            server.await??;
-            Ok::<_, Box<dyn Error + Send + Sync>>(())
-        })
-        .await??;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn listener_errors_if_server_closes_before_a_response() -> TestResult {
-        timeout(Duration::from_secs(2), async {
-            let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
-            let address = listener.local_addr()?;
-
-            let server = tokio::spawn(async move {
-                let (mut stream, _) = listener.accept().await?;
-                match stream.recv().await? {
-                    Some(Packet::DeployRequest(request)) => {
-                        assert_eq!(request.rev, "abc123");
-                    }
-                    other => panic!("unexpected request: {other:?}"),
-                }
-                drop(stream);
-                Ok::<_, Box<dyn Error + Send + Sync>>(())
-            });
-
-            let stream = EncryptedStream::connect(address, &PSK).await?;
-            let mut client = CoeusClient { stream };
-            client
-                .send(DeployRequest {
-                    rev: "abc123".into(),
-                    dry_run: true,
-                    clean_substituters: false,
-                })
-                .await?;
-            let error = client
-                .listen()
-                .await
-                .expect_err("closing before a response must fail");
-            assert!(
-                error
-                    .to_string()
-                    .contains("closed before sending a response")
-            );
-            server.await??;
-            Ok::<_, Box<dyn Error + Send + Sync>>(())
-        })
-        .await??;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn sends_and_listens_concurrently_through_the_client_api() -> TestResult {
-        timeout(Duration::from_secs(2), async {
-            let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
-            let address = listener.local_addr()?;
-
-            let (release_server, server_release) = tokio::sync::oneshot::channel();
-            let server = tokio::spawn(async move {
-                let (mut stream, _) = listener.accept().await?;
-                match stream.recv().await? {
-                    Some(Packet::DeployRequest(request)) => {
-                        assert_eq!(request.rev, "abc123");
-                    }
-                    other => panic!("unexpected request: {other:?}"),
-                }
-                stream
-                    .send(Packet::DeployAccepted(Box::new(DeployAccepted {
-                        message: "accepted".into(),
-                    })))
-                    .await?;
-                let _ = server_release.await;
-                Ok::<_, Box<dyn Error + Send + Sync>>(())
-            });
-
-            let stream = EncryptedStream::connect(address, &PSK).await?;
-            let mut client = CoeusClient { stream };
-            client
-                .send_and_listen(DeployRequest {
-                    rev: "abc123".into(),
-                    dry_run: true,
-                    clean_substituters: false,
-                })
-                .await?;
-            release_server
-                .send(())
-                .expect("server should still be waiting after its response");
-            server.await??;
-            Ok::<_, Box<dyn Error + Send + Sync>>(())
-        })
-        .await??;
-        Ok(())
-    }
-}
+mod tests;

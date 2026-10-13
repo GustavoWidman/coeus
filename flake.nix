@@ -46,12 +46,13 @@
               inherit root;
               fileset = lib.fileset.unions [
                 (craneLib.fileset.commonCargoSources root)
-                # (lib.fileset.fileFilter (file: file.hasExt "md") root)
+                ./config.client.default.toml
+                ./config.server.default.toml
               ];
             };
             strictDeps = true;
 
-            nativeBuildInputs = [ ];
+            nativeBuildInputs = [ pkgs.perl ];
             buildInputs = [ ];
           };
 
@@ -70,6 +71,10 @@
           devshells.default = {
             packages = [
               toolchain
+              pkgs.gnumake
+              pkgs.perl
+              pkgs.stdenv.cc
+              pkgs.pkg-config
             ];
 
             motd = "";

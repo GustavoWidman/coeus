@@ -36,7 +36,7 @@ snow = { version = "0.10.0", default-features = false, features = [
     "use-blake2",
 ] }
 tokio = { version = "1.53.1", features = ["full"] }
-tokio-util = { version = "0.7.19", features = ["codec"] }
+tokio-util = { version = "0.7.19", features = ["codec", "rt"] }
 toml = "1.1.4"
 tempfile = "3.27.0"
 git2 = { version = "0.21.0", features = [
@@ -46,3 +46,7 @@ git2 = { version = "0.21.0", features = [
     "vendored-openssl"
 ] }
 arc-swap = "1.9.2"
+
+[target.'cfg(unix)'.dependencies]
+# Safe process-group signalling for cancellation; no shell or raw syscalls.
+nix = { version = "0.31", features = ["signal", "process"] }

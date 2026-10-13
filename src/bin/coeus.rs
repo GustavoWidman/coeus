@@ -14,14 +14,14 @@ async fn main() -> Result<()> {
     Logger::init(args.verbosity);
 
     let config: ClientConfig = client_config(args.config).inspect_err(|e| {
-        error!("failed to load server configuration: {}", e);
+        error!("failed to load client configuration: {}", e);
     })?;
 
     let mut client = CoeusClient::new(config).await.inspect_err(|e| {
-        error!("failed to initialize server: {}", e);
+        error!("failed to initialize client: {}", e);
     })?;
 
-    client.send_and_listen(args.options).await?;
+    client.run_command(args.command).await?;
 
     Ok(())
 }
