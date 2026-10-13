@@ -74,12 +74,12 @@ async fn drains_both_streams_with_bounded_chunks_even_without_newlines() -> Resu
     assert!(
         lines
             .iter()
-            .any(|(source, text)| matches!(source, LogSource::Stdout) && text == "stdout-mark")
+            .any(|(source, text)| matches!(source, LogSource::Terminal) && text == "stdout-mark")
     );
     assert!(
         lines
             .iter()
-            .any(|(source, text)| matches!(source, LogSource::Stderr) && text == "stderr-mark")
+            .any(|(source, text)| matches!(source, LogSource::Terminal) && text == "stderr-mark")
     );
     assert!(lines.iter().all(|(_, text)| text.len() <= 1024));
     assert_eq!(
@@ -151,7 +151,7 @@ async fn running_cancel_kills_descendant_not_just_shell_parent() -> Result<()> {
             if let Some((_, text)) = output(&jobs, id)
                 .await?
                 .iter()
-                .find(|(source, _)| matches!(source, LogSource::Stdout))
+                .find(|(source, _)| matches!(source, LogSource::Terminal))
             {
                 break text.parse::<u32>()?;
             }
@@ -177,5 +177,24 @@ async fn running_cancel_kills_descendant_not_just_shell_parent() -> Result<()> {
         Ok::<_, eyre::Report>(())
     })
     .await??;
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test]
+async fn exec_receives_only_slave_stdio_not_inherited_pty_masters() -> Result<()> {
+    let jobs = DeploymentJobs::new(Arc::new(ShellFixture {
+        script: r#"for fd in /proc/self/fd/*; do target=$(readlink "$fd" || true); case "$target" in /dev/pts/ptmx|/dev/ptmx) exit 29;; esac; done; printf 'no inherited masters\n'"#,
+        deadline: Duration::from_secs(2),
+    }));
+    let id = jobs.accept(request()).await?;
+    assert_eq!(finished(&jobs, id).await?, DeployPhase::Succeeded);
+    assert!(
+        output(&jobs, id)
+            .await?
+            .iter()
+            .any(|(_, text)| text == "no inherited masters")
+    );
+    jobs.shutdown().await;
     Ok(())
 }

@@ -1,4 +1,4 @@
-//! Real pipes/private durable ledgers; shell printf fixtures only, never nh.
+//! Real PTYs/private durable ledgers; shell printf fixtures only, never nh.
 use super::{
     DeploymentJobs,
     process_tests::{ShellFixture, finished, output},
@@ -28,7 +28,7 @@ fn assert_same_output(actual: &[(LogSource, String)], expected: &[(LogSource, St
 }
 
 #[tokio::test]
-async fn pipe_progress_both_sources_and_eof_tail_survive_reattach_restart() -> Result<()> {
+async fn pty_progress_merged_source_and_eof_tail_survive_reattach_restart() -> Result<()> {
     timeout(Duration::from_secs(10), async {
         let directory = tempfile::tempdir()?;
         let state = directory.path().join("state");
@@ -38,10 +38,8 @@ async fn pipe_progress_both_sources_and_eof_tail_survive_reattach_restart() -> R
         let id = jobs.accept(original.clone()).await?;
         assert_eq!(finished(&jobs, id).await?, DeployPhase::Succeeded);
         let before = output(&jobs, id).await?;
-        let stdout: Vec<_> = before.iter().filter(|(s, _)| matches!(s, LogSource::Stdout)).map(|(_, t)| t.as_str()).collect();
-        let stderr: Vec<_> = before.iter().filter(|(s, _)| matches!(s, LogSource::Stderr)).map(|(_, t)| t.as_str()).collect();
-        assert_eq!(stdout, ["Building", "Done", "tail é🦀"]);
-        assert_eq!(stderr, ["warning"]);
+        let terminal: Vec<_> = before.iter().filter(|(s, _)| matches!(s, LogSource::Terminal)).map(|(_, t)| t.as_str()).collect();
+        assert_eq!(terminal, ["Done", "warning", "tail é🦀"]);
         assert!(before.iter().all(|(_, t)| !t.contains('\x1b') && !t.contains('\r') && t.len() <= 1024));
         jobs.shutdown().await;
         drop(jobs);
@@ -68,11 +66,14 @@ async fn cancellation_during_incomplete_escape_does_not_block_drain_or_terminal_
             DeploymentJobs::open(executor.clone(), state.clone(), "output-cancel".into()).await?;
         let id = jobs.accept(request("cancel-output")).await?;
         loop {
-            if output(&jobs, id)
-                .await?
-                .iter()
-                .any(|(s, t)| matches!(s, LogSource::Stdout) && t == "ready")
-            {
+            let page = jobs
+                .terminal(crate::common::proto::TerminalRequest {
+                    job_id: id,
+                    after: Some(0),
+                    size: Default::default(),
+                })
+                .await?;
+            if !page.bytes.is_empty() {
                 break;
             }
             tokio::task::yield_now().await;
@@ -109,15 +110,48 @@ async fn normalized_progress_still_obeys_retained_chunk_and_page_bounds() -> Res
     let id = jobs.accept(request("bounded-progress")).await?;
     assert_eq!(finished(&jobs, id).await?, DeployPhase::Succeeded);
     let page = jobs.logs(id, 0).await?;
-    assert!(page.gap);
-    assert_eq!(page.entries.len(), 32);
+    assert!(!page.gap);
+    assert_eq!(page.entries.len(), 3);
     let all = output(&jobs, id).await?;
-    assert_eq!(all.len(), 256);
+    assert_eq!(all.len(), 3);
     assert!(
         all.iter()
             .all(|(_, text)| !text.contains("[32m") && !text.contains('\r'))
     );
     assert!(all.iter().any(|(_, text)| text == "update299"));
+    jobs.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn restart_keeps_terminal_logs_but_raw_history_is_explicitly_unavailable() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let state = directory.path().join("state");
+    let executor = fixture("printf '\\033[32mdone\\033[0m\\n'");
+    let jobs = DeploymentJobs::open(executor.clone(), state.clone(), "raw-restart".into()).await?;
+    let id = jobs.accept(request("raw-restart")).await?;
+    assert_eq!(finished(&jobs, id).await?, DeployPhase::Succeeded);
+    let raw = jobs
+        .terminal(crate::common::proto::TerminalRequest {
+            job_id: id,
+            after: Some(0),
+            size: Default::default(),
+        })
+        .await?;
+    assert!(raw.available && raw.bytes.contains(&0x1b));
+    let old = output(&jobs, id).await?;
+    jobs.shutdown().await;
+    drop(jobs);
+    let jobs = DeploymentJobs::open(executor, state, "raw-restart".into()).await?;
+    let raw = jobs
+        .terminal(crate::common::proto::TerminalRequest {
+            job_id: id,
+            after: Some(0),
+            size: Default::default(),
+        })
+        .await?;
+    assert!(!raw.available && raw.finished && raw.bytes.is_empty());
+    assert_same_output(&output(&jobs, id).await?, &old);
     jobs.shutdown().await;
     Ok(())
 }

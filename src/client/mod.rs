@@ -1,4 +1,7 @@
 mod commands;
+mod terminal;
+#[cfg(unix)]
+mod terminal_output;
 use colored::Colorize;
 use eyre::{Result, eyre};
 use log::{debug, error, info};

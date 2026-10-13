@@ -9,10 +9,17 @@ use tokio_util::sync::CancellationToken;
 pub struct JobContext {
     pub(super) id: JobId,
     pub(super) ledger: Arc<Mutex<JobLedger>>,
+    pub(crate) terminal: Arc<std::sync::Mutex<super::terminal::TerminalOutput>>,
     pub(super) cancellation: CancellationToken,
 }
 
 impl JobContext {
+    pub(crate) fn terminal_bytes(&self, bytes: &[u8]) -> Result<()> {
+        self.terminal
+            .lock()
+            .map_err(|_| eyre::eyre!("terminal state poisoned"))?
+            .push(bytes)
+    }
     pub(crate) fn cancellation_token(&self) -> CancellationToken {
         self.cancellation.clone()
     }

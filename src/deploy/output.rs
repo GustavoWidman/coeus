@@ -10,21 +10,27 @@ const CHUNK_BYTES: usize = 1024;
 struct Lines {
     line: String,
     after_cr: bool,
+    compact: bool,
 }
 impl Lines {
     fn push(&mut self, c: char, lines: &mut Vec<String>) {
         match c {
             '\r' => {
-                self.flush(lines);
+                if !self.compact {
+                    self.flush(lines);
+                }
                 self.after_cr = true;
             }
             '\n' => {
-                if !self.after_cr {
+                if !self.after_cr || self.compact {
                     lines.push(std::mem::take(&mut self.line));
                 }
                 self.after_cr = false;
             }
             _ => {
+                if self.after_cr && self.compact {
+                    self.line.clear();
+                }
                 self.after_cr = false;
                 if self.line.len() + c.len_utf8() > CHUNK_BYTES {
                     self.flush(lines);
@@ -52,7 +58,10 @@ pub(super) async fn drain(
 ) -> Result<()> {
     let mut input = [0; CHUNK_BYTES];
     let mut parser = PlainText::default();
-    let mut lines = Lines::default();
+    let mut lines = Lines {
+        compact: matches!(source, LogSource::Terminal),
+        ..Lines::default()
+    };
     loop {
         let count = reader.read(&mut input).await?;
         let mut ready = Vec::new();
@@ -60,6 +69,9 @@ pub(super) async fn drain(
             parser.finish(|c| lines.push(c, &mut ready));
             lines.flush(&mut ready);
         } else {
+            if matches!(source, LogSource::Terminal) {
+                context.terminal_bytes(&input[..count])?;
+            }
             parser.push(&input[..count], |c| lines.push(c, &mut ready));
         }
         for line in ready {

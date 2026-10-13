@@ -30,6 +30,7 @@ impl CoeusServer {
             Packet::LogsRequest(request) => {
                 self.jobs.logs(request.job_id, request.after).await?.into()
             }
+            Packet::TerminalRequest(request) => self.jobs.terminal(*request).await?.into(),
             Packet::CancelRequest(request) => StatusResponse {
                 jobs: vec![self.jobs.cancel(request.job_id).await?],
                 next_after: None,

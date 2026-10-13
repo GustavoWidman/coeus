@@ -16,13 +16,15 @@ impl DeploymentJobs {
         let ledger = self.ledger.clone();
         let queue = self.queue.clone();
         let shutdown = self.shutdown.clone();
-        tokio::spawn(Self::admit(ledger, queue, shutdown, request)).await?
+        let terminals = self.terminals.clone();
+        tokio::spawn(Self::admit(ledger, queue, shutdown, terminals, request)).await?
     }
 
     async fn admit(
         ledger: Arc<Mutex<JobLedger>>,
         queue: mpsc::Sender<QueuedDeploy>,
         shutdown: CancellationToken,
+        terminals: super::terminal::Terminals,
         request: DeployRequest,
     ) -> Result<JobId> {
         let shared_ledger = ledger.clone();
@@ -48,7 +50,13 @@ impl DeploymentJobs {
         let permit = queue
             .try_reserve()
             .map_err(|_| eyre::eyre!("deployment queue is full or closed"))?;
-        ledger.make_room()?;
+        // Keep record eviction and raw-history removal atomic to terminal readers.
+        // All operations needing both locks use ledger -> terminal map -> output;
+        // raw writers only lock their own output and never await a ledger lock.
+        let mut terminals = terminals.lock().await;
+        if let Some(expired) = ledger.make_room()? {
+            terminals.remove(&expired);
+        }
         let sequence = ledger
             .records
             .back()
@@ -60,12 +68,17 @@ impl DeploymentJobs {
             cancellation.clone(),
         ));
         ledger.persist(id).await?;
+        let terminal = Arc::new(std::sync::Mutex::new(
+            super::terminal::TerminalOutput::default(),
+        ));
+        terminals.insert(id, terminal.clone());
         permit.send(QueuedDeploy {
             request,
             context: JobContext {
                 id,
                 ledger: shared_ledger,
                 cancellation,
+                terminal,
             },
         });
         Ok(id)

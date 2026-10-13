@@ -1,7 +1,11 @@
 pub(crate) mod command;
+/// Command execution boundary used by the deployer and injected executor fixtures.
+pub use command::CommandRunner;
 mod constants;
 mod output;
 mod process;
+#[cfg(unix)]
+mod pty;
 
 use colored::Colorize;
 use eyre::Result;
@@ -11,7 +15,6 @@ use crate::jobs::{DeploymentExecutor, JobContext};
 use crate::{
     common::proto::{DeployPhase, DeployRequest},
     config::ServerConfig,
-    deploy::command::CommandRunner,
 };
 mod checkout;
 use constants::{CLEAN_SUBSTITUTERS, CLEAN_TRUSTED_PUBLIC_KEYS, SYSTEM};

@@ -38,7 +38,17 @@ impl CoeusClient {
                 job_id,
                 after,
                 follow,
-            } => self.show_logs(job_id, after, follow).await,
+                metadata,
+                source,
+            } => {
+                self.show_logs(job_id, after, follow, metadata, source)
+                    .await
+            }
+            ClientCommand::Attach {
+                job_id,
+                live,
+                after,
+            } => self.attach(job_id, live, after).await,
             ClientCommand::Cancel { job_id } => match self.request(CancelRequest { job_id }).await?
             {
                 Packet::StatusResponse(response) => {
@@ -78,7 +88,14 @@ impl CoeusClient {
         }
     }
 
-    async fn show_logs(&mut self, job_id: JobId, mut after: u64, follow: bool) -> Result<()> {
+    async fn show_logs(
+        &mut self,
+        job_id: JobId,
+        mut after: u64,
+        follow: bool,
+        metadata: bool,
+        source: Option<crate::cli::main::LogFilter>,
+    ) -> Result<()> {
         loop {
             let Packet::LogsResponse(response) =
                 self.request(LogsRequest { job_id, after }).await?
@@ -90,13 +107,19 @@ impl CoeusClient {
             }
             for entry in &response.entries {
                 let text = plain_text::bounded(&entry.text, 1024);
-                match entry.source {
-                    LogSource::Lifecycle => info!("{} [phase] {}", entry.cursor, text),
-                    // Child output is requested data, not a Coeus diagnostic:
-                    // retain its cursor/source labels and do not hide it at quiet
-                    // verbosity. There is no machine-output mode in this CLI.
-                    LogSource::Stdout => println!("{} [stdout] {}", entry.cursor, text),
-                    LogSource::Stderr => println!("{} [stderr] {}", entry.cursor, text),
+                if source.is_some_and(|filter| !filter.matches(entry.source)) {
+                    continue;
+                }
+                if metadata {
+                    let label = match entry.source {
+                        LogSource::Lifecycle => "phase",
+                        LogSource::Stdout => "stdout",
+                        LogSource::Stderr => "stderr",
+                        LogSource::Terminal => "terminal",
+                    };
+                    println!("{} [{}] {}", entry.cursor, label, text);
+                } else {
+                    println!("{text}");
                 }
             }
             after = response.next_cursor;

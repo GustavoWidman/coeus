@@ -1,5 +1,5 @@
 use crate::common::proto::{DeployRequest, JobId};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use log::LevelFilter;
 use std::path::PathBuf;
 
@@ -26,14 +26,50 @@ pub enum ClientCommand {
         #[arg(long)]
         watch: bool,
     },
-    /// Fetch bounded log history; follow is reconnectable cursor-based attachment.
+    /// Render raw terminal output. Ctrl-C detaches; it never cancels deployment.
+    Attach {
+        job_id: JobId,
+        /// Skip replay and start at the live byte position.
+        #[arg(long, conflicts_with = "after")]
+        live: bool,
+        /// Resume at an exact raw-byte cursor (not a log cursor).
+        #[arg(long)]
+        after: Option<u64>,
+    },
+    /// Fetch compact durable plain-text logs (not a terminal attachment).
     Logs {
         job_id: JobId,
         #[arg(long, default_value_t = 0)]
         after: u64,
         #[arg(long)]
         follow: bool,
+        /// Show log cursor/source metadata for durable inspection.
+        #[arg(long)]
+        metadata: bool,
+        /// Filter retained records; merged PTY output has source terminal, NOT stderr.
+        #[arg(long, value_enum)]
+        source: Option<LogFilter>,
     },
     /// Request cancellation. Switching may already have modified the machine.
     Cancel { job_id: JobId },
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum LogFilter {
+    Lifecycle,
+    Stdout,
+    Stderr,
+    Terminal,
+}
+impl LogFilter {
+    pub fn matches(self, source: crate::common::proto::LogSource) -> bool {
+        use crate::common::proto::LogSource;
+        matches!(
+            (self, source),
+            (Self::Lifecycle, LogSource::Lifecycle)
+                | (Self::Stdout, LogSource::Stdout)
+                | (Self::Stderr, LogSource::Stderr)
+                | (Self::Terminal, LogSource::Terminal)
+        )
+    }
 }

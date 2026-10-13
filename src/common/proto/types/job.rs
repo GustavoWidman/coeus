@@ -53,6 +53,8 @@ pub enum LogSource {
     Lifecycle,
     Stdout,
     Stderr,
+    /// stdout/stderr share one PTY; their original descriptor is unknowable.
+    Terminal,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

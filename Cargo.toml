@@ -49,4 +49,10 @@ arc-swap = "1.9.2"
 
 [target.'cfg(unix)'.dependencies]
 # Safe process-group signalling for cancellation; no shell or raw syscalls.
-nix = { version = "0.31", features = ["signal", "process"] }
+nix = { version = "0.31", features = ["signal", "process", "term", "fs"] }
+
+# Safe terminal window-size queries/updates; no application-level ioctl unsafe.
+rustix = { version = "1.1.5", features = ["termios"] }
+
+[dev-dependencies]
+vt100 = "0.16"

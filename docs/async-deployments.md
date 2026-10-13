@@ -2,7 +2,7 @@
 
 Local work on top of the still-open stream-halves PR #1. This does not merge the
 PR, install a daemon, run a deployment, or integrate GitHub Actions. Both peers
-must use protocol **v3** (including its Noise prologue); older peers fail the
+must use protocol **v4** (including its Noise prologue); older peers fail the
 handshake before they can submit an incompatible request.
 
 ## ownership and acknowledgement
@@ -42,6 +42,7 @@ reconnect/restart with the **same ID**, never assume failure means no admission.
 coeus --config machine.client.toml deploy --rev <full-sha> --request-id <nonzero-id>
 coeus --config machine.client.toml status <job-id>
 coeus --config machine.client.toml status --watch
+coeus --config machine.client.toml attach <job-id>
 coeus --config machine.client.toml logs <job-id> --after <cursor> --follow
 coeus --config machine.client.toml cancel <job-id>
 ```
@@ -64,10 +65,12 @@ Human acceptance, status, lifecycle and gap-warning messages use the existing
 logger, including its timestamps, levels and `--verbosity` filter. One explicit
 safety exception: the pre-send `request-id` INFO message remains visible and
 flushed even at `--verbosity off`, so a lost ACK cannot hide the retry key.
-`logs` child stdout/stderr chunks are requested payload data: they retain their
-cursor/source labels on stdout even at quiet verbosity, without a second logger
-timestamp or level. This CLI has no machine-output mode; normal logger output
-also goes to stdout.
+`logs` payloads are requested data: compact sanitized text remains visible on
+stdout even at quiet verbosity, without extra logger timestamps or source labels.
+Use `--metadata` for cursor/source labels. New PTY output is labeled `terminal`,
+not separately stdout/stderr. `attach` instead writes raw terminal bytes without
+logger decoration. This CLI has no machine-output mode; normal logger output also
+goes to stdout.
 
 ## storage, bounds and restart
 
@@ -88,7 +91,10 @@ a lock file: under 39 MiB logical data. Admission refuses when durable history i
 full; it does not evict idempotency keys. There is **no automatic archival or safe
 ID-expiry policy yet**. Manually deleting/resetting state discards retry protection
 and is not a normal recovery operation. The explicitly volatile constructor used
-by small tests remains separate and may evict terminal records.
+by small tests remains separate: it evicts only finished records and their raw
+terminal histories together, under ledger-then-terminal-map lock order. Retained
+and active/queued records keep their histories. Durable admission never evicts
+records or their retry IDs; restart alone discards its volatile raw output.
 
 On startup, **every nonterminal record**, even Queued, is persisted as terminal
 `Interrupted`; none is automatically executed. Logs and handles survive. Existing
@@ -120,24 +126,30 @@ even when no child output exists. Spawn errors identify the requested program,
 without dumping arguments or the daemon environment.
 
 Logs are cursor-paginated pull (32 chunks/page; 500ms follow), not unbounded
-subscriber broadcasts. Old chunks are evicted with an explicit gap. Terminal log
-pages must still be drained. stdout/stderr drain concurrently; their observed
-ordering is not a total child-output ordering. Long unterminated lines use bounded
-chunks on complete UTF-8 boundaries (invalid/incomplete UTF-8 becomes replacement
-characters). ANSI CSI, OSC, DCS and other escape payloads are consumed across pipe
-reads, without keeping their payload in memory. Tabs and useful plain text survive;
-other terminal/directional controls do not. CR ends a readable progress snapshot;
-CRLF is one line break. Updates are separate cursor entries, not in-place redraws,
-and rapid progress can evict older retained chunks. A partial line is emitted at
-EOF or the size bound, not on a timer. An unterminated escape string is discarded
-through EOF (OSC accepts BEL or ST; other strings require ST); malformed non-string escapes recover at a line break. Cancellation
+subscriber broadcasts. Old chunks are evicted with an explicit gap. Finished-job
+log pages must still be drained. Build/switch stdout and stderr share one Unix PTY;
+the observed bytes are ordered merged output, so original descriptor identity is
+lost. New durable records use `terminal`, while existing historical stdout/stderr
+records remain readable and filterable. Long unterminated lines use bounded chunks
+on complete UTF-8 boundaries (invalid/incomplete UTF-8 becomes replacement
+characters). ANSI CSI, OSC, DCS and other escape payloads are consumed across PTY
+reads without keeping their payload in memory. Tabs and useful plain text survive;
+other terminal/directional controls do not. CR-only progress redraws coalesce until
+newline/EOF rather than generating a record on every tick; CRLF is one line break.
+A partial line is emitted at EOF or the size bound, not on a timer. An unterminated
+escape string is discarded through EOF (OSC accepts BEL or ST; other strings
+require ST); malformed non-string escapes recover at a line break. Cancellation
 may drop an unfinished line, but in-flight durable writes still finish.
 
-This is **plain log attachment, not a PTY or an interactive nh TUI**. No child
-terminal/environment flags are forced. Lifecycle/status and client-side received
-text also remove complete control sequences; this is defense in depth, not a
-replacement for authenticated peers. Existing history is not rewritten. Old
-ESC-less fragments such as `[32m` cannot be reliably distinguished from literal
+`logs --follow` is compact plain text, **not** the terminal view. `attach` is the
+separate output-only raw PTY view with ANSI colors, cursor movement and progress
+redraws. Commands get `TERM=xterm-256color` and initial 80×24 geometry; attached
+views update the window size, but never forward stdin or SIGINT. See the terminal
+attachment section for lifetime, replay and terminal-side-effect limits.
+Lifecycle/status and client-side log text also remove complete control sequences;
+this is defense in depth, not a replacement for authenticated peers. Raw `attach`
+output is deliberately not sanitized. Existing durable history is not rewritten.
+Old ESC-less fragments such as `[32m` cannot be reliably distinguished from literal
 text, so remain visible; original CR updates/UTF-8 already lost cannot be recovered.
 Status listings use 32-job pages, not a cross-page snapshot. Arbitrary secrets in
 command output are **not** scrubbed. Treat private state/logs as sensitive.
@@ -175,8 +187,10 @@ acceptance is cancellation-safe; each accepted socket owns its handshake and
 authenticated session in one tracked task. A silent peer expires after ten seconds
 without blocking other handshakes below the cap. Shutdown aborts and joins both
 pending and authenticated tasks; completing another session cannot cancel a
-handshake. The OS TCP backlog is separate and not an authentication guarantee. No TUI, multi-machine fan-out, GitHub Actions integration, reconciliation,
-archival, build-only/boot policy, or Darwin deployment parity is claimed.
+handshake. The OS TCP backlog is separate and not an authentication guarantee.
+No interactive input/prompt forwarding, multi-machine fan-out, GitHub Actions
+integration, reconciliation, archival, build-only/boot policy, or Darwin deployment
+parity is claimed.
 
 After independent review of the exact frozen tree: a multi-machine **fake-executor**
 trial with separate private ledgers/test PSKs, deterministic IDs, dropped ACKs,
@@ -185,3 +199,74 @@ Measure ACK/status latency and persistence volume under equivalent fake output.
 Never invoke `CoeusServer::new`/`Deployer` or real `nh` in that trial. Existing tests
 use injected executors, ephemeral loopback ports, local Git fixtures and harmless
 shell fixtures only; no real credentials, host switches, services or infra.
+
+## Terminal attachment (protocol v4)
+
+`coeus attach JOB` is an **output-only terminal view**, separate from durable logs.
+Build/switch commands run with stdout and stderr on the same Unix PTY, with
+`TERM=xterm-256color`, initially 80 columns × 24 rows. Both descriptors see a TTY;
+stdin remains closed (`/dev/null`); the output PTY is not installed as a controlling
+terminal, and no client input is forwarded. The daemon session is unchanged: if
+launched from a terminal, commands may still inherit that existing controlling TTY.
+Run an unattended daemon without relying on prompts on that TTY.
+Interactive password/confirmation prompts are not supported; configure unattended
+credentials/elevation before submitting a real deployment. Existing `nh` flags,
+checkout, build/switch order and dry-run semantics are unchanged.
+
+```sh
+coeus deploy --rev main --request-id 12345
+coeus attach 12345                  # replay retained bytes, then follow live output
+coeus attach 12345 --live           # explicitly skip replay
+coeus status 12345 --watch
+coeus logs 12345 --follow           # compact sanitized durable text, not a terminal
+coeus logs 12345 --metadata         # cursor/source labels when inspecting history
+coeus logs 12345 --source terminal  # merged PTY records, NOT original stderr
+coeus cancel 12345                  # the only command above that cancels the job
+```
+
+Attach writes raw ordered bytes without logger prefixes, Unicode conversion or
+newlines. ANSI colors, cursor movement and CR progress redraws reach the terminal
+unchanged. Local terminal dimensions are sampled while attached and applied to the
+PTY; resizing sends SIGWINCH to the owned command group, never SIGINT. If several
+views attach, the most recent requested dimensions win. Slow/disconnected viewers
+cannot block the daemon-owned job. Ctrl+C exits/detaches the local view only; it does
+not forward input/signals, cancel the job or stop coeusd. The client never enters raw
+input mode: only local output postprocessing is temporarily disabled to avoid
+doubling CR/LF. File flags and all termios fields are restored on normal/detach/error
+exits; SIGKILL cannot run cleanup. On a local TTY it resets SGR styling and shows the cursor when exiting;
+redirected stdout is byte-exact and receives no cleanup controls. Alternate-screen
+or other application-specific modes are not comprehensively restored.
+
+Raw replay is **volatile**, capped at 256 KiB per admitted job (at most 128 jobs,
+32 MiB of raw bytes), with pages capped at 4096 bytes under the encrypted frame limit.
+There is no subscriber queue/backpressure tied to the deployment. `--after BYTE`
+resumes at an exact absolute byte cursor; it is not a durable log cursor. If bytes
+were evicted, attach stops with an explicit history-gap error instead of feeding a
+partial escape/state replay to the terminal. `--live` skips history explicitly but
+cannot reconstruct earlier screen contents/colors. Restart drops raw history; attach
+then reports it unavailable, while `status` and sanitized durable logs remain usable.
+Unfinished jobs are still Interrupted and never automatically replayed. Protocol v4
+changes the Noise prologue and adds packet IDs 0x0206/0x0207; upgrade both binaries.
+The durable snapshot shape and old stdout/stderr source IDs are unchanged: new
+binaries read old histories. Old binaries cannot read newly written `terminal`
+source records, so downgrading a daemon with new history is not supported.
+
+PTY stdout/stderr are physically merged, preserving kernel stream order but losing
+original descriptor identity. New durable records therefore have source `terminal`;
+`--source stderr` only selects truly stderr-labeled historical/pipe records, not PTY
+output. Logs default to compact plain text; CR-only redraws are coalesced until a
+newline/EOF rather than logged on every tick. Lifecycle lines remain visible. Long
+lines still obey the existing 1024-byte chunk and retained-log bounds, so this is not
+a full terminal screen recording. Raw terminal controls are intentionally **not
+sanitized**: only attach to a trusted authenticated deployer/output producer. Colors,
+OSC titles and other controls have the same terminal-side effects as running the
+command directly; no claim of terminal-control or secret redaction is made.
+
+The PTY implementation uses safe `nix::pty::openpty`, readiness-based nonblocking
+master reads and safe `rustix` window ioctls, with no application-level unsafe or
+blocking reader thread. Process groups remain daemon-owned and killed/reaped on
+cancel/deadline/shutdown. Master/slave handles close with command/drain ownership;
+view disconnects never own any of these resources. Hard daemon death may still leave
+children, as documented above; attachment does not solve host reconciliation or
+production readiness. Validation uses harmless real-PTY shell fixtures and encrypted
+loopback, not a real `nh`/Mac switch.

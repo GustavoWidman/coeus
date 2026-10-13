@@ -22,7 +22,7 @@ any section inaccurate.
 - `src/bin/coeus.rs` — client executable entry point.
 - `src/bin/coeusd.rs` — daemon executable entry point.
 - `src/cli/` — clap argument definitions for the two binaries.
-- `src/client/` — client connection and request sending.
+- `src/client/` — client connection, request sending and raw output-only attachment.
 - `src/server/` — listener, connection handling, and packet dispatch.
 - `src/common/proto/` — protocol version, packet types, envelopes, and wire tests.
 - `src/common/stream/` — Noise-encrypted, length-delimited stream and I/O adapters.
@@ -64,6 +64,9 @@ files merely because they are already public entry points.
    returns a job handle without waiting for earlier deployments or client attachment.
 6. One daemon-owned worker executes checkout/build/switch. Status, bounded cursor logs,
    and cancellation requests are handled independently through response packets.
+7. Build/switch output is merged on an output-only Unix PTY. Bounded volatile raw-byte
+   pages feed `attach`; compact sanitized `terminal` records feed durable logs. No
+   attachment owns deployment lifetime or forwards input/SIGINT.
 
 `src/jobs/` owns admission, lifecycle and the versioned durable ledger. Ordering is
 admission order under its FIFO Tokio mutex, not network arrival time. File/rename/
@@ -79,7 +82,7 @@ See `docs/async-deployments.md` for crash windows, storage bounds and remaining 
 
 Treat the wire format as a compatibility boundary, not an implementation detail.
 
-- Protocol v3 changes the request-id payload and Noise prologue; both peers
+- Protocol v4 adds bounded raw terminal pages and changes the Noise prologue; both peers
   must upgrade together. `PROTOCOL_VERSION` is carried by `PacketEnvelope`; reject unsupported versions.
 - Packet IDs in `src/common/proto/mod.rs` are stable protocol identifiers. Never reuse
   an old ID for a different meaning.

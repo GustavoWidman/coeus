@@ -12,6 +12,7 @@ mod queries;
 mod recovery;
 mod snapshot;
 mod storage;
+mod terminal;
 #[cfg(test)]
 mod tests;
 mod worker;
@@ -41,6 +42,7 @@ pub struct DeploymentJobs {
     queue: mpsc::Sender<QueuedDeploy>,
     ledger: Arc<Mutex<JobLedger>>,
     shutdown: CancellationToken,
+    terminals: terminal::Terminals,
     worker: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
@@ -58,6 +60,7 @@ impl DeploymentJobs {
             queue,
             ledger,
             shutdown,
+            terminals: Arc::default(),
             worker: Mutex::new(Some(worker)),
         }
     }

@@ -93,6 +93,16 @@ impl CommandRunner {
             .await
     }
 
+    #[cfg(not(unix))]
+    pub(crate) async fn call_with_deadline(
+        self,
+        _context: &JobContext,
+        _deadline: Duration,
+    ) -> Result<()> {
+        bail!("terminal-backed deployment commands require Unix");
+    }
+
+    #[cfg(unix)]
     pub(crate) async fn call_with_deadline(
         self,
         context: &JobContext,
@@ -101,26 +111,21 @@ impl CommandRunner {
         context.check_cancelled()?;
         debug!("starting deployment command");
         let mut command = self.command();
-        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+        #[cfg(unix)]
+        let reader = super::pty::PtyReader::configure(&mut command, context)?;
         let mut process = DeploymentProcess::spawn(&mut command)
             .wrap_err_with(|| format!("starting deployment command {:?}", self.program))?;
-        let stdout = process
-            .child
-            .stdout
-            .take()
-            .ok_or_else(|| eyre::eyre!("missing stdout pipe"))?;
-        let stderr = process
-            .child
-            .stderr
-            .take()
-            .ok_or_else(|| eyre::eyre!("missing stderr pipe"))?;
-        let output = async {
-            tokio::try_join!(
-                output::drain(stdout, LogSource::Stdout, context.clone()),
-                output::drain(stderr, LogSource::Stderr, context.clone())
-            )?;
-            Ok::<_, eyre::Report>(())
-        };
+        #[cfg(unix)]
+        if let Some(pid) = process.child.id() {
+            context
+                .terminal
+                .lock()
+                .map_err(|_| eyre::eyre!("terminal state poisoned"))?
+                .process_group(pid);
+        }
+        // Command owns slave Stdio until it is dropped: retaining it would block EOF.
+        drop(command);
+        let output = output::drain(reader, LogSource::Terminal, context.clone());
         let execution = async { Ok::<_, eyre::Report>(process.child.wait().await?) };
         let result = tokio::select! {
             biased;

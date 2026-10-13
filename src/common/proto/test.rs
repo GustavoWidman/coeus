@@ -46,7 +46,7 @@ fn packet_envelope_round_trips() {
 }
 
 #[test]
-fn v3_ack_and_status_request_have_fixed_encoding() {
+fn v4_ack_and_status_request_have_fixed_encoding() {
     let envelope = PacketEnvelope::new(
         DeployAccepted {
             job_id: 42,
@@ -56,7 +56,7 @@ fn v3_ack_and_status_request_have_fixed_encoding() {
     );
     assert_eq!(
         postcard::to_stdvec(&envelope).unwrap(),
-        vec![3, 0x81, 2, 4, 42, 2, b'o', b'k']
+        vec![4, 0x81, 2, 4, 42, 2, b'o', b'k']
     );
     let packet: Packet = StatusRequest {
         job_id: Some(42),
@@ -157,4 +157,54 @@ fn bounded_response_pages_fit_a_noise_frame() {
     for response in [status, logs] {
         assert!(postcard::to_stdvec(&response).unwrap().len() <= u16::MAX as usize - 16);
     }
+}
+
+#[test]
+fn terminal_packets_have_deliberate_wire_encoding_and_fit_frame() {
+    let request: Packet = TerminalRequest {
+        job_id: 42,
+        after: Some(7),
+        size: TerminalSize { rows: 24, cols: 80 },
+    }
+    .into();
+    // Packet macro wraps a postcard payload with kind + payload length.
+    assert_eq!(
+        postcard::to_stdvec(&request).unwrap(),
+        vec![0x86, 4, 5, 42, 1, 7, 24, 80]
+    );
+    let response: Packet = TerminalResponse {
+        job_id: 42,
+        bytes: vec![0x1b, b'[', b'm', 0xff],
+        next_cursor: 11,
+        gap: false,
+        available: true,
+        finished: false,
+        error: None,
+    }
+    .into();
+    assert_eq!(
+        postcard::to_stdvec(&response).unwrap(),
+        vec![0x87, 4, 11, 42, 4, 0x1b, b'[', b'm', 0xff, 11, 0, 1, 0, 0]
+    );
+    let encoded = postcard::to_stdvec(&response).unwrap();
+    let decoded: Packet = postcard::from_bytes(&encoded).unwrap();
+    assert_eq!(postcard::to_stdvec(&decoded).unwrap(), encoded);
+    let maximum = PacketEnvelope::new(
+        TerminalResponse {
+            job_id: u64::MAX,
+            bytes: vec![0xff; TERMINAL_PAGE_BYTES],
+            next_cursor: u64::MAX,
+            gap: true,
+            available: true,
+            finished: true,
+            error: Some("e".repeat(1024)),
+        }
+        .into(),
+    );
+    assert!(postcard::to_stdvec(&maximum).unwrap().len() < u16::MAX as usize - 16);
+    let wrong_version = PacketEnvelope {
+        protocol_version: 3,
+        packet: request,
+    };
+    assert!(wrong_version.validate().is_err());
 }

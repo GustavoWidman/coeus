@@ -102,9 +102,25 @@ async fn compiled_cli_accepts_inspects_attaches_cancels_and_reports_rejection() 
         let quiet_logs = cli(&config, &["--verbosity", "off", "logs", id]).await?;
         assert!(quiet_logs.status.success());
         let data = String::from_utf8_lossy(&quiet_logs.stdout);
-        assert!(data.contains("[stdout] fixture compiler output"));
-        assert!(data.contains("[stderr] fixture compiler warning"));
+        assert!(data.contains("fixture compiler output"));
+        assert!(data.contains("fixture compiler warning"));
         assert!(!data.contains("[phase]"));
+        let metadata = cli(
+            &config,
+            &[
+                "--verbosity",
+                "off",
+                "logs",
+                id,
+                "--metadata",
+                "--source",
+                "stderr",
+            ],
+        )
+        .await?;
+        let metadata = String::from_utf8_lossy(&metadata.stdout);
+        assert!(metadata.contains("[stderr] fixture compiler warning"));
+        assert!(!metadata.contains("fixture compiler output"));
         assert!(!data.contains("INFO"));
         assert!(!data.contains("[32m"));
         assert!(!data.contains("[2K"));
@@ -135,11 +151,11 @@ async fn compiled_cli_accepts_inspects_attaches_cancels_and_reports_rejection() 
         let output = String::from_utf8_lossy(&failure_logs.stdout);
         assert!(output.contains("WARN  older output was evicted"));
         assert!(output.contains("INFO "));
-        assert!(output.contains("[phase] Failed — fixture checkout failed before child spawn"));
+        assert!(output.contains("Failed — fixture checkout failed before child spawn"));
         let quiet_logs = cli(&config, &["--verbosity", "off", "logs", "702"]).await?;
         assert!(quiet_logs.status.success());
         let output = String::from_utf8_lossy(&quiet_logs.stdout);
-        assert!(output.contains("[stdout] fixture output"));
+        assert!(output.contains("fixture output"));
         assert!(!output.contains("WARN"));
         assert!(!output.contains("[phase]"));
         shutdown.cancel();

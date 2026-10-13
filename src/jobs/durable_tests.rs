@@ -141,8 +141,30 @@ async fn durable_retention_stops_admission_without_expiring_idempotency() -> Res
         let id = jobs.accept(request("ok")).await?;
         terminal(&jobs, id).await;
     }
+    let retained = jobs.terminals.lock().await.clone();
+    assert_eq!(retained.len(), ledger::MAX_JOBS);
+    retained[&first_id]
+        .lock()
+        .unwrap()
+        .push(b"durable history")?;
     assert!(jobs.accept(request("overflow")).await.is_err());
     assert_eq!(jobs.accept(first.clone()).await?, first_id);
+    {
+        let terminals = jobs.terminals.lock().await;
+        assert_eq!(terminals.len(), ledger::MAX_JOBS);
+        for (id, output) in &retained {
+            assert!(Arc::ptr_eq(output, &terminals[id]));
+        }
+    }
+    let page = jobs
+        .terminal(crate::common::proto::TerminalRequest {
+            job_id: first_id,
+            after: Some(0),
+            size: Default::default(),
+        })
+        .await?;
+    assert!(page.available && page.finished && !page.gap);
+    assert_eq!(page.bytes, b"durable history");
     jobs.shutdown().await;
     drop(jobs);
     let recovered = open(&state).await?;

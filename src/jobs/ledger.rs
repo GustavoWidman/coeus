@@ -100,9 +100,10 @@ impl JobLedger {
             .find(|record| record.status.job_id == id)
             .ok_or_else(|| eyre!("unknown or expired job {id}"))
     }
-    pub fn make_room(&mut self) -> Result<()> {
+    /// Evict only volatile finished records; the caller must prune matching raw history.
+    pub fn make_room(&mut self) -> Result<Option<JobId>> {
         if self.records.len() < MAX_JOBS {
-            return Ok(());
+            return Ok(None);
         }
         if self.storage.is_some() {
             eyre::bail!("durable history is full; explicit archival required before new admission");
@@ -112,7 +113,9 @@ impl JobLedger {
             .iter()
             .position(|record| record.status.phase.is_terminal())
             .ok_or_else(|| eyre!("job history is full"))?;
-        self.records.remove(index);
-        Ok(())
+        Ok(self
+            .records
+            .remove(index)
+            .map(|record| record.status.job_id))
     }
 }

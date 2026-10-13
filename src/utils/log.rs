@@ -84,6 +84,19 @@ impl Logger {
         stdout.flush()
     }
 
+    // Terminal stdout is never a diagnostic target, including dependency logs.
+    pub fn init_attach() {
+        Self::attach_builder().init();
+    }
+
+    fn attach_builder() -> Builder {
+        let mut builder = Builder::new();
+        builder
+            .filter_level(LevelFilter::Off)
+            .target(Target::Stderr);
+        builder
+    }
+
     pub fn init(level: LevelFilter) {
         Builder::new()
             .filter("coeus".into(), level)
@@ -91,5 +104,26 @@ impl Logger {
             .format(formatter(CustomLevelTokens))
             .write_style(WriteStyle::Always)
             .init();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use log::{Log, Metadata};
+    #[test]
+    fn attach_disables_every_diagnostic_target_not_only_coeus() {
+        let logger = Logger::attach_builder().build();
+        for target in ["coeus", "coeus::client", "dependency"] {
+            for level in [
+                Level::Error,
+                Level::Warn,
+                Level::Info,
+                Level::Debug,
+                Level::Trace,
+            ] {
+                assert!(!logger.enabled(&Metadata::builder().target(target).level(level).build()));
+            }
+        }
     }
 }

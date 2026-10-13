@@ -5,7 +5,7 @@ mod test;
 
 pub use coeus_proto_macros::{Packet, packet_enum};
 
-pub const PROTOCOL_VERSION: u8 = 3;
+pub const PROTOCOL_VERSION: u8 = 4;
 
 pub mod types;
 pub use types::*;
@@ -28,6 +28,10 @@ pub enum Packet {
     LogsResponse,
     #[packet(id = 0x0204, type = CancelRequest)]
     CancelRequest,
+    #[packet(id = 0x0206, type = TerminalRequest)]
+    TerminalRequest,
+    #[packet(id = 0x0207, type = TerminalResponse)]
+    TerminalResponse,
     #[packet(id = 0x0205, type = RequestRejected)]
     RequestRejected,
 }
