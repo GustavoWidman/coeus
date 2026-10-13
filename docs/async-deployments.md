@@ -123,9 +123,24 @@ Logs are cursor-paginated pull (32 chunks/page; 500ms follow), not unbounded
 subscriber broadcasts. Old chunks are evicted with an explicit gap. Terminal log
 pages must still be drained. stdout/stderr drain concurrently; their observed
 ordering is not a total child-output ordering. Long unterminated lines use bounded
-chunks. Status listings use 32-job pages, not a cross-page snapshot. Control
-characters are stripped before retention; arbitrary secrets in command output are
-**not** scrubbed. Treat private state/logs as sensitive.
+chunks on complete UTF-8 boundaries (invalid/incomplete UTF-8 becomes replacement
+characters). ANSI CSI, OSC, DCS and other escape payloads are consumed across pipe
+reads, without keeping their payload in memory. Tabs and useful plain text survive;
+other terminal/directional controls do not. CR ends a readable progress snapshot;
+CRLF is one line break. Updates are separate cursor entries, not in-place redraws,
+and rapid progress can evict older retained chunks. A partial line is emitted at
+EOF or the size bound, not on a timer. An unterminated escape string is discarded
+through EOF (OSC accepts BEL or ST; other strings require ST); malformed non-string escapes recover at a line break. Cancellation
+may drop an unfinished line, but in-flight durable writes still finish.
+
+This is **plain log attachment, not a PTY or an interactive nh TUI**. No child
+terminal/environment flags are forced. Lifecycle/status and client-side received
+text also remove complete control sequences; this is defense in depth, not a
+replacement for authenticated peers. Existing history is not rewritten. Old
+ESC-less fragments such as `[32m` cannot be reliably distinguished from literal
+text, so remain visible; original CR updates/UTF-8 already lost cannot be recovered.
+Status listings use 32-job pages, not a cross-page snapshot. Arbitrary secrets in
+command output are **not** scrubbed. Treat private state/logs as sensitive.
 
 Every retained chunk currently fsyncs its bounded per-job snapshot on a blocking
 pool, under the FIFO ledger lock. This deliberately favors simple lifecycle

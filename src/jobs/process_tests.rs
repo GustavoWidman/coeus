@@ -9,9 +9,9 @@ use futures_util::future::BoxFuture;
 use std::{sync::Arc, time::Duration};
 use tokio::time::timeout;
 
-struct ShellFixture {
-    script: &'static str,
-    deadline: Duration,
+pub(super) struct ShellFixture {
+    pub(super) script: &'static str,
+    pub(super) deadline: Duration,
 }
 impl DeploymentExecutor for ShellFixture {
     fn execute(&self, _: DeployRequest, context: JobContext) -> BoxFuture<'_, Result<()>> {
@@ -32,7 +32,7 @@ fn request() -> DeployRequest {
         clean_substituters: false,
     }
 }
-async fn finished(jobs: &DeploymentJobs, id: JobId) -> Result<DeployPhase> {
+pub(super) async fn finished(jobs: &DeploymentJobs, id: JobId) -> Result<DeployPhase> {
     timeout(Duration::from_secs(3), async {
         loop {
             let status = jobs.status(Some(id)).await?.remove(0);
@@ -44,7 +44,7 @@ async fn finished(jobs: &DeploymentJobs, id: JobId) -> Result<DeployPhase> {
     })
     .await?
 }
-async fn output(jobs: &DeploymentJobs, id: JobId) -> Result<Vec<(LogSource, String)>> {
+pub(super) async fn output(jobs: &DeploymentJobs, id: JobId) -> Result<Vec<(LogSource, String)>> {
     let mut cursor = 0;
     let mut all = Vec::new();
     loop {

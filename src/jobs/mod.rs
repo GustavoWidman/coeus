@@ -3,6 +3,8 @@ mod context;
 #[cfg(test)]
 mod durable_tests;
 mod ledger;
+#[cfg(test)]
+mod output_tests;
 mod persistence;
 #[cfg(test)]
 mod process_tests;

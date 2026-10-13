@@ -28,10 +28,13 @@ impl DeploymentExecutor for Fixture {
             }
             context.phase(DeployPhase::Build).await?;
             context
-                .log(LogSource::Stdout, "fixture compiler output")
+                .log(LogSource::Stdout, "\x1b[32mfixture compiler output\x1b[0m")
                 .await;
             context
-                .log(LogSource::Stderr, "fixture compiler warning")
+                .log(
+                    LogSource::Stderr,
+                    "\x1b]0;hidden fixture title\x07fixture compiler warning\x1b[2K",
+                )
                 .await;
             context.cancelled().await;
             context.check_cancelled()
@@ -103,6 +106,10 @@ async fn compiled_cli_accepts_inspects_attaches_cancels_and_reports_rejection() 
         assert!(data.contains("[stderr] fixture compiler warning"));
         assert!(!data.contains("[phase]"));
         assert!(!data.contains("INFO"));
+        assert!(!data.contains("[32m"));
+        assert!(!data.contains("[2K"));
+        assert!(!data.contains("hidden fixture title"));
+        assert!(!data.contains('\x1b'));
         let cancel = cli(&config, &["cancel", id]).await?;
         assert!(cancel.status.success());
         let terminal = cli(&config, &["status", id, "--watch"]).await?;

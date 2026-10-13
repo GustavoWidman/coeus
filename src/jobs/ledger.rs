@@ -11,14 +11,7 @@ pub(super) const LOG_PAGE: usize = 32;
 pub(crate) const MAX_TEXT: usize = 1024;
 
 pub(crate) fn bounded_text(text: &str) -> String {
-    // Avoid control-sequence injection into status/TUI output (including ANSI escapes).
-    text.chars()
-        .filter(|c| !c.is_control() || *c == '\t')
-        .scan(0, |bytes, c| {
-            *bytes += c.len_utf8();
-            (*bytes <= MAX_TEXT).then_some(c)
-        })
-        .collect()
+    crate::utils::plain_text::bounded(text, MAX_TEXT)
 }
 
 pub(super) struct JobRecord {

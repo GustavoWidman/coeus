@@ -1,5 +1,9 @@
 use super::CoeusClient;
-use crate::{cli::main::ClientCommand, common::proto::*, utils::log::Logger};
+use crate::{
+    cli::main::ClientCommand,
+    common::proto::*,
+    utils::{log::Logger, plain_text},
+};
 use colored::Colorize;
 use eyre::{Result, bail};
 use log::{info, warn};
@@ -20,7 +24,7 @@ impl CoeusClient {
                             "{} {} — {}",
                             "accepted".green(),
                             accepted.job_id,
-                            accepted.message
+                            plain_text::bounded(&accepted.message, 1024)
                         );
                         Ok(())
                     }
@@ -85,13 +89,14 @@ impl CoeusClient {
                 warn!("older output was evicted");
             }
             for entry in &response.entries {
+                let text = plain_text::bounded(&entry.text, 1024);
                 match entry.source {
-                    LogSource::Lifecycle => info!("{} [phase] {}", entry.cursor, entry.text),
+                    LogSource::Lifecycle => info!("{} [phase] {}", entry.cursor, text),
                     // Child output is requested data, not a Coeus diagnostic:
                     // retain its cursor/source labels and do not hide it at quiet
                     // verbosity. There is no machine-output mode in this CLI.
-                    LogSource::Stdout => println!("{} [stdout] {}", entry.cursor, entry.text),
-                    LogSource::Stderr => println!("{} [stderr] {}", entry.cursor, entry.text),
+                    LogSource::Stdout => println!("{} [stdout] {}", entry.cursor, text),
+                    LogSource::Stderr => println!("{} [stderr] {}", entry.cursor, text),
                 }
             }
             after = response.next_cursor;
@@ -121,7 +126,7 @@ fn print_status(jobs: &[JobStatus]) {
         info!(
             "{} {} {phase}{}{}",
             job.job_id,
-            job.revision,
+            plain_text::bounded(&job.revision, 256),
             if job.cancel_requested {
                 " (cancellation requested)"
             } else {
@@ -129,7 +134,10 @@ fn print_status(jobs: &[JobStatus]) {
             },
             job.message
                 .as_ref()
-                .map_or(String::new(), |message| format!(" — {message}"))
+                .map_or(String::new(), |message| format!(
+                    " — {}",
+                    plain_text::bounded(message, 1024)
+                ))
         );
     }
 }

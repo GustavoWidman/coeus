@@ -65,7 +65,10 @@ impl Snapshot {
         for entry in &self.entries {
             if entry.cursor != previous + 1
                 || entry.text.len() > MAX_TEXT
-                || super::ledger::bounded_text(&entry.text) != entry.text
+                // Retain v1's original validity contract for existing history.
+                // New writes/display normalize more strictly, without migrating
+                // snapshots or rejecting old ESC-less/directional fragments.
+                || entry.text.chars().any(|c| c.is_control() && c != '\t')
             {
                 bail!("invalid retained log cursor or size");
             }

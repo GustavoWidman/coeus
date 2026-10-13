@@ -302,3 +302,34 @@ async fn terminal(jobs: &DeploymentJobs, id: JobId) -> JobStatus {
     .await
     .expect("durable fixture should finish within its disk-I/O budget")
 }
+
+#[tokio::test]
+async fn legacy_control_fragments_load_without_rewriting_history() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let state = directory.path().join("state");
+    let (storage, _) = storage::JobStorage::open(state.clone(), "fixture".into()).await?;
+    let original = request("ok");
+    let id = original.request_id;
+    let mut record = JobRecord::new(original.clone(), 1, CancellationToken::new());
+    record.status.phase = DeployPhase::Succeeded;
+    record.append(LogSource::Stdout, "placeholder");
+    // Valid under the old v1 writer, where ESC/CR were removed bytewise and
+    // Unicode direction marks survived. Do not invent or rewrite lost content.
+    let legacy = "[32mBuilding[0m[2KDone\u{202e}";
+    record.entries[0].text = legacy.into();
+    storage.save(&record).await?;
+    drop(storage);
+    let path = state.join(format!("{id}.job"));
+    let before = std::fs::read(&path)?;
+    let recovered = open(&state).await?;
+    assert_eq!(recovered.accept(original).await?, id);
+    assert_eq!(recovered.logs(id, 0).await?.entries[0].text, legacy);
+    assert_eq!(
+        crate::utils::plain_text::bounded(legacy, 1024),
+        "[32mBuilding[0m[2KDone"
+    );
+    recovered.shutdown().await;
+    drop(recovered);
+    assert_eq!(std::fs::read(path)?, before);
+    Ok(())
+}
