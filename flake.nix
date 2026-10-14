@@ -9,6 +9,11 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     systems.url = "github:nix-systems/default";
     devshell.url = "github:numtide/devshell";
+    # Used for genuine Darwin module evaluation, not a runtime dependency.
+    nix-darwin = {
+      url = "github:nix-darwin/nix-darwin/4cff07de74b50e64bdd68cd4e722ab5b6b35ee48";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -21,10 +26,17 @@
       ...
     }:
     flake-parts.lib.mkFlake { inherit inputs; } {
-      systems = import systems;
+      # This pinned Nixpkgs 26.11 no longer supports Intel Darwin.
+      systems = builtins.filter (system: system != "x86_64-darwin") (import systems);
       imports = [
         devshell.flakeModule
       ];
+      flake = {
+        nixosModules.coeusd = import ./nix/modules/nixos.nix inputs.self;
+        nixosModules.default = inputs.self.nixosModules.coeusd;
+        darwinModules.coeusd = import ./nix/modules/darwin.nix inputs.self;
+        darwinModules.default = inputs.self.darwinModules.coeusd;
+      };
       perSystem =
         {
           pkgs,
@@ -64,9 +76,16 @@
           );
         in
         {
-          # checks.<package> = bin;
-
           packages.default = bin;
+          packages.coeus = bin;
+          checks = {
+            package = bin;
+            modules = import ./nix/tests/modules.nix { inherit inputs pkgs system; };
+            elevation = pkgs.runCommand "coeus-elevation-tests" { nativeBuildInputs = [ pkgs.python3 ]; } ''
+              python3 ${./nix/tests/elevation.py} ${./nix/elevation.py}
+              touch $out
+            '';
+          };
 
           devshells.default = {
             packages = [

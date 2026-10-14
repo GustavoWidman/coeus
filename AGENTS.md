@@ -14,7 +14,10 @@ any section inaccurate.
 ## Repository map
 
 - `Cargo.toml` / `Cargo.lock` — Rust package metadata and locked dependencies.
-- `flake.nix` / `flake.lock` — Nix development shell and Crane package definition.
+- `flake.nix` / `flake.lock` — Nix development shell, Crane package and service-module exports.
+- `nix/modules/` — reusable non-root NixOS/systemd and nix-darwin/launchd services.
+- `nix/elevation.py` — strict immutable helper policy for passwordless nh activation.
+- `nix/tests/` — real module evaluation and unprivileged elevation-policy checks.
 - `rust-toolchain.toml` — pinned nightly toolchain and required components.
 - `.envrc` — loads the flake for direnv users.
 - `config.client.default.toml` — embedded client defaults.
@@ -209,3 +212,7 @@ embedded default TOML files in its filtered package source.
    when a scope adds clarity.
 
 Do not rewrite or squash unrelated history. Do not push unless explicitly requested.
+
+Service setup and the root-equivalent activation boundary are documented in
+`docs/nix-services.md`. Do not run a host activation just to validate modules;
+use the flake checks. Darwin daemon self-upgrades are explicitly not safe yet.
