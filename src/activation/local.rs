@@ -36,6 +36,7 @@ pub async fn run_local(
         address,
         key: peer.key,
         operator_sudo: args.operator_sudo,
+        output: None,
     };
     let store = ReceiptStore::open_async(args.activation_directory.clone()).await?;
     if let Some((flake, host, nix)) = bootstrap {

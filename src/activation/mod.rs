@@ -28,3 +28,6 @@ pub fn build_attribute(identity: &ServiceIdentity) -> String {
         )
     }
 }
+
+#[cfg(test)]
+pub(crate) use receipt::sync_fault;

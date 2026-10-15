@@ -48,9 +48,7 @@ impl BuildExecutor for NativeBuild {
         Box::pin(async move {
             let mut command = tokio::process::Command::new(&self.nix);
             command
-                .args(["build", attribute, "--out-link"])
-                .arg(root)
-                .args(["--extra-experimental-features", "nix-command flakes"])
+                .args(crate::deploy::build::flake_build_args(attribute, root))
                 .stdout(Stdio::inherit())
                 .stderr(Stdio::inherit());
             let mut process = crate::deploy::process::DeploymentProcess::spawn(&mut command)?;
@@ -99,4 +97,40 @@ pub async fn build_bootstrap(
         super::switch::prepare_built(&store, id, built.closure, built.identity, None, None)
     })
     .await?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[tokio::test]
+    async fn native_bootstrap_passes_flake_trust_flag_to_nix() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let nix = temp.path().join("fake nix");
+        std::fs::write(
+            &nix,
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"${0}.args\"\nexit 1\n",
+        )?;
+        std::fs::set_permissions(&nix, std::fs::Permissions::from_mode(0o700))?;
+        let builder = NativeBuild::new(&nix)?;
+        let root = temp.path().join("root with spaces");
+        let attribute = "github:owner/repo/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa#nixosConfigurations.fixture.config.system.build.toplevel";
+        let error = builder.build(attribute, &root).await.err().unwrap();
+        assert!(error.to_string().contains("bootstrap build failed"));
+        let args = std::fs::read_to_string(temp.path().join("fake nix.args"))?;
+        assert_eq!(
+            args.lines().collect::<Vec<_>>(),
+            vec![
+                "build",
+                attribute,
+                "--out-link",
+                root.to_str().unwrap(),
+                "--extra-experimental-features",
+                "nix-command flakes",
+                "--accept-flake-config",
+            ]
+        );
+        Ok(())
+    }
 }

@@ -3,6 +3,7 @@ use crate::common::{
     proto::{DeployPhase, IdentityRequest, Packet, StatusRequest},
     stream::EncryptedStream,
 };
+use crate::deploy::CommandRunner;
 use eyre::{Result, WrapErr, bail, ensure};
 use futures_util::future::BoxFuture;
 use std::{
@@ -10,7 +11,6 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
-use tokio::process::Command;
 
 /// All host effects are injected in lifecycle tests.
 pub trait ActivationExecutor: Send + Sync {
@@ -169,36 +169,31 @@ pub struct NativeExecutor {
     pub key: [u8; 32],
     /// Explicit operator authority, needed before module sudo policy exists. No rules are installed.
     pub operator_sudo: bool,
+    /// Automatic activation shares the job PTY/logs; independent operators inherit output.
+    pub(crate) output: Option<crate::jobs::JobContext>,
 }
 impl NativeExecutor {
     async fn privileged(&self, receipt: &Receipt, args: &[String]) -> Result<()> {
-        let mut command = if self.operator_sudo {
+        let command = if self.operator_sudo {
             let sudo = if receipt.expected.platform == "darwin" {
                 "/usr/bin/sudo"
             } else {
                 "/run/wrappers/bin/sudo"
             };
-            let mut command = Command::new(sudo);
-            command.args(["-n", "--"]);
-            command.args(args);
-            command
+            CommandRunner::new(sudo).args(["-n", "--"]).args(args)
         } else {
             let previous = receipt.previous.as_ref().ok_or_else(|| {
                 eyre::eyre!("bootstrap requires explicit --operator-sudo authority")
             })?;
-            let mut command = Command::new(&previous.elevation_adapter);
-            command.arg("env").args(args);
-            command
+            CommandRunner::new(&previous.elevation_adapter)
+                .arg("env")
+                .args(args)
         };
-        command
-            .stdin(std::process::Stdio::null())
-            .kill_on_drop(true);
-        let mut process = crate::deploy::process::DeploymentProcess::spawn(&mut command)?;
-        let status = process.child.wait().await?;
-        ensure!(
-            status.success(),
-            "exact-closure activation command failed: {status}"
-        );
+        match &self.output {
+            Some(context) => command.call_with_output(context).await,
+            None => command.call().await,
+        }
+        .wrap_err("exact-closure activation command failed")?;
         Ok(())
     }
 }

@@ -139,6 +139,8 @@ impl ReceiptStore {
             pending,
             self.directory.join(format!("{}.toml", receipt.job_id)),
         )?;
+        #[cfg(test)]
+        sync_fault::check(&self.directory)?;
         File::open(&self.directory)?.sync_all()?;
         Ok(())
     }
@@ -189,5 +191,44 @@ pub(crate) struct Operation(std::sync::Arc<std::sync::atomic::AtomicBool>);
 impl Drop for Operation {
     fn drop(&mut self) {
         self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+// Per-directory, one-shot fault at the real post-rename/pre-fsync boundary.
+// Tests never change permissions, global filesystem behavior, or production I/O.
+#[cfg(test)]
+pub(crate) mod sync_fault {
+    use std::{
+        collections::HashSet,
+        path::{Path, PathBuf},
+        sync::Mutex,
+    };
+    static FAILURES: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+    pub(crate) struct Failure(PathBuf);
+    pub(crate) fn fail_next(directory: &Path) -> Failure {
+        FAILURES
+            .lock()
+            .unwrap()
+            .get_or_insert_default()
+            .insert(directory.into());
+        Failure(directory.into())
+    }
+    pub(super) fn check(directory: &Path) -> eyre::Result<()> {
+        if FAILURES
+            .lock()
+            .unwrap()
+            .as_mut()
+            .is_some_and(|paths| paths.remove(directory))
+        {
+            eyre::bail!("injected post-rename receipt directory fsync failure");
+        }
+        Ok(())
+    }
+    impl Drop for Failure {
+        fn drop(&mut self) {
+            if let Some(paths) = FAILURES.lock().unwrap().as_mut() {
+                paths.remove(&self.0);
+            }
+        }
     }
 }

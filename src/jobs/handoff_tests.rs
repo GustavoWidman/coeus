@@ -37,7 +37,7 @@ fn service() -> ServiceIdentity {
         service_definition: "fixture".into(),
     }
 }
-fn receipt(store: &ReceiptStore, id: u64) -> Receipt {
+pub(super) fn receipt(store: &ReceiptStore, id: u64) -> Receipt {
     Receipt {
         format: 1,
         job_id: id,
@@ -55,6 +55,26 @@ impl DeploymentExecutor for HandoffExecutor {
     fn execute(&self, request: DeployRequest, context: JobContext) -> BoxFuture<'_, Result<()>> {
         Box::pin(async move {
             context.phase(DeployPhase::Build).await?;
+            if request.rev.ends_with("switch-fail") {
+                context.phase(DeployPhase::Switch).await?;
+                if request.rev != "missing-switch-fail" {
+                    let store = ReceiptStore::open(&context.activation_directory().await?)?;
+                    let mut built = receipt(&store, context.job_id());
+                    built.manual = false;
+                    built.state = match request.rev.as_str() {
+                        "uncertain-switch-fail" => ActivationState::Uncertain,
+                        "activating-switch-fail" => ActivationState::Activating,
+                        "verified-switch-fail" => ActivationState::Verified,
+                        _ => ActivationState::Ready,
+                    };
+                    store.save(&built)?;
+                    if request.rev == "revocation-switch-fail" {
+                        std::fs::create_dir(store.directory().join("receipt.pending"))?;
+                    }
+                }
+                self.started.send(request.rev)?;
+                eyre::bail!("fixture activation denied: \x1b[31mpermission refused\x1b[0m");
+            }
             if matches!(request.rev.as_str(), "manual" | "corrupt-switch") {
                 let store = ReceiptStore::open(&context.activation_directory().await?)?;
                 store.save(&receipt(&store, context.job_id()))?;
@@ -78,7 +98,7 @@ impl DeploymentExecutor for HandoffExecutor {
         })
     }
 }
-async fn open(path: &Path) -> Result<(DeploymentJobs, mpsc::UnboundedReceiver<String>)> {
+pub(super) async fn open(path: &Path) -> Result<(DeploymentJobs, mpsc::UnboundedReceiver<String>)> {
     let (send, recv) = mpsc::unbounded_channel();
     Ok((
         DeploymentJobs::open(
@@ -90,7 +110,7 @@ async fn open(path: &Path) -> Result<(DeploymentJobs, mpsc::UnboundedReceiver<St
         recv,
     ))
 }
-fn directory(path: &Path) -> Result<PathBuf> {
+pub(super) fn directory(path: &Path) -> Result<PathBuf> {
     crate::activation::directory_for_ledger(path)
 }
 fn set_receipt(path: &Path, id: u64, state: ActivationState) -> Result<()> {
@@ -99,7 +119,7 @@ fn set_receipt(path: &Path, id: u64, state: ActivationState) -> Result<()> {
     receipt.state = state;
     store.save(&receipt)
 }
-async fn blocked(recv: &mut mpsc::UnboundedReceiver<String>) {
+pub(super) async fn blocked(recv: &mut mpsc::UnboundedReceiver<String>) {
     assert!(
         timeout(Duration::from_millis(50), recv.recv())
             .await
@@ -372,6 +392,232 @@ async fn unreadable_switch_outcome_blocks_fifo_across_restart_without_replay() -
         );
         terminal(&recovered, second).await;
         recovered.shutdown().await;
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn pre_activation_failure_revokes_ready_receipt_and_preserves_cause() -> Result<()> {
+    timeout(Duration::from_secs(5), async {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("ledger");
+        let (jobs, mut started) = open(&path).await?;
+        let original = request("ready-switch-fail");
+        let first = jobs.accept(original.clone()).await?;
+        started.recv().await;
+        let second = jobs.accept(request("ordinary")).await?;
+        assert_eq!(started.recv().await.as_deref(), Some("ordinary"));
+        let status = terminal(&jobs, first).await;
+        assert_eq!(status.phase, DeployPhase::Failed);
+        let message = status.message.unwrap();
+        assert!(message.contains("fixture activation denied: permission refused"));
+        assert!(!message.chars().any(char::is_control));
+        let retained = crate::activation::read_receipt(&directory(&path)?, first)?;
+        assert_eq!(retained.state, ActivationState::Cancelled);
+        assert!(retained.message.contains("failed before activation intent"));
+        assert!(retained.message.contains("permission refused"));
+        assert_eq!(jobs.accept(original).await?, first); // no retry/rebuild
+        assert!(jobs.logs(first, 0).await?.entries.iter().any(|e| {
+            e.text
+                .contains("activation failed: fixture activation denied: permission refused")
+        }));
+        terminal(&jobs, second).await;
+        jobs.shutdown().await;
+        drop(jobs);
+        let (recovered, mut after_restart) = open(&path).await?;
+        assert_eq!(
+            recovered.status(Some(first)).await?[0].phase,
+            DeployPhase::Failed
+        );
+        blocked(&mut after_restart).await;
+        recovered.shutdown().await;
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn attempted_or_missing_activation_keeps_cause_and_blocks_until_verified() -> Result<()> {
+    timeout(Duration::from_secs(8), async {
+        for rev in [
+            "uncertain-switch-fail",
+            "activating-switch-fail",
+            "missing-switch-fail",
+        ] {
+            let temp = tempfile::tempdir()?;
+            let path = temp.path().join("ledger");
+            let (jobs, mut started) = open(&path).await?;
+            let first = jobs.accept(request(rev)).await?;
+            started.recv().await;
+            let second = jobs.accept(request("ordinary")).await?;
+            timeout(Duration::from_secs(2), async {
+                loop {
+                    let status = jobs.status(Some(first)).await?.remove(0);
+                    if status.phase == DeployPhase::RequiresManualSwitch {
+                        assert!(status.message.unwrap().contains("permission refused"));
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+                Ok::<_, eyre::Report>(())
+            })
+            .await??;
+            blocked(&mut started).await;
+            assert!(jobs.logs(first, 0).await?.entries.iter().any(|e| {
+                e.text
+                    .contains("activation failed: fixture activation denied: permission refused")
+            }));
+            jobs.shutdown().await;
+            assert!(
+                jobs.status(Some(first)).await?[0]
+                    .message
+                    .as_ref()
+                    .unwrap()
+                    .contains("permission refused")
+            );
+            drop(jobs);
+            let (recovered, mut after_restart) = open(&path).await?;
+            blocked(&mut after_restart).await;
+            let store = ReceiptStore::open(&directory(&path)?)?;
+            let mut restored = receipt(&store, first);
+            restored.state = ActivationState::Verified;
+            store.save(&restored)?;
+            drop(store);
+            assert_eq!(after_restart.recv().await.as_deref(), Some("ordinary"));
+            assert_eq!(
+                terminal(&recovered, first).await.phase,
+                DeployPhase::Succeeded
+            );
+            terminal(&recovered, second).await;
+            recovered.shutdown().await;
+        }
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_ready_revocation_never_releases_fifo_or_allows_new_admission() -> Result<()> {
+    timeout(Duration::from_secs(5), async {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("ledger");
+        let (jobs, mut started) = open(&path).await?;
+        let first = jobs.accept(request("revocation-switch-fail")).await?;
+        started.recv().await;
+        let status = terminal(&jobs, first).await;
+        assert_eq!(status.phase, DeployPhase::Interrupted);
+        assert!(
+            status
+                .message
+                .unwrap()
+                .contains("revocation persistence failed")
+        );
+        assert!(jobs.accept(request("ordinary")).await.is_err());
+        assert!(matches!(
+            timeout(Duration::from_millis(50), started.recv()).await,
+            Err(_) | Ok(None)
+        ));
+        jobs.shutdown().await;
+        drop(jobs);
+        let (recovered, mut after_restart) = open(&path).await?;
+        assert!(recovered.accept(request("ordinary")).await.is_err());
+        blocked(&mut after_restart).await;
+        recovered.shutdown().await;
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn verified_switch_error_is_not_reported_as_failed_or_replayed() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    let path = temp.path().join("ledger");
+    let (jobs, mut started) = open(&path).await?;
+    let first = jobs.accept(request("verified-switch-fail")).await?;
+    started.recv().await;
+    assert_eq!(terminal(&jobs, first).await.phase, DeployPhase::Succeeded);
+    assert!(
+        jobs.logs(first, 0)
+            .await?
+            .entries
+            .iter()
+            .any(|e| e.text.contains("permission refused"))
+    );
+    jobs.shutdown().await;
+    Ok(())
+}
+
+struct LeasedFailureExecutor {
+    lease: Arc<std::sync::Mutex<Option<ReceiptStore>>>,
+    started: mpsc::UnboundedSender<()>,
+}
+impl DeploymentExecutor for LeasedFailureExecutor {
+    fn execute(&self, _: DeployRequest, context: JobContext) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move {
+            let store = ReceiptStore::open(&context.activation_directory().await?)?;
+            store.save(&receipt(&store, context.job_id()))?;
+            context.phase(DeployPhase::Switch).await?;
+            *self.lease.lock().unwrap() = Some(store);
+            self.started.send(())?;
+            eyre::bail!("fixture lease held by independent operator");
+        })
+    }
+}
+#[tokio::test]
+async fn ready_receipt_with_busy_operator_lease_is_not_revoked_or_treated_as_safe() -> Result<()> {
+    timeout(Duration::from_secs(5), async {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("ledger");
+        let lease = Arc::new(std::sync::Mutex::new(None));
+        let (send, mut recv) = mpsc::unbounded_channel();
+        let jobs = DeploymentJobs::open(
+            Arc::new(LeasedFailureExecutor {
+                lease: lease.clone(),
+                started: send,
+            }),
+            path.clone(),
+            "fixture".into(),
+        )
+        .await?;
+        let first = jobs.accept(request("busy-ready")).await?;
+        recv.recv().await;
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if jobs.status(Some(first)).await?[0].phase == DeployPhase::RequiresManualSwitch {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+            Ok::<_, eyre::Report>(())
+        })
+        .await??;
+        assert_eq!(
+            lease.lock().unwrap().as_ref().unwrap().load(first)?.state,
+            ActivationState::Ready
+        );
+        assert!(jobs.logs(first, 0).await?.entries.iter().any(|e| {
+            e.text
+                .contains("activation is already owned by another process")
+        }));
+        jobs.cancel(first).await?;
+        assert!(
+            timeout(Duration::from_millis(50), recv.recv())
+                .await
+                .is_err()
+        );
+        // Cancel can only revoke Ready after the independent lease is released.
+        lease.lock().unwrap().take();
+        assert_eq!(terminal(&jobs, first).await.phase, DeployPhase::Cancelled);
+        assert_eq!(
+            crate::activation::read_receipt(&directory(&path)?, first)?.state,
+            ActivationState::Cancelled
+        );
+        jobs.shutdown().await;
         Ok::<_, eyre::Report>(())
     })
     .await??;

@@ -16,6 +16,20 @@ policy changes) are rejected **before activation**. Runtime secret
 contents are neither copied into the store nor changed by this mechanism. Changes
 to those files outside a system build remain an operator-managed migration.
 
+## flake configuration trust
+
+Normal deployment and daemon-less bootstrap builds pass `--accept-flake-config`
+to Nix so a noninteractive build accepts the selected flake's `nixConfig`
+settings (including substituters and public keys) without prompting. Deploy only
+repositories/revisions whose flake settings you trust. This does not grant the
+service user extra Nix-daemon privileges: settings restricted by the daemon's
+trust policy can still be rejected or ignored. `--clean-substituters` continues
+to supply explicit command-line cache/key overrides for normal deployments.
+
+Exact-closure activation does not evaluate a flake and does **not** pass this flag.
+The restricted privileged helper's argv allowlist is unchanged; this flag does
+not authorize new privileged activation commands or change the manual-switch gate.
+
 ## normal deployments
 
 `coeus deploy --rev COMMIT` keeps its durable request ID, FIFO admission, PTY
@@ -110,6 +124,22 @@ supported**. Existing service definitions/listeners are rejected instead of bein
 replaced behind an active queue. Build the new module once from an idle independent
 operator session to migrate a legacy installation lacking the manifest/protocol.
 
+## activation failure diagnostics
+
+Automatic activation command stdout/stderr use the job's existing PTY attachment
+and bounded, sanitized durable logs, rather than only the daemon service logs.
+Independent operator switches retain output in their terminal/SSH session. The
+original Switch error is retained in lifecycle logs and unresolved status.
+
+A pre-activation failure is terminal only when the worker obtains the exclusive
+activation lease, reloads a **Ready** receipt, and durably revokes it. The job
+then fails (or is cancelled), FIFO can continue, and that receipt cannot switch
+later. This is not an automatic activation retry. If revocation persistence
+fails, execution/admission stop as Interrupted rather than trusting a possibly
+non-durable receipt. A busy lease, absent/corrupt receipt, or attempted activation
+(Activating/Uncertain) still blocks FIFO for independent reconciliation; no failed
+command, unchanged profile, or disconnected client alone proves no side effect.
+
 ## interruption, cancellation, and reconciliation
 
 The durable receipt lock excludes concurrent operator processes. Repeating
@@ -132,7 +162,21 @@ pretend a switch succeeded. After a lost connection inspect possible privileged
 activation descendants as part of that operator reconciliation; SSH/process-group
 cleanup alone cannot prove a root subprocess was terminated.
 
-Cancellation while Ready atomically revokes activation and releases FIFO. Once a
+Cancellation while Ready revokes activation under the exclusive receipt lease and
+releases FIFO only after the receipt file **and its directory** are synced. This
+also applies when cancellation lands after receipt preparation while the job still
+says Build, and to build-only/dry-run revocation. Failures are not classified as
+pre-activation from the ledger phase alone: the worker leases and reloads the
+receipt (or confirms no receipt/pending write exists before activation intent).
+Busy leases, corrupt/missing expected receipts and uncertain states retain the
+barrier; the daemon never replays activation.
+
+A failed receipt save/fsync stops execution and new admission, recording
+Interrupted when the ledger is writable. A readable Cancelled receipt after a
+failed rename/directory-sync sequence is **not** enough to release FIFO. Normal
+observers acquire the lease, reload and durably re-save terminal receipt state
+before releasing the barrier. A persistence error is not retried by that worker;
+restart retains Interrupted work for operator reconciliation. Once a
 switch owns the receipt, cancellation is **not rollback** and cannot release the
 barrier. During intentional daemon replacement, the new daemon resumes the passive
 handoff observer and only the FIFO jobs durably known never to have started. Every

@@ -584,3 +584,58 @@ fn managed_account_uid_gid_and_lifecycle_migrations_fail_before_receipt() -> Res
     }
     Ok(())
 }
+
+struct LoggedActivationFixture {
+    receipt: Receipt,
+}
+impl crate::jobs::DeploymentExecutor for LoggedActivationFixture {
+    fn execute(
+        &self,
+        _: crate::common::proto::DeployRequest,
+        context: crate::jobs::JobContext,
+    ) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move {
+            // Do not validate or activate a host: only the injected adapter below runs.
+            let executor = NativeExecutor {
+                address: "127.0.0.1:1".parse()?,
+                key: [0; 32],
+                operator_sudo: false,
+                output: Some(context),
+            };
+            executor.switch(&self.receipt).await
+        })
+    }
+}
+
+#[tokio::test]
+async fn automatic_activation_child_output_and_failure_reach_job_logs() -> Result<()> {
+    use std::{os::unix::fs::PermissionsExt, sync::Arc};
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let temp = tempfile::tempdir()?;
+        let adapter = temp.path().join("fake elevation adapter");
+        std::fs::write(&adapter, "#!/bin/sh\nprintf '\\033[31mfixture stdout\\033[0m\\n'\nprintf 'fixture stderr\\n' >&2\nexit 7\n")?;
+        std::fs::set_permissions(&adapter, std::fs::Permissions::from_mode(0o700))?;
+        let store = store(temp.path())?;
+        let mut built = receipt(&store, false)?;
+        built.previous.as_mut().unwrap().elevation_adapter = adapter;
+        let jobs = crate::jobs::DeploymentJobs::new(Arc::new(LoggedActivationFixture { receipt: built }));
+        let id = jobs.accept(crate::common::proto::DeployRequest {
+            request_id: 917,
+            rev: "fixture".into(),
+            dry_run: false,
+            clean_substituters: false,
+        }).await?;
+        loop {
+            if jobs.status(Some(id)).await?[0].phase.is_terminal() { break; }
+            tokio::task::yield_now().await;
+        }
+        let logs = jobs.logs(id, 0).await?;
+        assert!(logs.entries.iter().any(|e| matches!(e.source, crate::common::proto::LogSource::Terminal) && e.text == "fixture stdout"));
+        assert!(logs.entries.iter().any(|e| matches!(e.source, crate::common::proto::LogSource::Terminal) && e.text == "fixture stderr"));
+        assert!(logs.entries.iter().any(|e| e.text.contains("exact-closure activation command failed") && e.text.contains('7')));
+        assert!(logs.entries.iter().all(|e| !e.text.chars().any(char::is_control)));
+        jobs.shutdown().await;
+        Ok::<_, eyre::Report>(())
+    }).await??;
+    Ok(())
+}

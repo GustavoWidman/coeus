@@ -13,8 +13,11 @@ mod persistence;
 mod process_tests;
 mod queries;
 mod recovery;
+#[cfg(test)]
+mod settlement_tests;
 mod snapshot;
 mod storage;
+mod switch_failure;
 mod terminal;
 #[cfg(test)]
 mod tests;

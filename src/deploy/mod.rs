@@ -1,3 +1,4 @@
+pub(crate) mod build;
 pub(crate) mod command;
 /// Command execution boundary used by the deployer and injected executor fixtures.
 pub use command::CommandRunner;
@@ -58,9 +59,7 @@ impl Deployer {
         let attribute = crate::activation::build_attribute(&current);
         let mut runner = CommandRunner::new("nix")
             .path(repo.directory.path())
-            .args(["build", &attribute, "--out-link"])
-            .arg(root.as_os_str())
-            .args(["--extra-experimental-features", "nix-command flakes"]);
+            .args(build::flake_build_args(&attribute, &root));
         if options.clean_substituters {
             runner = runner
                 .args(["--option", "substituters", CLEAN_SUBSTITUTERS])
@@ -72,7 +71,7 @@ impl Deployer {
         runner.call_with_output(context).await?;
         context.check_cancelled()?;
         let id = context.job_id();
-        let mut receipt = tokio::task::spawn_blocking(move || {
+        let receipt = tokio::task::spawn_blocking(move || {
             let expected = crate::activation::ServiceIdentity::read(&root)?;
             crate::activation::prepare(
                 &store,
@@ -84,14 +83,7 @@ impl Deployer {
         })
         .await??;
         if options.dry_run {
-            receipt.state = crate::activation::ActivationState::Cancelled;
-            receipt.message =
-                "build-only receipt; activation forbidden, submit a new deployment to activate"
-                    .into();
-            crate::activation::ReceiptStore::open_async(directory.clone())
-                .await?
-                .save_async(&receipt)
-                .await?;
+            context.revoke_build_only().await?;
             context
                 .log(
                     crate::common::proto::LogSource::Lifecycle,
@@ -112,6 +104,7 @@ impl Deployer {
                 address,
                 key: self.config.key,
                 operator_sudo: false,
+                output: Some(context.clone()),
             };
             let activation_store =
                 crate::activation::ReceiptStore::open_async(directory.clone()).await?;
