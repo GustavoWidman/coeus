@@ -1,7 +1,7 @@
 use crate::common::proto::Packet;
 use serde::{Deserialize, Serialize};
 
-/// Opaque durable handle; also the caller-provided idempotency ID. Not a timestamp or queue position.
+/// Server-assigned durable ascending handle, independent of the caller retry nonce.
 pub type JobId = u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

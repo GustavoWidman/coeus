@@ -1,12 +1,11 @@
 use clap::Parser;
 use coeus::{
     cli::main::MainCLIArgs,
-    client::CoeusClient,
-    config::{ClientConfig, client_config},
+    client,
+    config::{client::default_client_path, client_config},
     utils::log::Logger,
 };
 use eyre::Result;
-use log::error;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -71,15 +70,10 @@ async fn main() -> Result<()> {
         }
         _ => {}
     }
-    let config: ClientConfig = client_config(args.config).inspect_err(|e| {
-        error!("failed to load client configuration: {}", e);
-    })?;
-
-    let mut client = CoeusClient::new(config).await.inspect_err(|e| {
-        error!("failed to initialize client: {}", e);
-    })?;
-
-    client.run_command(args.command).await?;
-
-    Ok(())
+    let path = match args.config {
+        Some(path) => path,
+        None => default_client_path()?,
+    };
+    let config = client_config(path)?;
+    client::run(config, args.command, args.no_tty).await
 }

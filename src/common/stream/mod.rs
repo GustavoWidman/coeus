@@ -45,7 +45,7 @@ pub struct EncryptedWriteHalf {
 
 impl EncryptedStream {
     const PATTERN: &'static str = "Noise_NNpsk0_25519_ChaChaPoly_BLAKE2s";
-    const PROLOGUE: &'static [u8] = b"coeus-control/v5";
+    const PROLOGUE: &'static [u8] = b"coeus-control/v6";
     const MAX_FRAME: usize = u16::MAX as usize;
     const TAG_LEN: usize = 16;
 

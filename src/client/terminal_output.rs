@@ -63,6 +63,9 @@ impl TerminalOutput {
         }
         Ok(result)
     }
+    pub(super) fn cleanup(&self, bytes: &[u8]) {
+        let _ = self.file.file().write_all(bytes);
+    }
     pub async fn write(&self, mut bytes: &[u8]) -> Result<()> {
         while !bytes.is_empty() {
             let count = match &self.file {

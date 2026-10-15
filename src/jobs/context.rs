@@ -8,6 +8,7 @@ use tokio_util::sync::CancellationToken;
 #[derive(Clone)]
 pub struct JobContext {
     pub(super) id: JobId,
+    pub(super) feed: Arc<std::sync::Mutex<super::shared_terminal::SharedOutput>>,
     pub(super) ledger: Arc<Mutex<JobLedger>>,
     pub(crate) terminal: Arc<std::sync::Mutex<super::terminal::TerminalOutput>>,
     pub(super) cancellation: CancellationToken,
@@ -21,13 +22,19 @@ impl JobContext {
         tokio::spawn(async move {
             let mut ledger = context.ledger.lock().await;
             context.check_cancelled()?;
-            ledger.record_mut(context.id)?.status.phase = DeployPhase::Checkout;
+            let record = ledger.record_mut(context.id)?;
+            record.status.phase = DeployPhase::Checkout;
+            record.started = true;
             ledger.persist(context.id).await
         })
         .await?
     }
 
     pub(crate) fn terminal_bytes(&self, bytes: &[u8]) -> Result<()> {
+        self.feed
+            .lock()
+            .map_err(|_| eyre::eyre!("shared terminal state poisoned"))?
+            .push(self.id, bytes)?;
         self.terminal
             .lock()
             .map_err(|_| eyre::eyre!("terminal state poisoned"))?

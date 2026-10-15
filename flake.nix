@@ -60,11 +60,15 @@
                 (craneLib.fileset.commonCargoSources root)
                 ./config.client.default.toml
                 ./config.server.default.toml
+                ./nix/elevation.py
               ];
             };
             strictDeps = true;
 
-            nativeBuildInputs = [ pkgs.perl ];
+            nativeBuildInputs = [
+              pkgs.perl
+              pkgs.python3
+            ];
             buildInputs = [ ];
           };
 
@@ -81,8 +85,10 @@
           checks = {
             package = bin;
             modules = import ./nix/tests/modules.nix { inherit inputs pkgs system; };
+            client-config = import ./nix/tests/home-manager.nix { inherit inputs pkgs system; };
             elevation = pkgs.runCommand "coeus-elevation-tests" { nativeBuildInputs = [ pkgs.python3 ]; } ''
               python3 ${./nix/tests/elevation.py} ${./nix/elevation.py}
+              python3 ${./nix/elevation_supervision_tests.py} ${./nix/elevation.py}
               touch $out
             '';
           };

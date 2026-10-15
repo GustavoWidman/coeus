@@ -5,7 +5,7 @@ use crate::common::proto::Packet;
 
 #[derive(Args, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DeployRequest {
-    /// Reuse this ID with identical options after a lost ACK; never generate a new ID for a retry.
+    /// Reuse this nonce with identical options after a lost ACK; never generate a new ID for a retry.
     #[arg(long, default_value_t = 0)]
     pub request_id: u64,
 

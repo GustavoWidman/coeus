@@ -16,7 +16,9 @@ use std::{
 pub trait ActivationExecutor: Send + Sync {
     fn current(&self) -> Result<PathBuf>;
     fn validate<'a>(&'a self, receipt: &'a Receipt) -> BoxFuture<'a, Result<()>>;
-    fn switch<'a>(&'a self, receipt: &'a Receipt) -> BoxFuture<'a, Result<()>>;
+    /// Own the deadline and join subprocess cleanup before returning. Callers must
+    /// not cancel by dropping this future: privileged children may own another session.
+    fn switch<'a>(&'a self, receipt: &'a Receipt, deadline: Duration) -> BoxFuture<'a, Result<()>>;
     fn verify<'a>(&'a self, receipt: &'a Receipt) -> BoxFuture<'a, Result<()>>;
 }
 
@@ -118,9 +120,9 @@ pub(crate) async fn activate_deadline(
         "activation started; interruption requires verification-only reconciliation".into();
     store.save_async(&receipt).await?;
     let result = async {
-        tokio::time::timeout(deadline, executor.switch(&receipt))
-            .await
-            .wrap_err("activation timed out; outcome uncertain")??;
+        // The executor enforces its budget inside the subprocess owner, where
+        // cancellation can revoke the lease and await supervision cleanup.
+        executor.switch(&receipt, deadline).await?;
         executor.verify(&receipt).await
     }
     .await;
@@ -173,7 +175,12 @@ pub struct NativeExecutor {
     pub(crate) output: Option<crate::jobs::JobContext>,
 }
 impl NativeExecutor {
-    async fn privileged(&self, receipt: &Receipt, args: &[String]) -> Result<()> {
+    async fn privileged(
+        &self,
+        receipt: &Receipt,
+        args: &[String],
+        deadline: Duration,
+    ) -> Result<()> {
         let command = if self.operator_sudo {
             let sudo = if receipt.expected.platform == "darwin" {
                 "/usr/bin/sudo"
@@ -186,12 +193,14 @@ impl NativeExecutor {
                 eyre::eyre!("bootstrap requires explicit --operator-sudo authority")
             })?;
             CommandRunner::new(&previous.elevation_adapter)
+                .arg("--coeus-supervised")
+                .supervised_activation()
                 .arg("env")
                 .args(args)
         };
         match &self.output {
-            Some(context) => command.call_with_output(context).await,
-            None => command.call().await,
+            Some(context) => command.call_with_deadline(context, deadline).await,
+            None => command.call_with_timeout(deadline).await,
         }
         .wrap_err("exact-closure activation command failed")?;
         Ok(())
@@ -229,10 +238,16 @@ impl ActivationExecutor for NativeExecutor {
             Ok(())
         })
     }
-    fn switch<'a>(&'a self, receipt: &'a Receipt) -> BoxFuture<'a, Result<()>> {
+    fn switch<'a>(&'a self, receipt: &'a Receipt, deadline: Duration) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
+            let end = tokio::time::Instant::now() + deadline;
             for args in activation_commands(receipt) {
-                self.privileged(receipt, &args).await?;
+                let remaining = end
+                    .checked_duration_since(tokio::time::Instant::now())
+                    .ok_or_else(|| {
+                        eyre::eyre!("activation deadline exceeded; outcome uncertain")
+                    })?;
+                self.privileged(receipt, &args, remaining).await?;
             }
             Ok(())
         })
@@ -251,6 +266,9 @@ impl ActivationExecutor for NativeExecutor {
             let deadline = tokio::time::Instant::now() + Duration::from_secs(60);
             let mut last = "daemon not reachable".to_owned();
             loop {
+                if let Some(context) = &self.output {
+                    context.check_cancelled()?;
+                }
                 let probe = tokio::time::timeout(Duration::from_secs(2), async {
                     let mut stream = EncryptedStream::connect(self.address, &self.key).await?;
                     stream.send(IdentityRequest {}).await?;

@@ -1,2 +1,5 @@
 [settings]
-key = "02717b611d53bb48834bf8d24f3a51eb79bc3f3ece07d714652f39d8ec0ac5b2" # openssl rand -hex 32
+# Example only. Provision an explicit private PSK matching each daemon.
+key = "02717b611d53bb48834bf8d24f3a51eb79bc3f3ece07d714652f39d8ec0ac5b2"
+default_revision = "main"
+fleet = [] # e.g. ["lab", "192.0.2.10:45729"]

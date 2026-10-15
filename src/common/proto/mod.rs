@@ -5,7 +5,7 @@ mod test;
 
 pub use coeus_proto_macros::{Packet, packet_enum};
 
-pub const PROTOCOL_VERSION: u8 = 5;
+pub const PROTOCOL_VERSION: u8 = 6;
 
 pub mod types;
 pub use types::*;
@@ -13,6 +13,18 @@ pub use types::*;
 #[packet_enum]
 #[derive(Debug)]
 pub enum Packet {
+    #[packet(id = 0x0302, type = HelloRequest)]
+    HelloRequest,
+    #[packet(id = 0x0303, type = HelloResponse)]
+    HelloResponse,
+    #[packet(id = 0x0208, type = MachineStatusRequest)]
+    MachineStatusRequest,
+    #[packet(id = 0x0209, type = MachineStatusResponse)]
+    MachineStatusResponse,
+    #[packet(id = 0x020a, type = SharedTerminalRequest)]
+    SharedTerminalRequest,
+    #[packet(id = 0x020b, type = SharedTerminalResponse)]
+    SharedTerminalResponse,
     #[packet(id = 0x0300, type = IdentityRequest)]
     IdentityRequest,
     #[packet(id = 0x0301, type = IdentityResponse)]

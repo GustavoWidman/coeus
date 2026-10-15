@@ -10,7 +10,9 @@ impl DeploymentJobs {
         scope: String,
     ) -> Result<Self> {
         let (storage, records) = storage::JobStorage::open(directory, scope).await?;
+        let high_water = storage.high_water();
         let mut ledger = JobLedger {
+            high_water,
             records,
             storage: Some(storage),
             unhealthy: false,

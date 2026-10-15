@@ -16,7 +16,10 @@ let
   };
 in
 {
-  imports = [ (import ./options.nix self) ];
+  imports = [
+    (import ./options.nix self)
+    ./home-manager.nix
+  ];
   options.services.coeusd.uid = lib.mkOption {
     type = lib.types.nullOr lib.types.int;
     default = null;
@@ -62,7 +65,7 @@ in
           "--service-state-directory"
           cfg.stateDirectory
           "--config"
-          cfg.configFile
+          cfg.serverConfigFile
         ];
         UserName = cfg.user;
         GroupName = cfg.group;

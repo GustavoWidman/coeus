@@ -28,7 +28,7 @@ NixOS dedicated identity:
 {
   services.coeusd = {
     enable = true;
-    configFile = "/run/secrets/coeus-server.toml";
+    serverConfigFile = "/run/secrets/coeus-server.toml";
     enablePasswordlessActivation = true;
   };
 }
@@ -41,7 +41,7 @@ Darwin dedicated identity:
   services.coeusd = {
     enable = true;
     uid = 498; # EXAMPLE ONLY: allocate an unused UID on your host first
-    configFile = "/private/etc/coeus/server.toml";
+    serverConfigFile = "/private/etc/coeus/server.toml";
     enablePasswordlessActivation = true;
   };
 }
@@ -66,7 +66,7 @@ To reuse an existing user's Git/SSH configuration **without running as root**:
     group = "staff"; # e.g. "users" on NixOS; actual existing group required
     home = "/Users/deploy"; # e.g. /home/deploy on NixOS
     stateDirectory = "/var/lib/coeus/state";
-    configFile = "/private/etc/coeus/server.toml";
+    serverConfigFile = "/private/etc/coeus/server.toml";
     enablePasswordlessActivation = true;
   };
 }
@@ -85,13 +85,88 @@ The module owns HOME/USER/LOGNAME/PATH and the nh elevation strategy.
 
 ## Private runtime configuration and durable state
 
-`configFile` is required when enabled, must be absolute, and must **not**
-be a Nix store path. Do not use `pkgs.writeText` for a real PSK. Provision it
-through a runtime secret manager or a manual private installation. The
-resolved file must be owned by the service user with mode **0600 or 0400**;
-group/world-readable files, a symlink into `/nix/store`, missing files and
-root identities fail startup. HOME ownership and working-directory owner /
-mode 0700 are checked too. Startup does not fall back to embedded defaults.
+`serverConfigFile` replaces `configFile` (a deprecated compatibility alias). It
+must be absolute and supports two explicit classes:
+
+- **Private runtime TOML:** service-user-owned, mode **0400 or 0600**; contains
+  exactly one of inline `key` or an external `key_file`.
+- **Public Nix-store TOML:** root-owned, regular and non-writable, without special
+  mode bits; must use `key_file`. Inline PSKs in the store are rejected. This
+  cannot undo prior exposure if a secret was already placed in the store.
+
+For public store configuration, only public settings and a runtime secret **path**
+enter Nix derivations/service manifests, never the key bytes:
+
+```nix
+services.coeusd.serverConfigFile = toString (pkgs.writeText "coeus-server.toml" ''
+  [settings]
+  key_file = "/run/secrets/coeus-psk"
+  host = "127.0.0.1"
+  port = 45729
+  repo_url = "https://github.com/example/nix"
+  state_directory = ".coeus-state"
+'');
+```
+
+Provision the external PSK separately (agenix or another runtime secret manager).
+`key_file` must be absolute, resolve outside `/nix/store`, and name a regular
+service-user-owned file of mode **0400 or 0600**, with no special mode bits.
+It contains exactly **64 ASCII hexadecimal characters**, optionally followed by
+**one LF** (no CRLF, spaces, TOML or expansion). Both configuration and external
+secret may use runtime-secret symlinks. Resolution is followed by no-follow,
+nonblocking descriptor validation and bounded reads (64 KiB TOML, 65 bytes key).
+FIFOs/devices/directories, missing inputs, wrong ownership/modes and store-backed
+keys fail without default generation, config creation or secret writeback.
+Parent directories and same-UID writers remain trusted; this is not race isolation
+from a malicious service account. Do not print or serialize resolved settings.
+
+Both Linux and Darwin service startup and independent bootstrap/switch use the
+same immutable loader. The Linux shell entrypoint remains but delegates validation
+to native `coeusd`, just like Darwin. HOME ownership and non-root service identity,
+private mode-0700 working directory, umask and working-directory checks remain.
+The service user and independent activation operator must be able to read the
+preprovisioned secret. Rotation requires deliberately synchronizing peers and
+restarting; there is no generated fallback. A changed public store config path is
+a service identity change and retains the manual-switch rules.
+
+### Client configuration for Home Manager users
+
+When the NixOS or nix-darwin Home Manager module is imported, an optional
+`services.coeusd.clientConfigFile = "/run/secrets/coeus-client.toml";` adds a
+Home Manager activation entry to **every configured `home-manager.users` user**.
+It works on client-only hosts too (`services.coeusd.enable = false`).
+It copies the supplied runtime file to `${xdg.configHome}/coeus/config.toml`
+(normally `~/.config/coeus/config.toml`). Coeus uses that XDG location by default;
+`coeus --config PATH ...` still overrides it.
+
+```toml
+[settings]
+key = "REPLACE_WITH_64_HEX_CHARACTERS_FROM_openssl_rand_-hex_32"
+fleet = ["lab", "192.0.2.10:45729"]
+default_revision = "main"
+```
+
+The exact source content is copied **at activation time**, never read by the Nix
+evaluator, embedded in a derivation or passed to `home.file.*.source`. The source
+must be an absolute runtime path; store paths (including resolved symlinks) are
+rejected. The destination directory is mode **0700**, file **0600** and owned by
+the activating Home Manager user. Replacement uses a private temporary file and
+atomic rename. Existing Coeus directory/file symlinks are refused. A dry-run does
+not read the source or write anything. Removing the option stops distribution;
+it deliberately does not delete previously provisioned credentials.
+
+**Provision source access deliberately:** each Home Manager activation runs as
+its own user, not root. A root-only `0600` source is not readable by other users
+and activation will fail, rather than weakening source permissions or writing
+as root into user-controlled home paths. A runtime secret manager can supply a
+restricted group-readable source for the intended users. All recipients gain
+Coeus deployment authority through this shared PSK. Users outside
+`home-manager.users` are not touched; without Home Manager imported this option
+has no distribution effect. No implicit Home Manager dependency is added to hosts.
+
+`clientConfigFile` remains private runtime-only configuration; server `key_file`
+support does not publish or change client credentials. The distribution helper
+never reads secret contents at Nix evaluation time.
 
 Runtime TOML (replace the placeholder with a newly generated 32-byte PSK,
 shared only with authorized clients; never use the tracked public dev key):
@@ -183,10 +258,12 @@ The Darwin module starts the exact package's native `bin/coeusd` as
 `--service-state-directory` arguments enforce startup checks in-process before
 configuration loading, ledger access or listening: non-root effective UID;
 service-owned home and private mode-0700 working directory; readable, regular,
-service-owned mode-0400/0600 config resolving outside `/nix/store`. It follows
+private service-owned mode-0400/0600 config, or immutable public store TOML
+referencing a validated external runtime key as described above. It follows
 runtime-secret links, sets umask 077, and enters the configured working directory.
 A failed check exits without creating config or opening the ledger. Linux's
-existing wrapper and the restricted exact-closure elevation helper are unchanged.
+shell entrypoint delegates to the same native validator; the restricted exact-closure
+elevation helper is unchanged.
 
 This simplifies the LaunchDaemon's initial executable and macOS TCC responsible
 process chain, following the [Munki 7 launchd design](https://github.com/munki/munki/wiki/Munki-7-launchd-job-changes).
@@ -208,3 +285,15 @@ also identifies the installation path, so Nix-store path changes remain an
 upgrade concern even with stable signing. Manual permission retention and a
 second-version/path upgrade require real platform tests. Removing
 App Management checks or skipping app updates is not part of this change.
+
+## Module regression checks
+
+`nix build .#checks.x86_64-linux.modules` evaluates genuine NixOS and nix-darwin
+services without activation, including deprecated-option compatibility and hosts
+without Home Manager. `nix build .#checks.x86_64-linux.client-config` evaluates
+the real Home Manager integrations for both platforms and multiple users, then
+runs unprivileged runtime-copy fixtures. The Home Manager check alone fetches
+its fixed test-only source (revision `54ad640b81c5e9a32db1a29e7561fda628601117`,
+content hash in `nix/tests/home-manager.nix`); imported service modules do not.
+These checks do not install a service, prove macOS privacy consent or exercise a
+real user's Home Manager activation.

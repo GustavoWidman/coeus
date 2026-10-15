@@ -14,6 +14,15 @@ impl CoeusServer {
     }
     async fn handle_request(&self, packet: Packet) -> Result<Packet> {
         Ok(match packet {
+            Packet::HelloRequest(_) => HelloResponse {
+                protocol_version: PROTOCOL_VERSION,
+                version: env!("CARGO_PKG_VERSION").into(),
+            }
+            .into(),
+            Packet::MachineStatusRequest(_) => self.jobs.machine_status().await?.into(),
+            Packet::SharedTerminalRequest(request) => {
+                self.jobs.shared_terminal(*request).await?.into()
+            }
             Packet::IdentityRequest(_) => IdentityResponse {
                 identity: tokio::task::spawn_blocking(crate::activation::daemon_identity).await??,
             }

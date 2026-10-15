@@ -17,7 +17,11 @@ impl DeploymentJobs {
         let queue = self.queue.clone();
         let shutdown = self.shutdown.clone();
         let terminals = self.terminals.clone();
-        tokio::spawn(Self::admit(ledger, queue, shutdown, terminals, request)).await?
+        let feed = self.feed.clone();
+        tokio::spawn(Self::admit(
+            ledger, queue, shutdown, terminals, feed, request,
+        ))
+        .await?
     }
 
     async fn admit(
@@ -25,17 +29,21 @@ impl DeploymentJobs {
         queue: mpsc::Sender<QueuedDeploy>,
         shutdown: CancellationToken,
         terminals: super::terminal::Terminals,
+        feed: Arc<std::sync::Mutex<super::shared_terminal::SharedOutput>>,
         request: DeployRequest,
     ) -> Result<JobId> {
         let shared_ledger = ledger.clone();
         let mut ledger = ledger.lock().await;
         ledger.check_health()?;
-        let id = request.request_id;
-        if let Ok(record) = ledger.record(id) {
+        if let Some(record) = ledger
+            .records
+            .iter()
+            .find(|r| r.request.request_id == request.request_id)
+        {
             if record.request != request {
                 bail!("request ID conflicts with previously accepted options");
             }
-            return Ok(id);
+            return Ok(record.status.job_id);
         }
         if ledger
             .records
@@ -66,16 +74,41 @@ impl DeploymentJobs {
         if let Some(expired) = ledger.make_room()? {
             terminals.remove(&expired);
         }
+        let id = ledger
+            .high_water
+            .checked_add(1)
+            .ok_or_else(|| eyre::eyre!("job ID space exhausted"))?;
+        if let Some(storage) = &ledger.storage
+            && let Err(error) = storage.reserve_id(id).await
+        {
+            ledger.unhealthy = true;
+            for record in &mut ledger.records {
+                if !record.status.phase.is_terminal() {
+                    record.status.phase = crate::common::proto::DeployPhase::Interrupted;
+                    record.status.message = Some(
+                        "ID counter persistence failure; execution stopped; outcome uncertain"
+                            .into(),
+                    );
+                    record.cancellation.cancel();
+                }
+            }
+            return Err(error.wrap_err("persisting job ID high-water; admission blocked"));
+        }
+        ledger.high_water = id;
         let sequence = ledger
             .records
             .back()
-            .map_or(1, |record| record.sequence + 1);
+            .map_or(Some(1), |record| record.sequence.checked_add(1))
+            .ok_or_else(|| eyre::eyre!("job sequence exhausted"))?;
         let cancellation = shutdown.child_token();
         ledger.records.push_back(JobRecord::new(
             request.clone(),
             sequence,
             cancellation.clone(),
         ));
+        if let Some(record) = ledger.records.back_mut() {
+            record.status.job_id = id;
+        }
         ledger.persist(id).await?;
         let terminal = Arc::new(std::sync::Mutex::new(
             super::terminal::TerminalOutput::default(),
@@ -85,6 +118,7 @@ impl DeploymentJobs {
             request,
             context: JobContext {
                 id,
+                feed,
                 ledger: shared_ledger,
                 cancellation,
                 shutdown,

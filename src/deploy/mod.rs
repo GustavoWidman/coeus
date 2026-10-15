@@ -29,6 +29,16 @@ impl Deployer {
         Ok(Self { config })
     }
 
+    pub(crate) async fn activate_built(
+        store: &crate::activation::ReceiptStore,
+        id: u64,
+        executor: &dyn crate::activation::ActivationExecutor,
+        deadline: std::time::Duration,
+    ) -> Result<()> {
+        crate::activation::activate_deadline(store, id, executor, deadline).await?;
+        Ok(())
+    }
+
     pub async fn deploy(&self, options: &DeployRequest, context: &JobContext) -> Result<()> {
         debug!("deploying with options:\n{:?}", options);
 
@@ -108,11 +118,15 @@ impl Deployer {
             };
             let activation_store =
                 crate::activation::ReceiptStore::open_async(directory.clone()).await?;
-            let result = tokio::select! {
-                result = crate::activation::activate(&activation_store, id, &executor) => result,
-                _ = context.cancelled() => { eyre::bail!("activation interrupted; reconcile retained receipt before continuing"); },
-            };
-            result?;
+            // Cancellation/deadlines belong to the command owner: dropping this
+            // future would skip the privileged supervisor's joined cleanup.
+            Self::activate_built(
+                &activation_store,
+                id,
+                &executor,
+                std::time::Duration::from_secs(900),
+            )
+            .await?;
         }
 
         drop(repo); // only cleanup the temporary directory after the deployment is complete

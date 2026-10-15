@@ -26,7 +26,8 @@ any section inaccurate.
 - `src/bin/coeusd.rs` — daemon executable entry point.
 - `src/service_startup.rs` — native module-managed ownership/permission checks (Darwin).
 - `src/cli/` — clap argument definitions for the two binaries.
-- `src/client/` — client connection, request sending and raw output-only attachment.
+- `src/client/` — target resolution, authenticated connections, fleet dispatch/status,
+  raw cross-job/per-job attachment and fleet-only TUI.
 - `src/server/` — listener, connection handling, and packet dispatch.
 - `src/common/proto/` — protocol version, packet types, envelopes, and wire tests.
 - `src/common/stream/` — Noise-encrypted, length-delimited stream and I/O adapters.
@@ -47,12 +48,14 @@ files merely because they are already public entry points.
 ### Client
 
 1. `coeus` parses `MainCLIArgs`.
-2. `config::client_config` loads the configured client file through
-   `easy-config-store`; defaults are embedded at compile time and a default PSK is
-   replaced with a random key.
-3. `CoeusClient::new` opens a TCP connection and performs the Noise
+2. `config::client_config` loads the explicit file or XDG `coeus/config.toml`; it
+   never generates/replaces credentials. Client settings contain key, fleet and
+   default_revision. Config errors suppress secret-bearing source text.
+3. Targets resolve reserved aliases, local OpenSSH configuration then DNS.
+   `CoeusClient::new` opens a TCP connection and performs the Noise
    `Noise_NNpsk0_25519_ChaChaPoly_BLAKE2s` handshake.
-4. `run_command` uses `CoeusClient::request` to concurrently send an envelope and
+4. Authenticated hello precedes requests; fleet dispatch is bounded to eight peers.
+   `client::run` uses `CoeusClient::request` to concurrently send an envelope and
    receive one response. Cancellation/errors poison the connection against reuse;
    no deployment is automatically retried after an ambiguous acknowledgement.
 
@@ -83,13 +86,14 @@ lease excludes another daemon. Restart persists every unfinished record as Inter
 never replays it, and blocks new admission pending operator reconciliation. Durable IDs
 are not silently evicted. Git remains joined `spawn_blocking` with cooperative transfer
 cancellation, not a hard checkout deadline. Child commands own Unix process groups.
-See `docs/async-deployments.md` for crash windows, storage bounds and remaining gates.
+See `docs/fleet-client.md` and `docs/async-deployments.md` for crash windows, storage bounds and remaining gates.
 
 ## Protocol and stream invariants
 
 Treat the wire format as a compatibility boundary, not an implementation detail.
 
-- Protocol v5 adds authenticated daemon identity and manual-switch phase; v4 added raw terminal pages. The Noise prologue versions the session; both peers
+- Protocol v6 adds authenticated hello, machine status, shared cross-job output and
+  server-assigned IDs with separate retry nonces. v5 introduced identity/manual-switch; v4 raw terminal pages. The Noise prologue versions the session; both peers
   must upgrade together. `PROTOCOL_VERSION` is carried by `PacketEnvelope`; reject unsupported versions.
 - Packet IDs in `src/common/proto/mod.rs` are stable protocol identifiers. Never reuse
   an old ID for a different meaning.

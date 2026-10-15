@@ -13,6 +13,7 @@ pub use local::run_local;
 pub use receipt::read as read_receipt;
 pub use receipt::{ActivationState, Receipt, ReceiptStore, directory_for_ledger};
 pub use remote::{LocalArgs, RemoteArgs, run_remote};
+pub(crate) use switch::activate_deadline;
 pub use switch::{ActivationExecutor, NativeExecutor, activate, prepare, reconcile};
 
 #[cfg(test)]

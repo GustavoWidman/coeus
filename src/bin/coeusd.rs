@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
     );
 
     // Native service startup replaces the Darwin shell trampoline. Checks happen
-    // before config loading (which can create a missing file), ledger access or bind.
+    // before immutable config loading, ledger access or bind. No defaults are created.
     #[cfg(unix)]
     let config_path = match (args.service_home, args.service_state_directory) {
         (Some(home), Some(state)) => coeus::service_startup::prepare(&home, &state, &args.config)?,

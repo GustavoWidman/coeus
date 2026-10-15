@@ -21,6 +21,7 @@ pub(super) struct JobRecord {
     pub(super) cursor: u64,
     pub request: DeployRequest,
     pub sequence: u64,
+    pub started: bool,
 }
 
 impl JobRecord {
@@ -36,6 +37,7 @@ impl JobRecord {
             },
             request,
             sequence,
+            started: false,
             cancellation,
             entries: VecDeque::new(),
             cursor: 0,
@@ -85,6 +87,7 @@ pub(super) struct JobLedger {
     pub records: VecDeque<JobRecord>,
     pub storage: Option<std::sync::Arc<super::storage::JobStorage>>,
     pub unhealthy: bool,
+    pub high_water: u64,
 }
 
 impl JobLedger {

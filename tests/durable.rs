@@ -87,12 +87,12 @@ async fn abrupt_exit_retains_admission_and_logs_but_never_replays_uncertain_swit
     );
     let recovered =
         DeploymentJobs::open(Arc::new(NeverExecute), state.clone(), "fixture".into()).await?;
-    assert_eq!(recovered.accept(request()).await?, REQUEST_ID);
+    assert_eq!(recovered.accept(request()).await?, 1);
     assert_eq!(
-        recovered.status(Some(REQUEST_ID)).await?[0].phase,
+        recovered.status(Some(1)).await?[0].phase,
         DeployPhase::Interrupted
     );
-    let logs = recovered.logs(REQUEST_ID, 0).await?;
+    let logs = recovered.logs(1, 0).await?;
     assert!(logs.finished);
     assert!(
         logs.entries
@@ -103,6 +103,6 @@ async fn abrupt_exit_retains_admission_and_logs_but_never_replays_uncertain_swit
     new_request.request_id += 1;
     assert!(recovered.accept(new_request).await.is_err());
     recovered.shutdown().await;
-    assert!(Path::new(&state).join(format!("{REQUEST_ID}.job")).exists());
+    assert!(Path::new(&state).join("1.job").exists());
     Ok(())
 }

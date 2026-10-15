@@ -179,7 +179,7 @@ async fn durable_lost_ack_retry_is_one_execution_and_recovered_handle() -> Resul
         let shutdown = CancellationToken::new();
         let task = tokio::spawn(server.run_until_cancelled(shutdown.clone()));
         let original = request();
-        let id = original.request_id;
+        let id = 1; // first server-assigned ID, independent of retry nonce
         let mut lost = EncryptedStream::connect(address, &TEST_PSK).await?;
         lost.send(original.clone()).await?;
         drop(lost);
@@ -234,6 +234,52 @@ async fn durable_lost_ack_retry_is_one_execution_and_recovered_handle() -> Resul
         };
         assert_eq!(status.jobs[0].phase, DeployPhase::Cancelled);
         assert!(receiver.try_recv().is_err());
+        shutdown.cancel();
+        task.await??;
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn authenticated_machine_hello_status_and_shared_feed_require_no_job_id() -> Result<()> {
+    timeout(Duration::from_secs(5), async {
+        let server = CoeusServer::with_executor(
+            "127.0.0.1:0".parse()?,
+            &TEST_PSK,
+            Arc::new(FakeExecutor {
+                started: mpsc::unbounded_channel().0,
+                release: Arc::new(Semaphore::new(0)),
+            }),
+        )
+        .await?;
+        let address = server.local_addr()?;
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.run_until_cancelled(shutdown.clone()));
+        let mut client = EncryptedStream::connect(address, &TEST_PSK).await?;
+        client.send(HelloRequest {}).await?;
+        let Some(Packet::HelloResponse(hello)) = client.recv().await? else {
+            panic!("missing authenticated hello")
+        };
+        assert_eq!(hello.protocol_version, PROTOCOL_VERSION);
+        assert_eq!(hello.version, env!("CARGO_PKG_VERSION"));
+        client.send(MachineStatusRequest {}).await?;
+        let Some(Packet::MachineStatusResponse(status)) = client.recv().await? else {
+            panic!("missing machine status")
+        };
+        assert!(status.active.is_none() && status.latest.is_none());
+        client
+            .send(SharedTerminalRequest {
+                after: None,
+                size: Default::default(),
+            })
+            .await?;
+        let Some(Packet::SharedTerminalResponse(page)) = client.recv().await? else {
+            panic!("missing shared feed")
+        };
+        assert_eq!(page.next_cursor, 0);
+        assert!(page.chunks.is_empty() && !page.gap);
         shutdown.cancel();
         task.await??;
         Ok::<_, eyre::Report>(())

@@ -110,3 +110,93 @@ impl CoeusClient {
         bail!("terminal attachment requires Unix");
     }
 }
+
+#[cfg(unix)]
+impl CoeusClient {
+    pub(super) async fn attach_shared(&mut self, live: bool, after: Option<u64>) -> Result<()> {
+        let mut cursor = if live { None } else { Some(after.unwrap_or(0)) };
+        let mut interrupt =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
+        let output = super::terminal_output::TerminalOutput::new()?;
+        loop {
+            let response = tokio::select! {
+                biased;
+                _ = interrupt.recv() => return Ok(()),
+                response = self.request(SharedTerminalRequest { after: cursor, size: local_size() }) => response?,
+            };
+            let Packet::SharedTerminalResponse(page) = response else {
+                bail!("unexpected shared terminal response");
+            };
+            validate_shared_page(cursor, &page)?;
+            for chunk in &page.chunks {
+                tokio::select! {
+                    biased;
+                    _ = interrupt.recv() => return Ok(()),
+                    result = output.write(&chunk.bytes) => result?,
+                }
+            }
+            cursor = Some(page.next_cursor);
+            if page.chunks.iter().all(|chunk| chunk.bytes.is_empty()) {
+                tokio::select! { _ = interrupt.recv() => return Ok(()), _ = tokio::time::sleep(Duration::from_millis(50)) => {} }
+            }
+        }
+    }
+}
+fn validate_shared_page(cursor: Option<u64>, page: &SharedTerminalResponse) -> Result<()> {
+    ensure!(
+        !page.gap,
+        "shared terminal history gap; explicitly reattach --live to skip lost output"
+    );
+    let bytes = page.chunks.iter().try_fold(0usize, |sum, chunk| {
+        sum.checked_add(chunk.bytes.len())
+            .ok_or_else(|| eyre::eyre!("shared page size overflow"))
+    })?;
+    ensure!(
+        bytes <= TERMINAL_PAGE_BYTES,
+        "oversized shared terminal page"
+    );
+    if let Some(cursor) = cursor {
+        ensure!(
+            cursor.checked_add(bytes as u64) == Some(page.next_cursor),
+            "invalid shared terminal cursor"
+        );
+    } else {
+        ensure!(bytes == 0, "live attach returned historical output");
+    }
+    Ok(())
+}
+#[cfg(not(unix))]
+impl CoeusClient {
+    pub(super) async fn attach_shared(&mut self, _live: bool, _after: Option<u64>) -> Result<()> {
+        bail!("terminal attachment requires Unix");
+    }
+}
+#[cfg(test)]
+mod shared_tests {
+    use super::*;
+    #[test]
+    fn validates_cross_job_cursor_and_rejects_loss_and_oversize() -> Result<()> {
+        let mut page = SharedTerminalResponse {
+            chunks: vec![
+                SharedTerminalChunk {
+                    job_id: 1,
+                    bytes: b"a".to_vec(),
+                },
+                SharedTerminalChunk {
+                    job_id: 2,
+                    bytes: b"bc".to_vec(),
+                },
+            ],
+            next_cursor: 3,
+            gap: false,
+        };
+        validate_shared_page(Some(0), &page)?;
+        assert!(validate_shared_page(None, &page).is_err());
+        page.gap = true;
+        assert!(validate_shared_page(Some(0), &page).is_err());
+        page.gap = false;
+        page.next_cursor = 4;
+        assert!(validate_shared_page(Some(0), &page).is_err());
+        Ok(())
+    }
+}

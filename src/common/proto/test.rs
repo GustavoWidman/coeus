@@ -56,7 +56,7 @@ fn v5_ack_and_status_request_have_fixed_encoding() {
     );
     assert_eq!(
         postcard::to_stdvec(&envelope).unwrap(),
-        vec![5, 0x81, 2, 4, 42, 2, b'o', b'k']
+        vec![6, 0x81, 2, 4, 42, 2, b'o', b'k']
     );
     let packet: Packet = StatusRequest {
         job_id: Some(42),
@@ -224,7 +224,68 @@ fn v5_identity_request_and_appended_phase_preserve_old_disk_encoding() {
     assert_eq!(packet.kind(), 0x0300);
     assert_eq!(postcard::to_stdvec(&packet).unwrap(), vec![0x80, 0x06, 0]);
     let encoded = postcard::to_stdvec(&PacketEnvelope::new(packet)).unwrap();
-    assert_eq!(encoded[0], 5);
+    assert_eq!(encoded[0], 6);
     let decoded: PacketEnvelope = postcard::from_bytes(&encoded).unwrap();
     decoded.validate().unwrap();
+}
+
+#[test]
+fn v6_machine_queries_have_unique_kinds_and_exact_hello_encoding() {
+    let hello: Packet = HelloRequest {}.into();
+    assert_eq!(hello.kind(), 0x0302);
+    assert_eq!(
+        postcard::to_stdvec(&PacketEnvelope::new(hello)).unwrap(),
+        vec![6, 0x82, 6, 0]
+    );
+    let packets: Vec<Packet> = vec![
+        HelloResponse {
+            protocol_version: PROTOCOL_VERSION,
+            version: "fixture".into(),
+        }
+        .into(),
+        MachineStatusRequest {}.into(),
+        MachineStatusResponse {
+            active: None,
+            latest: None,
+        }
+        .into(),
+        SharedTerminalRequest {
+            after: Some(0),
+            size: Default::default(),
+        }
+        .into(),
+        SharedTerminalResponse {
+            chunks: vec![SharedTerminalChunk {
+                job_id: 1,
+                bytes: b"\x1b[31m\r".to_vec(),
+            }],
+            next_cursor: 6,
+            gap: false,
+        }
+        .into(),
+    ];
+    for packet in packets {
+        let bytes = postcard::to_stdvec(&packet).unwrap();
+        let decoded: Packet = postcard::from_bytes(&bytes).unwrap();
+        assert_eq!(decoded.kind(), packet.kind());
+        assert_eq!(postcard::to_stdvec(&decoded).unwrap(), bytes);
+    }
+}
+
+#[test]
+fn shared_terminal_maximum_chunk_overhead_fits_noise_frame() {
+    let response = PacketEnvelope::new(
+        SharedTerminalResponse {
+            chunks: (0..TERMINAL_PAGE_BYTES)
+                .map(|_| SharedTerminalChunk {
+                    job_id: u64::MAX,
+                    bytes: vec![0xff],
+                })
+                .collect(),
+            next_cursor: u64::MAX,
+            gap: false,
+        }
+        .into(),
+    );
+    assert!(postcard::to_stdvec(&response).unwrap().len() <= u16::MAX as usize - 16);
 }

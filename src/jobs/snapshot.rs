@@ -1,11 +1,11 @@
 //! Versioned on-disk schema and bounded field validation.
-use super::ledger::{JobRecord, MAX_JOBS, MAX_LOGS, MAX_TEXT};
+use super::ledger::{JobRecord, MAX_LOGS, MAX_TEXT};
 use crate::common::proto::{DeployRequest, JobStatus, LogEntry};
 use eyre::{Result, bail};
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, path::Path};
 use tokio_util::sync::CancellationToken;
-const FORMAT_VERSION: u8 = 1;
+const FORMAT_VERSION: u8 = 2;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct Snapshot {
@@ -16,6 +16,7 @@ pub(super) struct Snapshot {
     pub(super) status: JobStatus,
     pub(super) entries: VecDeque<LogEntry>,
     pub(super) cursor: u64,
+    pub(super) started: bool,
 }
 
 impl Snapshot {
@@ -28,19 +29,19 @@ impl Snapshot {
             status: record.status.clone(),
             entries: record.entries.clone(),
             cursor: record.cursor,
+            started: record.started,
         }
     }
     pub(super) fn validate(&self, scope: &str, path: &Path) -> Result<()> {
         let id = self.status.job_id;
-        if self.version != FORMAT_VERSION
+        if !matches!(self.version, 1 | FORMAT_VERSION)
             || self.scope != scope
             || id == 0
-            || id != self.request.request_id
+            || (self.version == 1 && id != self.request.request_id)
             || path
                 .file_name()
                 .is_none_or(|name| name != format!("{id}.job").as_str())
             || self.sequence == 0
-            || self.sequence > MAX_JOBS as u64
             || self.status.revision != self.request.rev
         {
             bail!("incompatible or inconsistent job snapshot");
@@ -88,6 +89,49 @@ impl Snapshot {
             cancellation: CancellationToken::new(),
             entries: self.entries,
             cursor: self.cursor,
+            started: self.started,
+        }
+    }
+}
+
+/// Exact pre-v6 disk shape. Do not append optional serde fields to postcard and
+/// assume EOF defaults: its positional representation requires explicit decoding.
+#[derive(Serialize, Deserialize)]
+pub(super) struct LegacySnapshot {
+    pub version: u8,
+    pub scope: String,
+    pub sequence: u64,
+    pub request: DeployRequest,
+    pub status: JobStatus,
+    pub entries: VecDeque<LogEntry>,
+    pub cursor: u64,
+}
+impl Snapshot {
+    pub(super) fn decode(bytes: &[u8]) -> Result<Self> {
+        if bytes.first() == Some(&1) {
+            let (old, rest): (LegacySnapshot, _) = postcard::take_from_bytes(bytes)?;
+            if !rest.is_empty() {
+                bail!("trailing data in legacy job snapshot");
+            }
+            // Old snapshots did not record a started bit. Nonqueued records are
+            // conservatively treated as having run; preserve real outcome/state.
+            let started = old.status.phase != crate::common::proto::DeployPhase::Queued;
+            Ok(Self {
+                version: old.version,
+                scope: old.scope,
+                sequence: old.sequence,
+                request: old.request,
+                status: old.status,
+                entries: old.entries,
+                cursor: old.cursor,
+                started,
+            })
+        } else {
+            let (snapshot, rest): (Self, _) = postcard::take_from_bytes(bytes)?;
+            if !rest.is_empty() {
+                bail!("trailing data in job snapshot");
+            }
+            Ok(snapshot)
         }
     }
 }

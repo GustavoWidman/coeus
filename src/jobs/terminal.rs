@@ -76,7 +76,7 @@ impl TerminalOutput {
             error,
         })
     }
-    fn resize(&mut self, size: TerminalSize) -> Result<()> {
+    pub(super) fn resize(&mut self, size: TerminalSize) -> Result<()> {
         #[cfg(unix)]
         if size != self.size
             && let Some(master) = &self.master

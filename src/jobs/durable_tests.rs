@@ -84,7 +84,9 @@ async fn restart_interrupts_each_uncertain_phase_without_execution_or_admission(
     .into_iter()
     .enumerate()
     {
-        let original = request("ok");
+        let mut original = request("ok");
+        original.request_id = index as u64 + 1;
+        storage.reserve_id(original.request_id).await?;
         let mut record =
             JobRecord::new(original.clone(), index as u64 + 1, CancellationToken::new());
         record.status.phase = phase;
@@ -170,7 +172,7 @@ async fn durable_retention_stops_admission_without_expiring_idempotency() -> Res
     let recovered = open(&state).await?;
     assert_eq!(recovered.accept(first).await?, first_id);
     assert_eq!(recovered.status(None).await?.len(), ledger::MAX_JOBS);
-    assert!(std::fs::read_dir(&state)?.count() <= ledger::MAX_JOBS + 1);
+    assert!(std::fs::read_dir(&state)?.count() <= ledger::MAX_JOBS + 3);
     for entry in std::fs::read_dir(&state)? {
         assert!(entry?.metadata()?.len() <= 300 * 1024);
     }
@@ -230,10 +232,10 @@ async fn persistence_failure_stops_execution_and_never_returns_acceptance() -> R
     let jobs = open(&state).await?;
     // Deterministic rename failure, not a flaky disk-space test.
     let original = request("ok");
-    std::fs::create_dir(state.join(format!("{}.job", original.request_id)))?;
+    std::fs::create_dir(state.join("1.job"))?;
     assert!(jobs.accept(original.clone()).await.is_err());
     assert_eq!(
-        jobs.status(Some(original.request_id)).await?[0].phase,
+        jobs.status(Some(1)).await?[0].phase,
         DeployPhase::Interrupted
     );
     assert!(jobs.accept(original).await.is_err());
@@ -339,6 +341,7 @@ async fn legacy_control_fragments_load_without_rewriting_history() -> Result<()>
     // Unicode direction marks survived. Do not invent or rewrite lost content.
     let legacy = "[32mBuilding[0m[2KDone\u{202e}";
     record.entries[0].text = legacy.into();
+    storage.reserve_id(id).await?;
     storage.save(&record).await?;
     drop(storage);
     let path = state.join(format!("{id}.job"));

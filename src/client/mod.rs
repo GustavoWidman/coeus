@@ -1,4 +1,8 @@
 mod commands;
+mod fleet;
+pub mod target;
+mod tui;
+pub use fleet::run;
 mod terminal;
 #[cfg(unix)]
 mod terminal_output;
@@ -6,13 +10,19 @@ use colored::Colorize;
 use eyre::{Result, eyre};
 use log::{debug, error, info};
 
-use crate::{
-    common::{
-        proto::Packet,
-        stream::{EncryptedReadHalf, EncryptedStream, EncryptedWriteHalf},
-    },
-    config::ClientConfig,
+use crate::common::{
+    proto::Packet,
+    stream::{EncryptedReadHalf, EncryptedStream, EncryptedWriteHalf},
 };
+
+#[derive(Debug)]
+pub struct EndpointUnreachable(pub std::net::SocketAddr);
+impl std::fmt::Display for EndpointUnreachable {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "endpoint {} unreachable", self.0)
+    }
+}
+impl std::error::Error for EndpointUnreachable {}
 
 pub struct CoeusClient {
     stream: EncryptedStream,
@@ -20,25 +30,44 @@ pub struct CoeusClient {
 }
 
 impl CoeusClient {
-    pub async fn new(config: ClientConfig) -> Result<Self> {
-        let stream = Self::connect(
-            config.address(),
-            &config.key,
-            std::time::Duration::from_secs(10),
+    /// Authenticate before any request or bootstrap decision. A live peer with a bad
+    /// key/protocol is NEVER classified as unreachable.
+    pub async fn new(address: std::net::SocketAddr, key: &[u8; 32]) -> Result<Self> {
+        let tcp = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            tokio::net::TcpStream::connect(address),
         )
-        .await?;
-
-        info!(
-            "connected to coeus peer at {}",
-            config.address().to_string().magenta()
-        );
-
-        Ok(Self {
+        .await
+        .map_err(|_| EndpointUnreachable(address))?
+        .map_err(|_| EndpointUnreachable(address))?;
+        let stream = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            EncryptedStream::initiate(tcp, key),
+        )
+        .await
+        .map_err(|_| {
+            eyre!("Noise handshake deadline exceeded; endpoint exists, refusing bootstrap")
+        })??;
+        let mut client = Self {
             stream,
             usable: true,
-        })
+        };
+        let crate::common::proto::Packet::HelloResponse(hello) = client
+            .request(crate::common::proto::HelloRequest {})
+            .await?
+        else {
+            return Err(eyre!(
+                "unexpected authenticated hello response; refusing bootstrap"
+            ));
+        };
+        eyre::ensure!(
+            hello.protocol_version == crate::common::proto::PROTOCOL_VERSION,
+            "incompatible daemon protocol; refusing bootstrap"
+        );
+        Ok(client)
     }
 
+    #[cfg(test)]
     async fn connect(
         address: std::net::SocketAddr,
         key: &[u8; 32],

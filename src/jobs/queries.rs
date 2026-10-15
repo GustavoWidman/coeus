@@ -6,6 +6,21 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 impl DeploymentJobs {
+    pub async fn machine_status(&self) -> Result<crate::common::proto::MachineStatusResponse> {
+        let ledger = self.ledger.lock().await;
+        let active = ledger.records.iter().find(|r| {
+            !r.status.phase.is_terminal()
+                && r.status.phase != crate::common::proto::DeployPhase::Queued
+        });
+        let latest = active
+            .or_else(|| ledger.records.iter().rev().find(|r| r.started))
+            .or_else(|| ledger.records.back());
+        Ok(crate::common::proto::MachineStatusResponse {
+            active: active.map(|r| r.status.clone()),
+            latest: latest.map(|r| r.status.clone()),
+        })
+    }
+
     pub async fn status(&self, id: Option<JobId>) -> Result<Vec<JobStatus>> {
         let ledger = self.ledger.lock().await;
         match id {
@@ -72,6 +87,16 @@ impl DeploymentJobs {
         }
         if !record.status.phase.is_terminal() {
             record.status.cancel_requested = true;
+            if record.status.phase == crate::common::proto::DeployPhase::Queued {
+                // Never-started queued work can settle without waiting behind
+                // an activation barrier. Worker will observe its cancelled token.
+                record.status.phase = crate::common::proto::DeployPhase::Cancelled;
+                record.status.message = Some("cancelled before execution".into());
+                record.append(
+                    crate::common::proto::LogSource::Lifecycle,
+                    "Cancelled before execution",
+                );
+            }
         }
         ledger.persist(id).await?;
         let record = ledger.record(id)?;

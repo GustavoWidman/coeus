@@ -32,14 +32,15 @@ not authorize new privileged activation commands or change the manual-switch gat
 
 ## normal deployments
 
-`coeus deploy --rev COMMIT` keeps its durable request ID, FIFO admission, PTY
+`coeus deploy TARGET --rev COMMIT` keeps its durable retry nonce (distinct from the
+server-assigned ascending job ID), FIFO admission, PTY
 attachment, compact logs and explicit cancellation. Ordinary builds whose service
 identity is unchanged activate automatically. NixOS follows pinned nh 4.4.2's
 **test → exact profile update → boot** contract. Darwin updates the exact profile
 then invokes `CLOSURE/sw/bin/darwin-rebuild activate`; neither uses `nh switch .`.
 
 **`--dry-run` now means build-only**: no profile update, activation or service
-restart. Its retained receipt cannot subsequently activate. Submit a new deploy ID
+restart. Its retained receipt cannot subsequently activate. Submit a new deployment nonce
 without `--dry-run` to request activation. This deliberately corrects the previous
 misleading flag that only disabled eval-cache and still switched the host.
 
@@ -194,10 +195,13 @@ Automated acceptance uses injected build/activation/SSH/service-health executors
 throwaway ledgers and loopback encrypted transports only. No real SSH, activation,
 Nix profile, launchd/systemd daemon or laptop configuration is changed by tests.
 Source/module evaluation and Linux tests are not native Darwin activation proof.
-Protocol **v5** changes the Noise prologue and adds authenticated identity requests;
-upgrade both client and daemon together. On-disk phase variants were appended, so
-existing v1 ledgers keep their encoding; no history is deleted or rewritten to
-unblock admission.
+Protocol **v5** introduced the changed Noise prologue and authenticated identity
+requests. Current protocol **v6** adds authenticated hello, fleet machine status,
+shared cross-job output and server-assigned IDs with separate retry nonces; upgrade
+both client and daemon together. See [fleet client](fleet-client.md) for configuration
+migration and target-aware commands. Historical on-disk phase variants were appended;
+ledger migration preserves retained history rather than deleting it to unblock
+admission.
 
 ### Explicit target hostname
 

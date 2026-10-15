@@ -1,11 +1,11 @@
 //! Module-managed startup checks, in-process so launchd starts the native daemon.
-//! No config/state is created until these checks succeed. Manual CLI startup and
-//! the Linux module's existing wrapper retain their previous behavior.
+//! No config/state is created until these checks succeed. Both platform modules
+//! and independent activation share immutable config/secret validation.
 use eyre::{Context, Result, ensure};
 use nix::{sys::stat::Mode, unistd::geteuid};
 use std::{
-    fs::{self, OpenOptions},
-    os::unix::fs::{MetadataExt, OpenOptionsExt},
+    fs,
+    os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
 };
 
@@ -35,35 +35,10 @@ fn validate(home: &Path, state: &Path, config: &Path, uid: u32) -> Result<PathBu
         state_meta.is_dir() && state_meta.uid() == uid && state_meta.mode() & 0o7777 == 0o700,
         "Coeus service state must be a service-owned directory with mode 0700"
     );
-    // Follow agenix/runtime secret links, but never accept a resolved store secret.
-    let config = fs::canonicalize(config).wrap_err("cannot resolve Coeus service config")?;
-    ensure!(
-        !config.starts_with("/nix/store"),
-        "coeusd config must not be in the store"
-    );
-    // Reject FIFO/device/directory configs after a nonblocking open: a malformed
-    // FIFO must not hang startup, and a replaced final symlink must not be followed.
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags((nix::fcntl::OFlag::O_NONBLOCK | nix::fcntl::OFlag::O_NOFOLLOW).bits())
-        .open(&config)
-        .wrap_err("cannot read Coeus service config")?;
-    let metadata = file
-        .metadata()
-        .wrap_err("cannot inspect Coeus service config")?;
-    ensure!(
-        metadata.is_file() && metadata.uid() == uid,
-        "Coeus service config must be a regular file owned by the service user"
-    );
-    ensure!(
-        private_config_mode(metadata.mode()),
-        "Coeus service config mode must be 0600 or 0400"
-    );
+    // The same immutable loader validates private config or public store TOML
+    // plus its external private key before state/bind work on both platforms.
+    let (config, _) = crate::config::server::files_for_startup(config, uid)?;
     Ok(config)
-}
-
-fn private_config_mode(mode: u32) -> bool {
-    matches!(mode & 0o7777, 0o600 | 0o400)
 }
 
 #[cfg(test)]
@@ -86,7 +61,13 @@ mod tests {
             let config = home.join("config.toml");
             fs::create_dir_all(&state)?;
             fs::set_permissions(&state, fs::Permissions::from_mode(0o700))?;
-            fs::write(&config, "not parsed during validation")?;
+            fs::write(
+                &config,
+                format!(
+                    "[settings]\nkey = \"{}\"\nhost = \"127.0.0.1\"\nrepo_url = \"https://example.invalid/nix\"\n",
+                    "42".repeat(32)
+                ),
+            )?;
             fs::set_permissions(&config, fs::Permissions::from_mode(0o600))?;
             let uid = fs::metadata(&config)?.uid();
             Ok(Self {
@@ -179,13 +160,6 @@ mod tests {
 
     #[test]
     fn rejects_non_private_state_and_config_modes_including_special_bits() -> Result<()> {
-        // SUID/SGID chmod is intentionally prohibited by the Nix sandbox. Test
-        // the actual production predicate directly rather than needing privilege.
-        assert!(private_config_mode(0o100600));
-        assert!(private_config_mode(0o100400));
-        for mode in [0o1600, 0o2400, 0o2600, 0o4400, 0o4600] {
-            assert!(!private_config_mode(mode));
-        }
         let fixture = Fixture::new()?;
         if fixture.uid == 0 {
             return Ok(());
@@ -266,7 +240,7 @@ mod tests {
                     .validate()
                     .unwrap_err()
                     .to_string()
-                    .contains("store")
+                    .contains("regular file")
             );
         }
         Ok(())

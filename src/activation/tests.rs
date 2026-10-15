@@ -63,11 +63,12 @@ impl ActivationExecutor for Fake {
     fn validate<'a>(&'a self, _: &'a Receipt) -> BoxFuture<'a, Result<()>> {
         Box::pin(async { Ok(()) })
     }
-    fn switch<'a>(&'a self, _: &'a Receipt) -> BoxFuture<'a, Result<()>> {
+    fn switch<'a>(&'a self, _: &'a Receipt, deadline: Duration) -> BoxFuture<'a, Result<()>> {
         Box::pin(async move {
             self.switched.fetch_add(1, Ordering::SeqCst);
             if self.hang.load(Ordering::SeqCst) {
-                futures_util::future::pending::<()>().await;
+                tokio::time::sleep(deadline).await;
+                bail!("activation deadline exceeded; outcome uncertain");
             }
             ensure!(
                 !self.fail.load(Ordering::SeqCst),
@@ -602,7 +603,9 @@ impl crate::jobs::DeploymentExecutor for LoggedActivationFixture {
                 operator_sudo: false,
                 output: Some(context),
             };
-            executor.switch(&self.receipt).await
+            executor
+                .switch(&self.receipt, Duration::from_secs(900))
+                .await
         })
     }
 }

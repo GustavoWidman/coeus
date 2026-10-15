@@ -13,6 +13,7 @@ use std::{
 };
 
 const MAX_SNAPSHOT: usize = 300 * 1024;
+const LEDGER_FORMAT: &[u8] = b"coeus-ledger-v2\n";
 
 pub(super) struct JobStorage {
     directory: PathBuf,
@@ -20,6 +21,7 @@ pub(super) struct JobStorage {
     // The handle lifetime is the ownership lease, including all I/O tasks.
     _lock: File,
     io: std::sync::Mutex<()>,
+    high_water: std::sync::atomic::AtomicU64,
 }
 
 impl JobStorage {
@@ -74,15 +76,31 @@ impl JobStorage {
             scope,
             _lock: lock,
             io: std::sync::Mutex::new(()),
+            high_water: std::sync::atomic::AtomicU64::new(0),
         });
         let mut records = Vec::new();
+        let mut has_v2_history = false;
         for entry in fs::read_dir(&storage.directory)? {
             let path = entry?.path();
             Self::regular_file(&path)?;
-            if path
-                .file_name()
-                .is_some_and(|name| name == "ledger.lock" || name == "snapshot.pending")
+            if path.file_name().is_some_and(|name| name == "id-counter")
+                && path.metadata()?.len() != 8
             {
+                bail!("invalid job ID counter size");
+            }
+            if path.file_name().is_some_and(|name| name == "ledger-format")
+                && path.metadata()?.len() != LEDGER_FORMAT.len() as u64
+            {
+                bail!("invalid job ledger format marker size");
+            }
+            if path.file_name().is_some_and(|name| {
+                name == "ledger.lock"
+                    || name == "snapshot.pending"
+                    || name == "id-counter.pending"
+                    || name == "id-counter"
+                    || name == "ledger-format"
+                    || name == "ledger-format.pending"
+            }) {
                 continue;
             }
             if path.extension().is_none_or(|extension| extension != "job") {
@@ -95,11 +113,9 @@ impl JobStorage {
                 bail!("job snapshot exceeds size bound");
             }
             let bytes = fs::read(&path)?;
-            let (snapshot, remaining): (Snapshot, _) = postcard::take_from_bytes(&bytes)?;
-            if !remaining.is_empty() {
-                bail!("trailing data in job snapshot");
-            }
+            let snapshot = Snapshot::decode(&bytes)?;
             snapshot.validate(&storage.scope, &path)?;
+            has_v2_history |= snapshot.version == 2;
             records.push(snapshot.into_record());
         }
         records.sort_by_key(|record| record.sequence);
@@ -108,7 +124,108 @@ impl JobStorage {
                 bail!("duplicate job admission sequence");
             }
         }
+        let mut nonces = std::collections::HashSet::new();
+        for record in &records {
+            if !nonces.insert(record.request.request_id) {
+                bail!("duplicate retained request nonce");
+            }
+        }
+        let marker = storage.directory.join("ledger-format");
+        let initialized = match fs::read(&marker) {
+            Ok(bytes) if bytes == LEDGER_FORMAT => true,
+            Ok(_) => {
+                bail!("invalid job ledger format marker");
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => return Err(error.into()),
+        };
+        let counter = storage.directory.join("id-counter");
+        let saved = match fs::read(&counter) {
+            Ok(bytes) => Some(u64::from_be_bytes(
+                bytes
+                    .try_into()
+                    .map_err(|_| eyre::eyre!("invalid job ID counter"))?,
+            )),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.into()),
+        };
+        let legacy_max = records.iter().map(|r| r.status.job_id).max().unwrap_or(0);
+        match saved {
+            Some(saved) if saved < legacy_max => {
+                bail!("job ID counter precedes retained history");
+            }
+            None if initialized
+                || has_v2_history
+                || storage.directory.join("ledger-format.pending").exists()
+                || storage.directory.join("id-counter.pending").exists() =>
+            {
+                bail!("initialized job ledger is missing its ID counter; reconcile offline");
+            }
+            _ => {}
+        }
+        // A genuinely new directory or v1-only migration initializes the counter
+        // before the marker, and both precede any v2 snapshot or admission. Never
+        // reconstruct an initialized v2 counter from retained (possibly pruned) IDs.
+        let high_water = saved.unwrap_or(legacy_max);
+        if saved.is_none() {
+            storage.write_counter(high_water)?;
+        } else {
+            storage
+                .high_water
+                .store(high_water, std::sync::atomic::Ordering::Relaxed);
+        }
+        if !initialized {
+            storage.write_atomic("ledger-format", LEDGER_FORMAT)?;
+        }
         Ok((storage, records.into()))
+    }
+
+    pub fn high_water(&self) -> u64 {
+        self.high_water.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    /// Reserve before snapshot/ACK. Crashes may burn a number, never reuse one.
+    pub async fn reserve_id(self: &Arc<Self>, id: u64) -> Result<()> {
+        let storage = self.clone();
+        tokio::task::spawn_blocking(move || {
+            let _guard = storage
+                .io
+                .lock()
+                .map_err(|_| eyre::eyre!("counter writer poisoned"))?;
+            if id <= storage.high_water() {
+                bail!("job ID must increase");
+            }
+            storage.write_counter(id)?;
+            Ok(())
+        })
+        .await?
+    }
+
+    // Caller owns the I/O mutex, or the storage has not yet been published by load.
+    fn write_counter(&self, id: u64) -> Result<()> {
+        self.write_atomic("id-counter", &id.to_be_bytes())?;
+        self.high_water
+            .store(id, std::sync::atomic::Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn write_atomic(&self, name: &str, bytes: &[u8]) -> Result<()> {
+        let pending = self.directory.join(format!("{name}.pending"));
+        if fs::symlink_metadata(&pending).is_ok() {
+            Self::regular_file(&pending)?;
+        }
+        let mut options = OpenOptions::new();
+        options.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600).custom_flags(nix::libc::O_NOFOLLOW);
+        }
+        let mut file = options.open(&pending)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(pending, self.directory.join(name))?;
+        File::open(&self.directory)?.sync_all()?;
+        Ok(())
     }
 
     pub async fn save(self: &Arc<Self>, record: &JobRecord) -> Result<()> {

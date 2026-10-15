@@ -26,6 +26,7 @@ impl JobContext {
     }
     pub async fn wait_for_switch(&self) -> Result<()> {
         let mut reported_unreadable = false;
+        let mut cancellation_seen = None;
         loop {
             let cancel = self
                 .ledger
@@ -46,11 +47,24 @@ impl JobContext {
                 Ok(super::switch_failure::Settlement::Cancelled) => {
                     bail!("retained build cancelled before activation");
                 }
+                Ok(_) if cancel => {
+                    bail!(
+                        "cancellation requested after activation intent; outcome uncertain; no replay"
+                    );
+                }
                 Ok(_) => {} // Ready/Activating/Uncertain: never replay.
                 Err(error) if error.is::<super::switch_failure::RevocationFailure>() => {
                     // Do not retry a failed persistence operation or trust its
                     // readable post-rename state. Worker stops admission/FIFO.
                     return Err(error);
+                }
+                Err(error) if cancel => {
+                    let since = cancellation_seen.get_or_insert_with(tokio::time::Instant::now);
+                    if since.elapsed() >= std::time::Duration::from_secs(1) {
+                        return Err(error.wrap_err(
+                            "cancellation requested; activation ownership/outcome uncertain",
+                        ));
+                    }
                 }
                 Err(_) => {
                     if !reported_unreadable {

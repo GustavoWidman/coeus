@@ -23,6 +23,22 @@ impl DeploymentProcess {
             group,
         })
     }
+    /// The caller first closes the stdin lease. The privileged helper, not
+    /// this nonroot process, owns signalling/reaping the root activation group.
+    pub async fn terminate_supervised(&mut self) -> Result<()> {
+        match tokio::time::timeout(std::time::Duration::from_secs(5), self.child.wait()).await {
+            Ok(status) => {
+                status?;
+                Ok(())
+            }
+            Err(_) => {
+                let cleanup = self.terminate().await;
+                eyre::bail!(
+                    "privileged supervisor did not acknowledge cancellation; outcome uncertain; parent cleanup: {cleanup:?}"
+                );
+            }
+        }
+    }
     pub async fn terminate(&mut self) -> Result<()> {
         let group_result = self.kill_group();
         // Still attempt/reap the parent if signalling a group fails.

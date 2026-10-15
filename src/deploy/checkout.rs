@@ -297,6 +297,11 @@ mod tests {
                 format!("file://{}", source.display())
             ),
         )?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&config_path, std::fs::Permissions::from_mode(0o600))?;
+        }
         let config = crate::config::server_config(config_path)?;
         let deployer = Deployer::new(config).await?;
         // No Deployer::deploy call: clone only a local throwaway fixture; no credentials.

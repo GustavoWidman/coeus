@@ -47,7 +47,7 @@ let
     inherit platform;
     daemon = "${cfg.package}/bin/coeusd";
     version = lib.getVersion cfg.package;
-    protocol = 5;
+    protocol = 6;
     user = cfg.user;
     account = {
       managed = cfg.createUser;
@@ -55,7 +55,7 @@ let
     // lib.optionalAttrs (cfg.createUser && accountUid != null) { uid = accountUid; }
     // lib.optionalAttrs (cfg.createUser && accountGid != null) { gid = accountGid; };
     state_directory = cfg.stateDirectory;
-    config_file = cfg.configFile;
+    config_file = cfg.serverConfigFile;
     runner = toString runner;
     elevation_adapter = toString adapter;
     nix = "${cfg.nixPackage}/bin/nix";
@@ -70,28 +70,19 @@ let
     NH_ELEVATION_STRATEGY = if cfg.enablePasswordlessActivation then toString adapter else "none";
   };
   # A native initial executable gives launchd/TCC a concrete daemon identity.
-  # Keep the Linux wrapper unchanged. Darwin performs its checks in Rust.
+  # Keep Linux's shell entrypoint. Both platforms perform shared checks in Rust.
   runner =
     if platform == "darwin" then
       "${cfg.package}/bin/coeusd"
     else
       pkgs.writeShellScript "coeusd-start" ''
         set -eu
-        uid=$(${pkgs.coreutils}/bin/id -u)
-        test "$uid" != 0 || { echo "coeusd must not run as root" >&2; exit 1; }
-        test "$(${pkgs.coreutils}/bin/stat -Lc %u -- ${lib.escapeShellArg cfg.home})" = "$uid"
-        test "$(${pkgs.coreutils}/bin/stat -Lc %u -- ${lib.escapeShellArg cfg.stateDirectory})" = "$uid"
-        test "$(${pkgs.coreutils}/bin/stat -Lc %a -- ${lib.escapeShellArg cfg.stateDirectory})" = 700
-        config=${lib.escapeShellArg cfg.configFile}
-        actual=$(${pkgs.coreutils}/bin/realpath -e -- "$config")
-        case "$actual" in /nix/store/*) echo "coeusd config must not be in the store" >&2; exit 1;; esac
-        test -f "$actual" && test -r "$actual"
-        test "$(${pkgs.coreutils}/bin/stat -Lc %u -- "$actual")" = "$(${pkgs.coreutils}/bin/id -u)"
-        mode=$(${pkgs.coreutils}/bin/stat -Lc %a -- "$actual")
-        test "$mode" = 600 || test "$mode" = 400
-        umask 077
-        cd ${lib.escapeShellArg cfg.stateDirectory}
-        exec ${cfg.package}/bin/coeusd --config "$actual"
+        # Keep the Linux shell entrypoint/lifetime, but use the same native
+        # validator as Darwin and independent activation (including key_file).
+        exec ${cfg.package}/bin/coeusd \
+          --service-home ${lib.escapeShellArg cfg.home} \
+          --service-state-directory ${lib.escapeShellArg cfg.stateDirectory} \
+          --config ${lib.escapeShellArg cfg.serverConfigFile}
       '';
   assertions = [
     {
@@ -119,8 +110,8 @@ let
       message = "services.coeusd.user must be a non-root identity";
     }
     {
-      assertion = lib.hasPrefix "/" cfg.configFile && !(lib.hasPrefix "/nix/store/" cfg.configFile);
-      message = "services.coeusd.configFile must be an absolute runtime path outside /nix/store";
+      assertion = lib.hasPrefix "/" cfg.serverConfigFile;
+      message = "services.coeusd.serverConfigFile must be absolute (public store TOML requires an external runtime key_file)";
     }
     {
       assertion =

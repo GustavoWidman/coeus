@@ -10,20 +10,9 @@ pub async fn run_local(
     bootstrap: Option<(&str, &str, &Path)>,
     reconcile_only: bool,
 ) -> Result<()> {
-    ensure!(
-        args.peer_config.is_file(),
-        "existing private peer configuration required; never generate bootstrap credentials"
-    );
-    let raw = std::fs::read_to_string(&args.peer_config)?;
-    let table: toml::Table = toml::from_str(&raw)
-        .map_err(|_| eyre::eyre!("invalid private peer TOML (details suppressed)"))?;
-    let settings = table
-        .get("settings")
-        .ok_or_else(|| eyre::eyre!("peer TOML needs [settings]"))?;
-    let peer: crate::config::client::ConfigInner = settings
-        .clone()
-        .try_into()
-        .map_err(|_| eyre::eyre!("invalid private peer settings (details suppressed)"))?;
+    // Identical immutable, permission-checked loading to daemon startup. No
+    // defaults or generated credentials, including first-install bootstrap.
+    let (peer_path, peer) = crate::config::server::load(&args.peer_config)?;
     let mut address = peer.address();
     if address.ip().is_unspecified() {
         address.set_ip(if address.is_ipv6() {
@@ -73,15 +62,10 @@ pub async fn run_local(
             !Path::new("/run/current-system/coeus-service.toml").exists(),
             "Coeus already installed; use deploy then switch JOB"
         );
-        validate_peer_layout(&args.peer_config, &raw, &expected, store.directory())?;
+        validate_peer_layout(&peer_path, &peer, &expected, store.directory())?;
     }
     let pending = store.load_async(id).await?;
-    validate_peer_layout(
-        &args.peer_config,
-        &raw,
-        &pending.expected,
-        store.directory(),
-    )?;
+    validate_peer_layout(&peer_path, &peer, &pending.expected, store.directory())?;
     let receipt = if reconcile_only {
         reconcile(&store, id, &executor).await?
     } else {
@@ -92,37 +76,62 @@ pub async fn run_local(
 }
 fn validate_peer_layout(
     path: &Path,
-    raw: &str,
+    config: &crate::config::server::ConfigInner,
     expected: &ServiceIdentity,
     directory: &Path,
 ) -> Result<()> {
-    use std::os::unix::fs::{MetadataExt, PermissionsExt};
-    let metadata = path.metadata()?;
-    ensure!(
-        metadata.uid() == nix::unistd::geteuid().as_raw()
-            && metadata.permissions().mode() & 0o077 == 0,
-        "peer configuration must be private and owned by service user"
-    );
     ensure!(
         std::fs::canonicalize(path)? == std::fs::canonicalize(&expected.config_file)?,
         "bootstrap requires existing service server config as peer config"
     );
-    let table: toml::Table = toml::from_str(raw)
-        .map_err(|_| eyre::eyre!("invalid private server TOML (details suppressed)"))?;
-    let config: crate::config::server::ConfigInner = table
-        .get("settings")
-        .ok_or_else(|| eyre::eyre!("missing server settings"))?
-        .clone()
-        .try_into()
-        .map_err(|_| eyre::eyre!("invalid private server settings (details suppressed)"))?;
     let ledger = if config.state_directory.is_absolute() {
-        config.state_directory
+        config.state_directory.clone()
     } else {
-        expected.state_directory.join(config.state_directory)
+        expected.state_directory.join(&config.state_directory)
     };
     ensure!(
         super::directory_for_ledger(&ledger)? == directory,
         "activation directory must be derived from actual service ledger path"
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    #[tokio::test]
+    async fn independent_activation_validates_key_before_creating_receipt_directory() -> Result<()>
+    {
+        let dir = tempfile::tempdir()?;
+        let config = dir.path().join("peer.toml");
+        let key = dir.path().join("missing-key");
+        fs::write(
+            &config,
+            format!(
+                "[settings]\nkey_file = {key:?}\nhost = \"127.0.0.1\"\nrepo_url = \"https://example.invalid/nix\"\n"
+            ),
+        )?;
+        fs::set_permissions(&config, fs::Permissions::from_mode(0o600))?;
+        let args = LocalArgs {
+            peer_config: config.clone(),
+            activation_directory: dir.path().join("receipts"),
+            operator_sudo: false,
+        };
+        let error = run_local(&args, 1, None, true)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("cannot resolve Coeus key file"));
+        assert!(!args.activation_directory.exists());
+        fs::write(&key, "42".repeat(32))?;
+        fs::set_permissions(&key, fs::Permissions::from_mode(0o400))?;
+        // Missing receipt stops before native activation/health commands. Successful
+        // secret loading here is the same path used by daemon startup.
+        assert!(run_local(&args, 1, None, true).await.is_err());
+        assert!(args.activation_directory.is_dir());
+        assert!(!fs::read_to_string(config)?.contains(&"42".repeat(32)));
+        Ok(())
+    }
 }

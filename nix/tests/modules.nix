@@ -20,7 +20,7 @@ let
           };
           services.coeusd = {
             enable = true;
-            configFile = "/run/secrets/coeus.toml";
+            serverConfigFile = "/run/secrets/coeus.toml";
             enablePasswordlessActivation = true;
           }
           // args;
@@ -40,7 +40,7 @@ let
           services.coeusd = {
             enable = true;
             uid = 498;
-            configFile = "/private/etc/coeus/server.toml";
+            serverConfigFile = "/private/etc/coeus/server.toml";
             enablePasswordlessActivation = true;
           }
           // args;
@@ -49,7 +49,46 @@ let
     };
   darwin = darwinHost "fixture";
   l = (linux { }).config;
+  aliasLinux =
+    (inputs.nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        inputs.self.nixosModules.coeusd
+        {
+          system.stateVersion = "26.05";
+          services.coeusd = {
+            enable = true;
+            configFile = "/run/secrets/alias.toml";
+          };
+        }
+      ];
+    }).config;
   d = (darwin { }).config;
+  publicServerConfig = pkgs.writeText "coeus-public-server.toml" ''
+    [settings]
+    key_file = "/run/secrets/coeus-psk"
+    host = "127.0.0.1"
+    repo_url = "https://example.invalid/nix"
+  '';
+  storeLinux = (linux { serverConfigFile = toString publicServerConfig; }).config;
+  storeDarwin = (darwin { serverConfigFile = toString publicServerConfig; }).config;
+
+  aliasDarwin =
+    (inputs.nix-darwin.lib.darwinSystem {
+      system = "aarch64-darwin";
+      modules = [
+        inputs.self.darwinModules.coeusd
+        {
+          system.stateVersion = 6;
+          networking.hostName = "fixture";
+          services.coeusd = {
+            enable = true;
+            uid = 498;
+            configFile = "/private/etc/coeus/legacy.toml";
+          };
+        }
+      ];
+    }).config;
   existingLinux =
     (linux {
       createUser = false;
@@ -144,7 +183,13 @@ let
     # Force genuine full NixOS and nix-darwin evaluation, not stubbed option sets.
     linuxSystem = builtins.unsafeDiscardStringContext l.system.build.toplevel.drvPath;
     darwinSystem = builtins.unsafeDiscardStringContext d.system.build.toplevel.drvPath;
+    storeLinuxSystem = builtins.unsafeDiscardStringContext storeLinux.system.build.toplevel.drvPath;
+    storeDarwinSystem = builtins.unsafeDiscardStringContext storeDarwin.system.build.toplevel.drvPath;
+
     linuxService = l.systemd.services.coeusd.serviceConfig;
+    publicServerConfig = toString publicServerConfig;
+    storeDarwinService = storeDarwin.launchd.daemons.coeusd.serviceConfig;
+
     darwinService = d.launchd.daemons.coeusd.serviceConfig;
     # Actual XML emitted by nix-darwin, parsed below without a Darwin activation.
     darwinPlist = d.environment.launchDaemons."org.nixos.coeusd.plist".text;
@@ -154,6 +199,12 @@ let
     inherit darwinOrdering;
   };
   checks = (builtins.attrValues darwinOrdering) ++ [
+    (aliasLinux.services.coeusd.serverConfigFile == "/run/secrets/alias.toml")
+    (aliasDarwin.services.coeusd.serverConfigFile == "/private/etc/coeus/legacy.toml")
+    (builtins.elem "/private/etc/coeus/legacy.toml" aliasDarwin.launchd.daemons.coeusd.serviceConfig.ProgramArguments)
+    (invalid { clientConfigFile = "relative.toml"; })
+    (invalid { clientConfigFile = "/nix/store/public.toml"; })
+    (!(invalid { clientConfigFile = "/run/secrets/client.toml"; }))
     (
       (manifestFor d "darwin").account == {
         managed = true;
@@ -193,7 +244,7 @@ let
         "--service-state-directory"
         d.services.coeusd.stateDirectory
         "--config"
-        d.services.coeusd.configFile
+        d.services.coeusd.serverConfigFile
       ]
     )
     ((manifestFor d "darwin").runner == (manifestFor d "darwin").daemon)
@@ -207,8 +258,13 @@ let
     (!(builtins.hasAttr "coeusd" disabledDarwin.launchd.daemons))
     (!disabledLinux.services.coeusd.enable && !disabledDarwin.services.coeusd.enable)
     (invalid { user = "root"; })
-    (invalid { configFile = "/nix/store/secret.toml"; })
-    (invalid { configFile = "relative.toml"; })
+    (!(invalid { serverConfigFile = toString publicServerConfig; }))
+    (!(builtins.any (a: !a.assertion) storeDarwin.assertions))
+    (builtins.elem (toString publicServerConfig) storeDarwin.launchd.daemons.coeusd.serviceConfig.ProgramArguments)
+    ((manifestFor storeLinux "linux").config_file == toString publicServerConfig)
+    ((manifestFor storeDarwin "darwin").config_file == toString publicServerConfig)
+
+    (invalid { serverConfigFile = "relative.toml"; })
     (invalid { environment.PATH = "/usr/bin"; })
     (builtins.any (a: !a.assertion) (darwin { uid = null; }).config.assertions)
     (builtins.any (a: !a.assertion) (darwinHost null { }).config.assertions)
@@ -219,6 +275,16 @@ assert lib.assertMsg (builtins.all (x: x) checks) "Coeus module regression faile
 pkgs.runCommand "coeus-module-evaluation-${system}"
   { nativeBuildInputs = [ pkgs.python3 ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [ pkgs.sudo ]; }
   ''
+    # Inspect the actual Linux wrapper and public TOML, never run activation.
+    python3 - ${storeLinux.systemd.services.coeusd.serviceConfig.ExecStart} ${publicServerConfig} <<'PYTHON'
+    import sys, tomllib
+    wrapper = open(sys.argv[1]).read()
+    assert '--service-home' in wrapper and '--service-state-directory' in wrapper
+    assert '--config' in wrapper and sys.argv[2] in wrapper
+    public = tomllib.load(open(sys.argv[2], 'rb'))['settings']
+    assert 'key' not in public
+    assert public['key_file'] == '/run/secrets/coeus-psk'
+    PYTHON
     python3 - ${manifests} <<'PYTHON'
     import sys, tomllib
     with open(sys.argv[1], 'rb') as source:
@@ -231,7 +297,7 @@ pkgs.runCommand "coeus-module-evaluation-${system}"
         assert identity.keys() == required, identity.keys()
         assert identity['host'] == host
         assert identity['platform'] == platform
-        assert identity['protocol'] == 5
+        assert identity['protocol'] == 6
         assert all(isinstance(value, str) and value for key, value in identity.items() if key not in ('protocol', 'account'))
         assert isinstance(identity['account']['managed'], bool)
     assert manifests['darwin']['account'] == {'managed': True, 'uid': 498, 'gid': 20}

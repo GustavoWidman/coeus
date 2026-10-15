@@ -2,6 +2,8 @@ mod admission;
 mod context;
 #[cfg(test)]
 mod durable_tests;
+#[cfg(test)]
+mod fleet_tests;
 mod handoff;
 #[cfg(test)]
 mod handoff_tests;
@@ -15,6 +17,7 @@ mod queries;
 mod recovery;
 #[cfg(test)]
 mod settlement_tests;
+mod shared_terminal;
 mod snapshot;
 mod storage;
 mod switch_failure;
@@ -49,6 +52,7 @@ pub struct DeploymentJobs {
     ledger: Arc<Mutex<JobLedger>>,
     shutdown: CancellationToken,
     terminals: terminal::Terminals,
+    feed: Arc<std::sync::Mutex<shared_terminal::SharedOutput>>,
     worker: Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
@@ -58,6 +62,14 @@ impl DeploymentJobs {
     }
 
     fn start(executor: Arc<dyn DeploymentExecutor>, mut ledger: JobLedger) -> Self {
+        ledger.high_water = ledger.high_water.max(
+            ledger
+                .records
+                .iter()
+                .map(|r| r.status.job_id)
+                .max()
+                .unwrap_or(0),
+        );
         // One executing handoff plus the bounded waiting queue may survive a controlled restart.
         let (queue, receiver) = mpsc::channel(QUEUE_CAPACITY + 1);
         let shutdown = CancellationToken::new();
@@ -80,9 +92,13 @@ impl DeploymentJobs {
             .map(|r| (r.request.clone(), r.status.job_id, r.cancellation.clone()))
             .collect();
         let ledger = Arc::new(Mutex::new(ledger));
+        let feed = Arc::new(std::sync::Mutex::new(
+            shared_terminal::SharedOutput::default(),
+        ));
         for (request, id, cancellation) in recovered {
             let context = JobContext {
                 id,
+                feed: feed.clone(),
                 ledger: ledger.clone(),
                 cancellation,
                 shutdown: shutdown.clone(),
@@ -99,6 +115,7 @@ impl DeploymentJobs {
             ledger,
             shutdown,
             terminals: Arc::default(),
+            feed,
             worker: Mutex::new(Some(worker)),
         }
     }

@@ -16,7 +16,10 @@ let
   };
 in
 {
-  imports = [ (import ./options.nix self) ];
+  imports = [
+    (import ./options.nix self)
+    ./home-manager.nix
+  ];
   config = lib.mkIf cfg.enable {
     system.systemBuilderCommands = ''
       cp ${runtime.manifest} $out/coeus-service.toml

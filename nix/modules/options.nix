@@ -10,6 +10,16 @@ let
   cfg = config.services.coeusd;
 in
 {
+  imports = [
+    (lib.mkRenamedOptionModule
+      [ "services" "coeusd" "configFile" ]
+      [
+        "services"
+        "coeusd"
+        "serverConfigFile"
+      ]
+    )
+  ];
   options.services.coeusd = {
     enable = lib.mkEnableOption "Coeus deployment daemon";
     package = mkOption {
@@ -17,9 +27,14 @@ in
       default = self.packages.${pkgs.stdenv.hostPlatform.system}.coeus;
       description = "Coeus client and daemon package.";
     };
-    configFile = mkOption {
+    serverConfigFile = mkOption {
       type = types.str;
-      description = "Absolute runtime TOML path outside /nix/store, owned by the service user with mode 0600 or 0400. Never put a PSK in a Nix expression.";
+      description = "Absolute server TOML path: private runtime file (service-owned mode 0400/0600), or public immutable store TOML referencing an external private runtime key_file. Never put PSK bytes in a Nix expression.";
+    };
+    clientConfigFile = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "Optional absolute runtime client TOML path outside /nix/store. Home Manager users copy it privately to their XDG coeus/config.toml during activation. The activating user must be able to read the source; contents never enter the Nix store.";
     };
     user = mkOption {
       type = types.str;

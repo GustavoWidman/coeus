@@ -24,3 +24,6 @@ impl From<IdentityResponse> for super::Packet {
         Self::IdentityResponse(Box::new(v))
     }
 }
+
+mod machine;
+pub use machine::*;

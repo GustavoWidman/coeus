@@ -242,3 +242,37 @@ async fn initial_handshake_deadline_covers_a_silent_tcp_peer() -> TestResult {
     let _ = peer.await;
     Ok(())
 }
+
+#[tokio::test]
+async fn authenticated_hello_is_required_and_bad_protocol_is_not_unreachable() -> TestResult {
+    use crate::common::proto::{HelloRequest, HelloResponse, PROTOCOL_VERSION};
+    timeout(Duration::from_secs(3), async {
+        for version in [PROTOCOL_VERSION, PROTOCOL_VERSION.saturating_sub(1)] {
+            let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
+            let address = listener.local_addr()?;
+            let server = tokio::spawn(async move {
+                let (mut peer, _) = listener.accept().await?;
+                assert!(matches!(peer.recv().await?, Some(Packet::HelloRequest(_))));
+                peer.send(HelloResponse {
+                    protocol_version: version,
+                    version: "fixture".into(),
+                })
+                .await?;
+                Ok::<_, eyre::Report>(())
+            });
+            let result = CoeusClient::new(address, &PSK).await;
+            if version == PROTOCOL_VERSION {
+                assert!(result.is_ok());
+            } else {
+                let error = result.err().ok_or("expected incompatible hello error")?;
+                assert!(error.downcast_ref::<super::EndpointUnreachable>().is_none());
+                assert!(error.to_string().contains("refusing bootstrap"));
+            }
+            server.await??;
+        }
+        let _ = HelloRequest {};
+        Ok::<_, Box<dyn Error + Send + Sync>>(())
+    })
+    .await??;
+    Ok(())
+}

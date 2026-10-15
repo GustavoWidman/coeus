@@ -17,6 +17,7 @@ pub struct CommandRunner {
     args: Vec<OsString>,
     env: Vec<(OsString, OsString)>,
     path: Option<OsString>,
+    supervised_activation: bool,
 }
 
 #[allow(dead_code)] // TODO remove this
@@ -66,12 +67,23 @@ impl CommandRunner {
         self
     }
 
+    /// Root helper owns privileged descendants and uses stdin EOF as cancellation.
+    /// This flag is only used with the immutable scoped activation adapter.
+    pub(crate) fn supervised_activation(mut self) -> Self {
+        self.supervised_activation = true;
+        self
+    }
+
     fn command(&self) -> Command {
         let mut command = Command::new(&self.program);
         command
             .args(&self.args)
             .envs(self.env.iter().map(|(key, value)| (key, value)))
-            .stdin(Stdio::null());
+            .stdin(if self.supervised_activation {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            });
         if let Some(path) = &self.path {
             command.current_dir(path);
         }
@@ -86,6 +98,39 @@ impl CommandRunner {
             bail!("command failed with {status}");
         }
         Ok(())
+    }
+
+    /// Independent activation also owns its deadline, including lease revocation
+    /// and joined cleanup. An outer timeout must never drop this operation.
+    pub(crate) async fn call_with_timeout(self, deadline: Duration) -> Result<()> {
+        let mut process = DeploymentProcess::spawn(&mut self.command())
+            .wrap_err_with(|| format!("starting deployment command {:?}", self.program))?;
+        let lease = process.child.stdin.take();
+        let result = tokio::select! {
+            _ = tokio::time::sleep(deadline) => Err(eyre::eyre!("activation command deadline exceeded; outcome uncertain")),
+            status = process.child.wait() => match status {
+                Ok(status) if status.success() => Ok(()),
+                Ok(status) => Err(eyre::eyre!("command failed with {status}")),
+                Err(error) => Err(error.into()),
+            },
+        };
+        drop(lease);
+        if result.is_err() {
+            if self.supervised_activation {
+                process
+                    .terminate_supervised()
+                    .await
+                    .wrap_err("privileged supervisor did not settle")?;
+            } else {
+                // Bootstrap/operator sudo has no existing scoped helper. Cleanup
+                // may lack privilege; receipt remains Uncertain, never safe/replayed.
+                process
+                    .terminate()
+                    .await
+                    .wrap_err("terminating activation command; outcome uncertain")?;
+            }
+        }
+        result
     }
 
     pub async fn call_with_output(self, context: &JobContext) -> Result<()> {
@@ -123,6 +168,9 @@ impl CommandRunner {
                 .map_err(|_| eyre::eyre!("terminal state poisoned"))?
                 .process_group(pid);
         }
+        // Take stdin out before Child::wait (Tokio otherwise closes it). Only
+        // this daemon-side write handle keeps the privileged supervisor alive.
+        let lease = process.child.stdin.take();
         // Command owns slave Stdio until it is dropped: retaining it would block EOF.
         drop(command);
         let output = output::drain(reader, LogSource::Terminal, context.clone());
@@ -137,11 +185,19 @@ impl CommandRunner {
                 Ok(())
             } => result,
         };
+        drop(lease);
         if result.is_err() {
-            process
-                .terminate()
-                .await
-                .wrap_err("terminating deployment process group")?;
+            if self.supervised_activation {
+                process
+                    .terminate_supervised()
+                    .await
+                    .wrap_err("privileged supervisor did not settle")?;
+            } else {
+                process
+                    .terminate()
+                    .await
+                    .wrap_err("terminating deployment process group")?;
+            }
         }
         result
     }
@@ -181,5 +237,33 @@ mod tests {
             .args(["-c", "test -f marker", "sh"])
             .call()
             .await
+    }
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn independent_activation_timeout_joins_supervisor_cleanup() -> Result<()> {
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let temp = tempfile::tempdir()?;
+            let marker = temp.path().join("child.pid");
+            let code = r#"import importlib.util,os,sys,time
+s=importlib.util.spec_from_file_location('p',sys.argv[1]); p=importlib.util.module_from_spec(s); s.loader.exec_module(p)
+code=p.supervised(['/bin/sh','-c','sleep 30 & echo $! > "$1"; wait','sh',sys.argv[2]],dict(os.environ),deadline=10)
+time.sleep(0.15)
+open(sys.argv[2]+'.settled','w').write(str(code))
+sys.exit(code)"#;
+            let error = CommandRunner::new("python3").arg("-c").arg(code)
+                .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/nix/elevation.py"))
+                .arg(&marker).supervised_activation()
+                .call_with_timeout(Duration::from_millis(700)).await.unwrap_err();
+            assert!(format!("{error:#}").contains("deadline"));
+            assert!(marker.with_extension("pid.settled").is_file());
+            let pid: u32 = std::fs::read_to_string(&marker)?.trim().parse()?;
+            match tokio::fs::read_to_string(format!("/proc/{pid}/stat")).await {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+                Ok(stat) if stat.split_once(") ").is_some_and(|(_, rest)| rest.starts_with('Z')) => {},
+                other => panic!("supervised child survived independent timeout: {other:?}"),
+            }
+            Ok::<_, eyre::Report>(())
+        }).await??;
+        Ok(())
     }
 }

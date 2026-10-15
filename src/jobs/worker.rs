@@ -90,6 +90,10 @@ pub(super) async fn run(
                         return;
                     }
                     pending => {
+                        if cancel {
+                            interrupt_cancelled_activation(&job.context, &cause).await;
+                            return;
+                        }
                         if let Err(error) = pending {
                             job.context
                                 .log(
@@ -112,7 +116,7 @@ pub(super) async fn run(
                         }
                         drop(ledger);
                         use eyre::WrapErr;
-                        result = job.context.wait_for_switch().await.wrap_err(cause);
+                        result = job.context.wait_for_switch().await.wrap_err(cause.clone());
                         if let Err(error) = &result {
                             if error.is::<super::switch_failure::RevocationFailure>() {
                                 stop_after_persistence_failure(&job.context, format!("{error:#}"))
@@ -141,7 +145,24 @@ pub(super) async fn run(
                                     .await;
                                     return;
                                 }
-                                _ => safe_terminal = false,
+                                _ => {
+                                    // Cancellation may arrive after the initial
+                                    // failure entered passive observation. Re-read
+                                    // its durable request, rather than retaining
+                                    // a stopped observer as a nonterminal handoff.
+                                    let cancelled = job
+                                        .context
+                                        .ledger
+                                        .lock()
+                                        .await
+                                        .record(job.context.id)
+                                        .is_ok_and(|record| record.status.cancel_requested);
+                                    if cancelled {
+                                        interrupt_cancelled_activation(&job.context, &cause).await;
+                                        return;
+                                    }
+                                    safe_terminal = false;
+                                }
                             }
                         }
                     }
@@ -207,4 +228,21 @@ async fn stop_after_persistence_failure(context: &super::JobContext, cause: Stri
     // ledger recovery still treats the old Build/manual state conservatively.
     let _ = ledger.persist(context.id).await;
     ledger.unhealthy = true;
+}
+
+/// Cancellation is not rollback. Stop observing boundedly, but never let the
+/// next activation past an uncertain receipt or claim a root writer is gone.
+async fn interrupt_cancelled_activation(context: &super::JobContext, cause: &str) {
+    let mut ledger = context.ledger.lock().await;
+    if let Ok(record) = ledger.record_mut(context.id) {
+        record.status.phase = DeployPhase::Interrupted;
+        let message = bounded_text(&format!(
+            "cancellation stopped local execution; activation outcome uncertain; admission/FIFO blocked, reconcile without replay: {cause}"
+        ));
+        record.status.message = Some(message.clone());
+        record.append(LogSource::Lifecycle, &message);
+    }
+    if let Err(error) = ledger.persist(context.id).await {
+        log::error!("uncertain cancellation persistence failed: {error:#}");
+    }
 }

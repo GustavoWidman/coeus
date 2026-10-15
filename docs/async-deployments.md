@@ -2,7 +2,7 @@
 
 Local work on top of the still-open stream-halves PR #1. This does not merge the
 PR, install a daemon, run a deployment, or integrate GitHub Actions. Both peers
-must use protocol **v5** (including its Noise prologue); older peers fail the
+must use protocol **v6** (including its Noise prologue); older peers fail the
 handshake before they can submit an incompatible request.
 
 ## ownership and acknowledgement
@@ -15,41 +15,47 @@ owned tasks retain the ledger lock through persistence and subsequent queue or
 cancellation notification. An older cancelled log write cannot overwrite a newer
 terminal snapshot.
 
-Production admission is durable. The caller supplies a nonzero 64-bit request ID,
-which is also the job handle. Before sending, the CLI logs and flushes the ID;
-`--request-id` lets it be reused after a lost acknowledgement. The daemon stores
-the full revision/flags and validates duplicate content before checking queue
-capacity: identical retries return the original handle, conflicting reuse fails.
-It does **not** promise exactly-once host side effects. Sending a different ID
-creates a new submission, not a retry. Never generate a fresh ID to recover a lost
-ACK. Idempotency is scoped to one machine's retained state directory and configured
-repository URL. Peers sharing its PSK also share this namespace.
+Production admission is durable. The caller supplies a nonzero 64-bit **retry
+nonce**, separate from the daemon-assigned ascending job handle. Before sending,
+the CLI flushes target + nonce; `--request-id` reuses it with identical options
+on one explicit target after a reviewed lost acknowledgement. Identical retries
+return the original handle, conflicting reuse fails. The daemon persists its
+allocation high-water mark before an ID can be acknowledged; failed admission may
+leave gaps. A restart must never reuse an acknowledged ID. Legacy durable IDs remain
+retained, and migration starts beyond their maximum rather than renumbering jobs.
+This is not exactly-once host side effects. Never generate a new nonce to recover a
+lost ACK. Idempotency is scoped to one machine's state and configured repository URL;
+peers sharing its PSK share this namespace.
 
 Each record is serialized to a fixed private pending file, fsynced, atomically
-renamed to `<request-id>.job`, then the directory is fsynced. Only then can the
+renamed to `<job-id>.job`, then the directory is fsynced. Only then can the
 request enter the executable queue or return an ACK. Phase changes are persisted
 before checkout/build/switch; resolved commit, cancellation intent, bounded log
 tail, and terminal outcomes are persisted too. Cancellation intent reaches disk
 before the executor is signalled. Disk errors stop admission/execution, cancel
 contexts and expose an uncertain `Interrupted` status instead of claiming success.
 Reads remain available for diagnosis. A write error can occur after rename:
-reconnect/restart with the **same ID**, never assume failure means no admission.
+reconnect/restart with the **same retry nonce**, never assume failure means no admission.
 
 ## CLI interfaces
 
+See [fleet client](fleet-client.md) for configuration, resolver, authentication,
+interactive dispatch and bootstrap behavior.
+
 ```sh
 # Examples only; do not run against a production daemon during development.
-coeus --config machine.client.toml deploy --rev <full-sha> --request-id <nonzero-id>
-coeus --config machine.client.toml status <job-id>
-coeus --config machine.client.toml status --watch
-coeus --config machine.client.toml attach <job-id>
-coeus --config machine.client.toml logs <job-id> --after <cursor> --follow
-coeus --config machine.client.toml cancel <job-id>
+coeus deploy lab --rev <full-sha> --request-id <retry-nonce> --no-tty
+coeus status lab
+coeus status lab --job <job-id> --watch
+coeus attach lab
+coeus logs <job-id> --target lab --after <cursor> --follow
+coeus cancel <job-id> --target lab
 ```
 
-Client TCP connection plus Noise handshake has a ten-second combined deadline;
-a request/response has a fifteen-second deadline and poisons a partially used
-connection on interruption. No automatic deploy retry occurs. The CLI reports
+Client TCP connection has a three-second per-address deadline; the Noise handshake
+has ten seconds, then the authenticated hello/request has fifteen seconds.
+An interrupted/partial request poisons its connection. No automatic deploy retry
+occurs. The CLI reports
 queued/checkout/build/switch/terminal **phases**, not invented Nix percentages.
 A mutable `main` resolves during checkout, not admission: use a full SHA for
 exact-revision semantics. The checkout's HEAD is detached at the resolved commit.
@@ -61,16 +67,11 @@ are never reinterpreted as `origin/<SHA>` branches or fetched separately. Named
 revisions still resolve normally, with an exact remote-branch fallback for
 non-default branches.
 
-Human acceptance, status, lifecycle and gap-warning messages use the existing
-logger, including its timestamps, levels and `--verbosity` filter. One explicit
-safety exception: the pre-send `request-id` INFO message remains visible and
-flushed even at `--verbosity off`, so a lost ACK cannot hide the retry key.
-`logs` payloads are requested data: compact sanitized text remains visible on
-stdout even at quiet verbosity, without extra logger timestamps or source labels.
-Use `--metadata` for cursor/source labels. New PTY output is labeled `terminal`,
-not separately stdout/stderr. `attach` instead writes raw terminal bytes without
-logger decoration. This CLI has no machine-output mode; normal logger output also
-goes to stdout.
+Target/nonce, acceptance and requested status tables remain visible even at quiet
+verbosity. Durable `logs` are compact sanitized text; `--metadata` includes cursor/
+source. New PTY output is `terminal`, not separately stdout/stderr. `attach` writes
+raw terminal bytes without logger decoration. Diagnostics and lifecycle logging
+remain distinct from the byte stream.
 
 ## storage, bounds and restart
 
@@ -85,9 +86,22 @@ fsync/atomic rename. Snapshot format version, repository scope, filenames, field
 bounds and log cursors are validated before startup. Incompatible/corrupt state
 fails closed, not by silently resetting it. PSKs are not stored in snapshots.
 
+Before admission, v2 initializes and fsyncs its monotonic `id-counter`, then its
+`ledger-format` marker. Restart rejects a missing counter when the marker, a
+pending initialization file, or any v2 snapshot exists; it never reconstructs a
+possibly pruned high-water mark. Malformed counters/markers and counters below
+retained handles also fail closed. A genuinely new empty ledger and a v1-only
+legacy ledger without initialization evidence can initialize (legacy migration
+starts at its largest retained random handle, without rewriting terminal history).
+The marker survives an empty/pruned ledger and burned reservations. Removing
+**all** counter, marker/pending files and snapshots is indistinguishable from an
+explicit fresh-state wipe and destroys this protection; the counter is not a
+cryptographic anti-tamper/rollback mechanism.
+
 At most **128 records**, **256 chunks/job**, and **1,024 UTF-8 bytes/chunk** are
 retained. Each snapshot is capped at 300 KiB, plus one same-size pending file and
-a lock file: under 39 MiB logical data. Admission refuses when durable history is
+a lock file, an eight-byte counter and a small initialization marker (with bounded
+pending writes): under 39 MiB logical data. Admission refuses when durable history is
 full; it does not evict idempotency keys. There is **no automatic archival or safe
 ID-expiry policy yet**. Manually deleting/resetting state discards retry protection
 and is not a normal recovery operation. The explicitly volatile constructor used
@@ -161,12 +175,38 @@ can delay status/ACKs. It does not grow an unbounded write queue. Group commit o
 transactional log store is a later, measured optimization; no throughput gain is
 claimed. On cancellation, an in-flight write finishes before terminal persistence.
 
-Cancellation is a request, **not rollback**. Queued jobs are skipped. Commands
-have null stdin, a one-hour deadline, and own Unix process groups killed/reaped on
-error/cancellation/unwind. Non-Unix cleanup only targets the direct child; Linux
-and macOS are intended platforms. Deliberately escaped children are not sandboxed.
-A cancelled/failed switch may already have modified the host; command success
-also does not prove remote health. Explicit post-switch verification is future work.
+For daemon-owned exact-closure activation, the fixed privileged helper now supports
+an explicit supervised mode. The validated activation command runs in a helper-owned
+process group; a daemon-held stdin lease keeps it alive. Closing the lease on local
+cancel/timeout allows the privileged owner to terminate/reap descendants instead of
+asking the unprivileged daemon to kill root children. The command/closure allowlist
+and scoped sudo rule are unchanged. Fake tests exercise this process-tree lifetime
+without root; this is not proof against arbitrary deliberately escaping code or a
+real Darwin FDA denial. Both automatic and independent scoped-helper activation
+own their deadline and join lease cleanup; no outer timeout/cancellation may drop
+that future. The activation budget is 900 seconds across commands; cleanup can
+extend it by up to five seconds. Post-switch verification checks job cancellation
+between bounded probes. Bootstrap/operator-sudo has no preinstalled supervisor:
+cleanup there can lack authority over root descendants and remains uncertain,
+never a claim of root-tree termination.
+
+A cancellation after activation intent can settle as terminal **Interrupted** with
+cancel_requested=true, not falsely Cancelled/rolled back. Its original uncertain
+receipt remains; subsequent FIFO/admission stay blocked, including across restart,
+until independently reconciled. A missing/busy/unreadable receipt also fails closed;
+the passive manual observer stops boundedly on cancellation rather than waiting for
+permission forever. Do not delete state or retry a switch to bypass uncertainty.
+
+Cancellation is a request, **not rollback**. Queued jobs are skipped. Ordinary
+commands have null stdin and a one-hour deadline. Supervised activation instead
+has a daemon-held pipe used only as a lifetime lease, never for interactive input.
+Commands own Unix process groups; normal error/cancellation paths explicitly await
+cleanup. Drop/unwind makes a best-effort kill request, not an asynchronous joined
+cleanup guarantee. Linux and macOS are intended platforms; terminal-backed command
+execution is unsupported on non-Unix systems. Deliberately escaped children are not
+sandboxed. A cancelled/failed switch may already have modified the host. Exact-closure
+activation verifies the expected closure and authenticated daemon, but this is not
+a general application-health check or proof that every host side effect is correct.
 
 Checkout remains joined `spawn_blocking` libgit2. Cooperative fetch-progress
 callbacks stop transfers when cancellation is observed; checks bracket clone and
@@ -188,7 +228,7 @@ authenticated session in one tracked task. A silent peer expires after ten secon
 without blocking other handshakes below the cap. Shutdown aborts and joins both
 pending and authenticated tasks; completing another session cannot cancel a
 handshake. The OS TCP backlog is separate and not an authentication guarantee.
-No interactive input/prompt forwarding, multi-machine fan-out, GitHub Actions
+No interactive input/prompt forwarding, GitHub Actions
 integration, reconciliation, archival, build-only/boot policy, or Darwin deployment
 parity is claimed.
 
@@ -200,12 +240,13 @@ Never invoke `CoeusServer::new`/`Deployer` or real `nh` in that trial. Existing 
 use injected executors, ephemeral loopback ports, local Git fixtures and harmless
 shell fixtures only; no real credentials, host switches, services or infra.
 
-## Terminal attachment (introduced in v4; current protocol v5)
+## Terminal attachment (introduced in v4; current protocol v6)
 
-`coeus attach JOB` is an **output-only terminal view**, separate from durable logs.
+`coeus attach TARGET` is a **cross-job output-only terminal view**, separate from durable logs.
 Build/switch commands run with stdout and stderr on the same Unix PTY, with
 `TERM=xterm-256color`, initially 80 columns × 24 rows. Both descriptors see a TTY;
-stdin remains closed (`/dev/null`); the output PTY is not installed as a controlling
+ordinary command stdin is closed (`/dev/null`); supervised activation uses its
+private lifetime-lease pipe instead. The output PTY is not installed as a controlling
 terminal, and no client input is forwarded. The daemon session is unchanged: if
 launched from a terminal, commands may still inherit that existing controlling TTY.
 Run an unattended daemon without relying on prompts on that TTY.
@@ -215,14 +256,14 @@ attachment does not own deployment lifetime. Exact-closure activation and build-
 `--dry-run` semantics are documented in [independent activation](independent-activation.md).
 
 ```sh
-coeus deploy --rev main --request-id 12345
-coeus attach 12345                  # replay retained bytes, then follow live output
-coeus attach 12345 --live           # explicitly skip replay
-coeus status 12345 --watch
-coeus logs 12345 --follow           # compact sanitized durable text, not a terminal
-coeus logs 12345 --metadata         # cursor/source labels when inspecting history
-coeus logs 12345 --source terminal  # merged PTY records, NOT original stderr
-coeus cancel 12345                  # the only command above that cancels the job
+coeus deploy lab --rev main --no-tty
+coeus attach lab                    # daemon-global replay, then future jobs
+coeus attach lab --live             # explicitly skip replay
+coeus status lab --watch
+coeus logs 1 --target lab --follow
+coeus logs 1 --target lab --metadata
+coeus logs 1 --target lab --source terminal
+coeus cancel 1 --target lab          # only this command cancels the job
 ```
 
 Attach writes raw ordered bytes without logger prefixes, Unicode conversion or
@@ -238,19 +279,21 @@ exits; SIGKILL cannot run cleanup. On a local TTY it resets SGR styling and show
 redirected stdout is byte-exact and receives no cleanup controls. Alternate-screen
 or other application-specific modes are not comprehensively restored.
 
-Raw replay is **volatile**, capped at 256 KiB per admitted job (at most 128 jobs,
-32 MiB of raw bytes), with pages capped at 4096 bytes under the encrypted frame limit.
+Raw replay is **volatile**: the shared cross-job feed is capped at 256 KiB, with
+pages capped at 4096 bytes. The internal per-job replay API additionally retains
+256 KiB per job (at most 128 jobs / 32 MiB) for automatic accepted-job follow.
 There is no subscriber queue/backpressure tied to the deployment. `--after BYTE`
 resumes at an exact absolute byte cursor; it is not a durable log cursor. If bytes
 were evicted, attach stops with an explicit history-gap error instead of feeding a
 partial escape/state replay to the terminal. `--live` skips history explicitly but
-cannot reconstruct earlier screen contents/colors. Restart drops raw history; attach
-then reports it unavailable, while `status` and sanitized durable logs remain usable.
+cannot reconstruct earlier screen contents/colors. Restart resets the shared feed and its cursor; an old out-of-range cursor fails.
+The per-job replay API reports pre-restart bytes unavailable. `status` and sanitized
+durable logs remain usable.
 Unfinished mutations are Interrupted and never automatically replayed; a durable manual
-handoff resumes only its passive observer and never-started FIFO jobs. Protocol v5
-changes the Noise prologue and adds packet IDs 0x0206/0x0207; upgrade both binaries.
-The durable snapshot shape and old stdout/stderr source IDs are unchanged: new
-binaries read old histories. Old binaries cannot read newly written `terminal`
+handoff resumes only its passive observer and never-started FIFO jobs. Protocol v6
+changes the Noise prologue and adds hello, active/latest status and shared-terminal
+packets; upgrade both binaries. New binaries migrate legacy histories and retain
+old stdout/stderr source IDs. Old binaries cannot read newly written `terminal`
 source records, so downgrading a daemon with new history is not supported.
 
 PTY stdout/stderr are physically merged, preserving kernel stream order but losing
