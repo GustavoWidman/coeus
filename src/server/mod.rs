@@ -65,16 +65,21 @@ impl CoeusServer {
     }
 
     pub async fn run(self) -> Result<()> {
+        let mut signals = shutdown::Signals::register()?;
         let shutdown = CancellationToken::new();
-        let signal = shutdown.clone();
-        let handler = tokio::spawn(async move {
-            if shutdown::signal().await.is_ok() {
-                signal.cancel();
-            }
-        });
-        let result = self.run_until_cancelled(shutdown).await;
-        handler.abort();
-        result
+        let server = self.run_until_cancelled(shutdown.clone());
+        tokio::pin!(server);
+        tokio::select! {
+            result = &mut server => result,
+            signal_result = signals.wait() => {
+                // Never drop an in-flight server: it owns connection and job cleanup.
+                // Even a signal-listener error must cancel and join that cleanup.
+                shutdown.cancel();
+                let server_result = server.await;
+                signal_result?;
+                server_result
+            },
+        }
     }
 
     pub async fn run_until_cancelled(self, shutdown: CancellationToken) -> Result<()> {

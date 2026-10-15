@@ -78,7 +78,10 @@ async fn compiled_native_startup_accepts_secret_symlink_and_uses_private_working
     }
     kill(Pid::from_raw(child.id().unwrap() as i32), Signal::SIGTERM)?;
     let status = timeout(Duration::from_secs(10), child.wait()).await??;
-    assert!(status.success());
+    assert!(
+        status.success(),
+        "native daemon did not shut down cleanly after SIGTERM: {status}"
+    );
     // No work was admitted: startup must not manufacture a job/activation receipt.
     assert!(
         !fs::read_dir(state.join("ledger"))?
@@ -181,10 +184,10 @@ async fn compiled_native_startup_loads_external_runtime_key_without_writeback() 
     assert!(state.join("ledger").is_dir());
     assert_eq!(fs::read_to_string(&config)?, raw);
     kill(Pid::from_raw(child.id().unwrap() as i32), Signal::SIGTERM)?;
+    let status = timeout(Duration::from_secs(10), child.wait()).await??;
     assert!(
-        timeout(Duration::from_secs(10), child.wait())
-            .await??
-            .success()
+        status.success(),
+        "external-key daemon did not shut down cleanly after SIGTERM: {status}"
     );
     Ok(())
 }
