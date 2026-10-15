@@ -5,7 +5,7 @@ mod test;
 
 pub use coeus_proto_macros::{Packet, packet_enum};
 
-pub const PROTOCOL_VERSION: u8 = 4;
+pub const PROTOCOL_VERSION: u8 = 5;
 
 pub mod types;
 pub use types::*;
@@ -13,6 +13,10 @@ pub use types::*;
 #[packet_enum]
 #[derive(Debug)]
 pub enum Packet {
+    #[packet(id = 0x0300, type = IdentityRequest)]
+    IdentityRequest,
+    #[packet(id = 0x0301, type = IdentityResponse)]
+    IdentityResponse,
     #[packet(id = 0x0100, type = DeployRequest)]
     DeployRequest,
 

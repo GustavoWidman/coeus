@@ -12,7 +12,7 @@ pub struct DeployRequest {
     #[arg(short, long, value_name = "REVISION", default_value = "main")]
     pub rev: String,
 
-    /// Disable Nix eval-cache. STILL builds and switches; NOT a deployment simulation.
+    /// Build only; never activate. Retains the exact closure for inspection.
     #[arg(long, value_name = "DRY_RUN", default_value_t = false)]
     pub dry_run: bool,
 

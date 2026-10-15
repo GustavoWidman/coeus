@@ -46,7 +46,7 @@ fn packet_envelope_round_trips() {
 }
 
 #[test]
-fn v4_ack_and_status_request_have_fixed_encoding() {
+fn v5_ack_and_status_request_have_fixed_encoding() {
     let envelope = PacketEnvelope::new(
         DeployAccepted {
             job_id: 42,
@@ -56,7 +56,7 @@ fn v4_ack_and_status_request_have_fixed_encoding() {
     );
     assert_eq!(
         postcard::to_stdvec(&envelope).unwrap(),
-        vec![4, 0x81, 2, 4, 42, 2, b'o', b'k']
+        vec![5, 0x81, 2, 4, 42, 2, b'o', b'k']
     );
     let packet: Packet = StatusRequest {
         job_id: Some(42),
@@ -207,4 +207,24 @@ fn terminal_packets_have_deliberate_wire_encoding_and_fit_frame() {
         packet: request,
     };
     assert!(wrong_version.validate().is_err());
+}
+
+#[test]
+fn v5_identity_request_and_appended_phase_preserve_old_disk_encoding() {
+    assert_eq!(postcard::to_stdvec(&DeployPhase::Switch).unwrap(), vec![3]);
+    assert_eq!(
+        postcard::to_stdvec(&DeployPhase::Interrupted).unwrap(),
+        vec![7]
+    );
+    assert_eq!(
+        postcard::to_stdvec(&DeployPhase::RequiresManualSwitch).unwrap(),
+        vec![8]
+    );
+    let packet: Packet = IdentityRequest {}.into();
+    assert_eq!(packet.kind(), 0x0300);
+    assert_eq!(postcard::to_stdvec(&packet).unwrap(), vec![0x80, 0x06, 0]);
+    let encoded = postcard::to_stdvec(&PacketEnvelope::new(packet)).unwrap();
+    assert_eq!(encoded[0], 5);
+    let decoded: PacketEnvelope = postcard::from_bytes(&encoded).unwrap();
+    decoded.validate().unwrap();
 }

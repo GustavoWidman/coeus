@@ -1,0 +1,379 @@
+//! Durable FIFO handoff through the real job worker and receipt observer, fake host effects only.
+use super::tests::{request, terminal};
+use super::*;
+use crate::{
+    activation::{ActivationState, Receipt, ReceiptStore, ServiceIdentity},
+    common::proto::DeployPhase,
+};
+use eyre::Result;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
+};
+use tokio::{sync::mpsc, time::timeout};
+
+struct HandoffExecutor {
+    started: mpsc::UnboundedSender<String>,
+}
+fn service() -> ServiceIdentity {
+    ServiceIdentity {
+        host: "fixture".into(),
+        platform: "linux".into(),
+        daemon: "/nix/store/00000000000000000000000000000000-coeus/bin/coeusd".into(),
+        version: env!("CARGO_PKG_VERSION").into(),
+        protocol: crate::common::proto::PROTOCOL_VERSION,
+        user: "fixture".into(),
+        account: crate::activation::AccountPolicy {
+            managed: false,
+            uid: None,
+            gid: None,
+        },
+        state_directory: "/fixture/state".into(),
+        config_file: "/fixture/server.toml".into(),
+        runner: "/nix/store/00000000000000000000000000000000-runner".into(),
+        elevation_adapter: "/nix/store/00000000000000000000000000000000-adapter".into(),
+        nix: "/nix/store/00000000000000000000000000000000-nix/bin/nix".into(),
+        service_definition: "fixture".into(),
+    }
+}
+fn receipt(store: &ReceiptStore, id: u64) -> Receipt {
+    Receipt {
+        format: 1,
+        job_id: id,
+        closure: "/nix/store/00000000000000000000000000000000-system".into(),
+        root: store.root(id),
+        expected: service(),
+        previous: Some(service()),
+        state: ActivationState::Ready,
+        manual: true,
+        previous_process_id: Some(123),
+        message: "fake built closure".into(),
+    }
+}
+impl DeploymentExecutor for HandoffExecutor {
+    fn execute(&self, request: DeployRequest, context: JobContext) -> BoxFuture<'_, Result<()>> {
+        Box::pin(async move {
+            context.phase(DeployPhase::Build).await?;
+            if matches!(request.rev.as_str(), "manual" | "corrupt-switch") {
+                let store = ReceiptStore::open(&context.activation_directory().await?)?;
+                store.save(&receipt(&store, context.job_id()))?;
+                if request.rev == "corrupt-switch" {
+                    context.phase(DeployPhase::Switch).await?;
+                    std::fs::write(
+                        store.directory().join(format!("{}.toml", context.job_id())),
+                        "invalid = [",
+                    )?;
+                    self.started.send(request.rev)?;
+                    eyre::bail!("ambiguous activation with unreadable receipt");
+                }
+                drop(store);
+                context.phase(DeployPhase::RequiresManualSwitch).await?;
+                self.started.send(request.rev)?;
+                context.handoff().await
+            } else {
+                self.started.send(request.rev)?;
+                Ok(())
+            }
+        })
+    }
+}
+async fn open(path: &Path) -> Result<(DeploymentJobs, mpsc::UnboundedReceiver<String>)> {
+    let (send, recv) = mpsc::unbounded_channel();
+    Ok((
+        DeploymentJobs::open(
+            Arc::new(HandoffExecutor { started: send }),
+            path.into(),
+            "fixture".into(),
+        )
+        .await?,
+        recv,
+    ))
+}
+fn directory(path: &Path) -> Result<PathBuf> {
+    crate::activation::directory_for_ledger(path)
+}
+fn set_receipt(path: &Path, id: u64, state: ActivationState) -> Result<()> {
+    let store = ReceiptStore::open(&directory(path)?)?;
+    let mut receipt = store.load(id)?;
+    receipt.state = state;
+    store.save(&receipt)
+}
+async fn blocked(recv: &mut mpsc::UnboundedReceiver<String>) {
+    assert!(
+        timeout(Duration::from_millis(50), recv.recv())
+            .await
+            .is_err(),
+        "FIFO crossed unresolved manual barrier"
+    );
+}
+#[tokio::test]
+async fn manual_switch_pauses_fifo_until_independent_verification() -> Result<()> {
+    timeout(Duration::from_secs(5), async {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("ledger");
+        let (jobs, mut started) = open(&path).await?;
+        let original = request("manual");
+        let first = jobs.accept(original.clone()).await?;
+        assert_eq!(started.recv().await.as_deref(), Some("manual"));
+        let second = jobs.accept(request("ordinary")).await?;
+        assert_eq!(jobs.accept(original).await?, first); // retries preserve the same barrier
+        blocked(&mut started).await;
+        set_receipt(&path, first, ActivationState::Verified)?;
+        assert_eq!(started.recv().await.as_deref(), Some("ordinary"));
+        assert_eq!(terminal(&jobs, first).await.phase, DeployPhase::Succeeded);
+        assert_eq!(terminal(&jobs, second).await.phase, DeployPhase::Succeeded);
+        jobs.shutdown().await;
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+#[tokio::test]
+async fn replacement_restart_observes_handoff_and_resumes_only_never_started_fifo() -> Result<()> {
+    timeout(Duration::from_secs(5), async {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("ledger");
+        let (jobs, mut started) = open(&path).await?;
+        let first = jobs.accept(request("manual")).await?;
+        started.recv().await;
+        let second = jobs.accept(request("ordinary")).await?;
+        jobs.shutdown().await;
+        drop(jobs);
+        let (recovered, mut after_restart) = open(&path).await?;
+        assert_eq!(
+            recovered.status(Some(first)).await?[0].phase,
+            DeployPhase::RequiresManualSwitch
+        );
+        assert_eq!(
+            recovered.status(Some(second)).await?[0].phase,
+            DeployPhase::Queued
+        );
+        blocked(&mut after_restart).await; // no build/activation of handoff is replayed
+        set_receipt(&path, first, ActivationState::Verified)?;
+        assert_eq!(after_restart.recv().await.as_deref(), Some("ordinary"));
+        terminal(&recovered, second).await;
+        recovered.shutdown().await;
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+#[tokio::test]
+async fn ready_cancellation_unblocks_but_inflight_cancellation_cannot_release_barrier() -> Result<()>
+{
+    timeout(Duration::from_secs(5), async {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("ledger");
+        let (jobs, mut started) = open(&path).await?;
+        let first = jobs.accept(request("manual")).await?;
+        started.recv().await;
+        let second = jobs.accept(request("ordinary")).await?;
+        set_receipt(&path, first, ActivationState::Activating)?;
+        jobs.cancel(first).await?;
+        blocked(&mut started).await;
+        set_receipt(&path, first, ActivationState::Uncertain)?;
+        blocked(&mut started).await;
+        // Verification-only operator reconciliation proves completion; cancellation is not rollback.
+        set_receipt(&path, first, ActivationState::Verified)?;
+        assert_eq!(started.recv().await.as_deref(), Some("ordinary"));
+        assert_eq!(terminal(&jobs, first).await.phase, DeployPhase::Succeeded);
+        terminal(&jobs, second).await;
+        let third = jobs.accept(request("manual")).await?;
+        started.recv().await;
+        jobs.cancel(third).await?;
+        assert_eq!(terminal(&jobs, third).await.phase, DeployPhase::Cancelled);
+        assert_eq!(
+            crate::activation::read_receipt(&directory(&path)?, third)?.state,
+            ActivationState::Cancelled
+        );
+        jobs.shutdown().await;
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+#[tokio::test]
+async fn unresolved_or_corrupt_handoff_never_runs_queued_job_even_after_shutdown() -> Result<()> {
+    timeout(Duration::from_secs(5), async {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("ledger");
+        let (jobs, mut started) = open(&path).await?;
+        let first = jobs.accept(request("manual")).await?;
+        started.recv().await;
+        let second = jobs.accept(request("ordinary")).await?;
+        set_receipt(&path, first, ActivationState::Uncertain)?;
+        blocked(&mut started).await;
+        jobs.shutdown().await;
+        assert_eq!(
+            jobs.status(Some(first)).await?[0].phase,
+            DeployPhase::RequiresManualSwitch
+        );
+        assert_eq!(
+            jobs.status(Some(second)).await?[0].phase,
+            DeployPhase::Queued
+        );
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn verified_receipt_does_not_release_fifo_until_operator_lease_is_released() -> Result<()> {
+    timeout(Duration::from_secs(5), async {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("ledger");
+        let (jobs, mut started) = open(&path).await?;
+        let first = jobs.accept(request("manual")).await?;
+        started.recv().await;
+        let second = jobs.accept(request("ordinary")).await?;
+        let operator = ReceiptStore::open(&directory(&path)?)?;
+        let mut receipt = operator.load(first)?;
+        receipt.state = ActivationState::Verified;
+        operator.save(&receipt)?;
+        assert!(
+            timeout(Duration::from_millis(600), started.recv())
+                .await
+                .is_err(),
+            "FIFO crossed while operator still owns lease"
+        );
+        drop(operator);
+        assert_eq!(started.recv().await.as_deref(), Some("ordinary"));
+        terminal(&jobs, second).await;
+        jobs.shutdown().await;
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelled_inflight_handoff_survives_restart_and_verified_reconciliation() -> Result<()> {
+    timeout(Duration::from_secs(8), async {
+        for state in [ActivationState::Activating, ActivationState::Uncertain] {
+            let temp = tempfile::tempdir()?;
+            let path = temp.path().join("ledger");
+            let (jobs, mut started) = open(&path).await?;
+            let first = jobs.accept(request("manual")).await?;
+            assert_eq!(started.recv().await.as_deref(), Some("manual"));
+            let second = jobs.accept(request("ordinary")).await?;
+            set_receipt(&path, first, state)?;
+            jobs.cancel(first).await?;
+            assert!(jobs.status(Some(first)).await?[0].cancel_requested);
+            blocked(&mut started).await;
+            jobs.shutdown().await;
+            drop(jobs);
+
+            let (recovered, mut after_restart) = open(&path).await?;
+            let status = &recovered.status(Some(first)).await?[0];
+            assert!(status.cancel_requested);
+            assert_eq!(status.phase, DeployPhase::RequiresManualSwitch);
+            blocked(&mut after_restart).await; // no build or activation replay
+            set_receipt(&path, first, ActivationState::Verified)?;
+            assert_eq!(after_restart.recv().await.as_deref(), Some("ordinary"));
+            assert_eq!(
+                terminal(&recovered, first).await.phase,
+                DeployPhase::Succeeded
+            );
+            assert_eq!(
+                terminal(&recovered, second).await.phase,
+                DeployPhase::Succeeded
+            );
+            recovered.shutdown().await;
+        }
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn ready_cancellation_after_restart_revokes_receipt_and_resumes_fifo() -> Result<()> {
+    timeout(Duration::from_secs(5), async {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("ledger");
+        let (jobs, mut started) = open(&path).await?;
+        let first = jobs.accept(request("manual")).await?;
+        assert_eq!(started.recv().await.as_deref(), Some("manual"));
+        let second = jobs.accept(request("ordinary")).await?;
+        // Hold the real operator lease so the old observer cannot revoke Ready
+        // before its shutdown. Persist cancellation using the actual API.
+        let operator = ReceiptStore::open(&directory(&path)?)?;
+        jobs.cancel(first).await?;
+        jobs.shutdown().await;
+        assert_eq!(
+            jobs.status(Some(first)).await?[0].phase,
+            DeployPhase::RequiresManualSwitch
+        );
+        assert_eq!(operator.load(first)?.state, ActivationState::Ready);
+        drop(jobs);
+        drop(operator);
+        let (recovered, mut after_restart) = open(&path).await?;
+        assert_eq!(after_restart.recv().await.as_deref(), Some("ordinary"));
+        assert_eq!(
+            terminal(&recovered, first).await.phase,
+            DeployPhase::Cancelled
+        );
+        assert_eq!(
+            crate::activation::read_receipt(&directory(&path)?, first)?.state,
+            ActivationState::Cancelled
+        );
+        terminal(&recovered, second).await;
+        recovered.shutdown().await;
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn unreadable_switch_outcome_blocks_fifo_across_restart_without_replay() -> Result<()> {
+    timeout(Duration::from_secs(6), async {
+        let temp = tempfile::tempdir()?;
+        let path = temp.path().join("ledger");
+        let (jobs, mut started) = open(&path).await?;
+        let first = jobs.accept(request("corrupt-switch")).await?;
+        assert_eq!(started.recv().await.as_deref(), Some("corrupt-switch"));
+        let second = jobs.accept(request("ordinary")).await?;
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if jobs.status(Some(first)).await?[0].phase == DeployPhase::RequiresManualSwitch {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+            Ok::<_, eyre::Report>(())
+        })
+        .await??;
+        blocked(&mut started).await;
+        jobs.shutdown().await;
+        drop(jobs);
+        let (recovered, mut after_restart) = open(&path).await?;
+        blocked(&mut after_restart).await; // cannot activate or cross corrupt receipt
+        assert_eq!(
+            recovered.status(Some(first)).await?[0].phase,
+            DeployPhase::RequiresManualSwitch
+        );
+        assert_eq!(
+            recovered.status(Some(second)).await?[0].phase,
+            DeployPhase::Queued
+        );
+        // An independent reconciler restores verified evidence, not a replayed executor.
+        let store = ReceiptStore::open(&directory(&path)?)?;
+        let mut restored = receipt(&store, first);
+        restored.state = ActivationState::Verified;
+        store.save(&restored)?;
+        drop(store);
+        assert_eq!(after_restart.recv().await.as_deref(), Some("ordinary"));
+        assert_eq!(
+            terminal(&recovered, first).await.phase,
+            DeployPhase::Succeeded
+        );
+        terminal(&recovered, second).await;
+        recovered.shutdown().await;
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
+    Ok(())
+}

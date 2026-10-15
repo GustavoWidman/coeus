@@ -266,3 +266,23 @@ async fn failed_retry_id_write_prevents_request_submission() -> Result<()> {
     .await??;
     Ok(())
 }
+
+#[test]
+fn independent_identity_needs_no_config_and_never_connects_or_generates_credentials() {
+    let directory = tempfile::tempdir().unwrap();
+    let absent = directory.path().join("absent-client.toml");
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_coeus"))
+        .args(["--config", absent.to_str().unwrap(), "identity"])
+        .current_dir(directory.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let identity: coeus::activation::BinaryIdentity =
+        toml::from_str(std::str::from_utf8(&output.stdout).unwrap()).unwrap();
+    assert_eq!(identity, coeus::activation::BinaryIdentity::current());
+    assert!(!absent.exists());
+}

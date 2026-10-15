@@ -18,6 +18,59 @@ async fn main() -> Result<()> {
         Logger::init(args.verbosity);
     }
 
+    use coeus::cli::main::ClientCommand;
+    match &args.command {
+        ClientCommand::Identity => {
+            print!(
+                "{}",
+                toml::to_string(&coeus::activation::BinaryIdentity::current())?
+            );
+            return Ok(());
+        }
+        ClientCommand::Switch { job_id, remote } => {
+            return coeus::activation::run_remote(remote, *job_id, None, false).await;
+        }
+        ClientCommand::Reconcile { job_id, remote } => {
+            return coeus::activation::run_remote(remote, *job_id, None, true).await;
+        }
+        ClientCommand::Bootstrap {
+            job_id,
+            remote,
+            flake,
+            hostname,
+            nix_binary,
+        } => {
+            return coeus::activation::run_remote(
+                remote,
+                *job_id,
+                Some((flake, hostname, nix_binary.as_path())),
+                false,
+            )
+            .await;
+        }
+        ClientCommand::ActivateLocal { job_id, local } => {
+            return coeus::activation::run_local(local, *job_id, None, false).await;
+        }
+        ClientCommand::ReconcileLocal { job_id, local } => {
+            return coeus::activation::run_local(local, *job_id, None, true).await;
+        }
+        ClientCommand::BootstrapLocal {
+            job_id,
+            local,
+            flake,
+            hostname,
+            nix_binary,
+        } => {
+            return coeus::activation::run_local(
+                local,
+                *job_id,
+                Some((flake, hostname, nix_binary.as_path())),
+                false,
+            )
+            .await;
+        }
+        _ => {}
+    }
     let config: ClientConfig = client_config(args.config).inspect_err(|e| {
         error!("failed to load client configuration: {}", e);
     })?;

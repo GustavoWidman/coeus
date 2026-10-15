@@ -11,9 +11,22 @@ pub struct JobContext {
     pub(super) ledger: Arc<Mutex<JobLedger>>,
     pub(crate) terminal: Arc<std::sync::Mutex<super::terminal::TerminalOutput>>,
     pub(super) cancellation: CancellationToken,
+    pub(super) shutdown: CancellationToken,
 }
 
 impl JobContext {
+    /// Claim execution durably before invoking any injected executor; no extra log event.
+    pub(super) async fn starting(&self) -> Result<()> {
+        let context = self.clone();
+        tokio::spawn(async move {
+            let mut ledger = context.ledger.lock().await;
+            context.check_cancelled()?;
+            ledger.record_mut(context.id)?.status.phase = DeployPhase::Checkout;
+            ledger.persist(context.id).await
+        })
+        .await?
+    }
+
     pub(crate) fn terminal_bytes(&self, bytes: &[u8]) -> Result<()> {
         self.terminal
             .lock()

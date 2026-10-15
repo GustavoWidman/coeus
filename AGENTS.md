@@ -30,6 +30,7 @@ any section inaccurate.
 - `src/common/proto/` — protocol version, packet types, envelopes, and wire tests.
 - `src/common/stream/` — Noise-encrypted, length-delimited stream and I/O adapters.
 - `src/config/` — client/server configuration loading and defaults.
+- `src/activation/` — independent exact-closure SSH/bootstrap activation and private receipts.
 - `src/deploy/` — repository checkout and deployment command orchestration.
 - `src/jobs/` — bounded FIFO admission, execution ownership and bounded durable job/log ledger.
 - `src/utils/` — logging and PSK serialization helpers.
@@ -85,7 +86,7 @@ See `docs/async-deployments.md` for crash windows, storage bounds and remaining 
 
 Treat the wire format as a compatibility boundary, not an implementation detail.
 
-- Protocol v4 adds bounded raw terminal pages and changes the Noise prologue; both peers
+- Protocol v5 adds authenticated daemon identity and manual-switch phase; v4 added raw terminal pages. The Noise prologue versions the session; both peers
   must upgrade together. `PROTOCOL_VERSION` is carried by `PacketEnvelope`; reject unsupported versions.
 - Packet IDs in `src/common/proto/mod.rs` are stable protocol identifiers. Never reuse
   an old ID for a different meaning.
@@ -215,4 +216,4 @@ Do not rewrite or squash unrelated history. Do not push unless explicitly reques
 
 Service setup and the root-equivalent activation boundary are documented in
 `docs/nix-services.md`. Do not run a host activation just to validate modules;
-use the flake checks. Darwin daemon self-upgrades are explicitly not safe yet.
+use the flake checks. Daemon-changing builds must use the independent manual-switch flow; see `docs/independent-activation.md`. Native platform activation still requires explicit operator authorization and separate runtime validation.

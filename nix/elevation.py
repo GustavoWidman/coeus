@@ -26,6 +26,11 @@ def validate(argv, platform, nix, store="/nix/store"):
         "build", "--no-link", "--profile", PROFILE
     ]:
         return [nix, *argv[1:5], closure(argv[5], platform, store)]
+    if platform == "linux" and len(argv) == 3 and argv[1:] == ["restart", "coeusd.service"] and argv[0].endswith("/sw/bin/systemctl"):
+        target = closure(argv[0][:-len("/sw/bin/systemctl")], platform, store)
+        if os.path.realpath("/run/current-system", strict=True) != target:
+            raise ValueError("service restart requires the active exact closure")
+        return [target + "/sw/bin/systemctl", "restart", "coeusd.service"]
     suffix = "/bin/switch-to-configuration" if platform == "linux" else "/sw/bin/darwin-rebuild"
     actions = ("test", "boot") if platform == "linux" else ("activate",)
     if len(argv) == 2 and argv[0].endswith(suffix) and argv[1] in actions:

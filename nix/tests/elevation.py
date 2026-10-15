@@ -50,6 +50,23 @@ class PolicyTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.validate([command, action])
 
+    def test_restart_only_coeus_on_active_exact_closure(self):
+        command = str(self.root) + "/sw/bin/systemctl"
+        realpath = os.path.realpath
+        def current(path, **kwargs):
+            return str(self.root) if path == "/run/current-system" else realpath(path, **kwargs)
+        with patch.object(policy.os.path, "realpath", side_effect=current):
+            self.assertEqual(self.validate([command, "restart", "coeusd.service"]),
+                             [command, "restart", "coeusd.service"])
+            for argv in ([command, "restart", "sshd.service"],
+                         [command, "restart", "coeusd.service", "--now"],
+                         [command, "stop", "coeusd.service"]):
+                with self.assertRaises(ValueError):
+                    self.validate(argv)
+        with patch.object(policy.os.path, "realpath", side_effect=lambda path, **kwargs: "/other" if path == "/run/current-system" else realpath(path, **kwargs)):
+            with self.assertRaises(ValueError):
+                self.validate([command, "restart", "coeusd.service"])
+
     def test_darwin_preserves_closure_spelling(self):
         actual = self.validate([str(self.link) + "/sw/bin/darwin-rebuild", "activate"], "darwin")
         self.assertEqual(actual, [str(self.root) + "/sw/bin/darwin-rebuild", "activate"])

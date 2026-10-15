@@ -2,7 +2,7 @@
 
 Local work on top of the still-open stream-halves PR #1. This does not merge the
 PR, install a daemon, run a deployment, or integrate GitHub Actions. Both peers
-must use protocol **v4** (including its Noise prologue); older peers fail the
+must use protocol **v5** (including its Noise prologue); older peers fail the
 handshake before they can submit an incompatible request.
 
 ## ownership and acknowledgement
@@ -173,8 +173,8 @@ callbacks stop transfers when cancellation is observed; checks bracket clone and
 checkout. This is **not a hard deadline**: stalled DNS/SSH/credential calls or a
 checkout without progress callbacks can delay cancellation and graceful shutdown.
 SIGINT/SIGTERM close admission/connections and cancel work. Forced kill differs.
-The existing `--dry-run` flag only disables eval-cache and **still switches**; it
-is not a simulation mode.
+`--dry-run` is build-only and never activates. See
+[independent activation](independent-activation.md) for retained-root semantics.
 
 ## security and next trial
 
@@ -200,7 +200,7 @@ Never invoke `CoeusServer::new`/`Deployer` or real `nh` in that trial. Existing 
 use injected executors, ephemeral loopback ports, local Git fixtures and harmless
 shell fixtures only; no real credentials, host switches, services or infra.
 
-## Terminal attachment (protocol v4)
+## Terminal attachment (introduced in v4; current protocol v5)
 
 `coeus attach JOB` is an **output-only terminal view**, separate from durable logs.
 Build/switch commands run with stdout and stderr on the same Unix PTY, with
@@ -211,7 +211,8 @@ launched from a terminal, commands may still inherit that existing controlling T
 Run an unattended daemon without relying on prompts on that TTY.
 Interactive password/confirmation prompts are not supported; configure unattended
 credentials/elevation before submitting a real deployment. Existing `nh` flags,
-checkout, build/switch order and dry-run semantics are unchanged.
+attachment does not own deployment lifetime. Exact-closure activation and build-only
+`--dry-run` semantics are documented in [independent activation](independent-activation.md).
 
 ```sh
 coeus deploy --rev main --request-id 12345
@@ -245,7 +246,8 @@ were evicted, attach stops with an explicit history-gap error instead of feeding
 partial escape/state replay to the terminal. `--live` skips history explicitly but
 cannot reconstruct earlier screen contents/colors. Restart drops raw history; attach
 then reports it unavailable, while `status` and sanitized durable logs remain usable.
-Unfinished jobs are still Interrupted and never automatically replayed. Protocol v4
+Unfinished mutations are Interrupted and never automatically replayed; a durable manual
+handoff resumes only its passive observer and never-started FIFO jobs. Protocol v5
 changes the Noise prologue and adds packet IDs 0x0206/0x0207; upgrade both binaries.
 The durable snapshot shape and old stdout/stderr source IDs are unchanged: new
 binaries read old histories. Old binaries cannot read newly written `terminal`

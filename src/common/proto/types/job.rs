@@ -14,6 +14,8 @@ pub enum DeployPhase {
     Failed,
     Cancelled,
     Interrupted,
+    /// Exact rooted build is waiting for an independent operator, blocking FIFO.
+    RequiresManualSwitch,
 }
 
 impl DeployPhase {

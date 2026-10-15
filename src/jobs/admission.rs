@@ -47,6 +47,15 @@ impl DeploymentJobs {
         if shutdown.is_cancelled() {
             bail!("daemon is shutting down");
         }
+        if ledger
+            .records
+            .iter()
+            .filter(|r| r.status.phase == crate::common::proto::DeployPhase::Queued)
+            .count()
+            >= super::QUEUE_CAPACITY
+        {
+            bail!("deployment queue is full");
+        }
         let permit = queue
             .try_reserve()
             .map_err(|_| eyre::eyre!("deployment queue is full or closed"))?;
@@ -78,6 +87,7 @@ impl DeploymentJobs {
                 id,
                 ledger: shared_ledger,
                 cancellation,
+                shutdown,
                 terminal,
             },
         });

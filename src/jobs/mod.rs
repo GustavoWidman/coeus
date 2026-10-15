@@ -2,6 +2,9 @@ mod admission;
 mod context;
 #[cfg(test)]
 mod durable_tests;
+mod handoff;
+#[cfg(test)]
+mod handoff_tests;
 mod ledger;
 #[cfg(test)]
 mod output_tests;
@@ -51,10 +54,42 @@ impl DeploymentJobs {
         Self::start(executor, JobLedger::default())
     }
 
-    fn start(executor: Arc<dyn DeploymentExecutor>, ledger: JobLedger) -> Self {
-        let (queue, receiver) = mpsc::channel(QUEUE_CAPACITY);
-        let ledger = Arc::new(Mutex::new(ledger));
+    fn start(executor: Arc<dyn DeploymentExecutor>, mut ledger: JobLedger) -> Self {
+        // One executing handoff plus the bounded waiting queue may survive a controlled restart.
+        let (queue, receiver) = mpsc::channel(QUEUE_CAPACITY + 1);
         let shutdown = CancellationToken::new();
+        for record in &mut ledger.records {
+            record.cancellation = shutdown.child_token();
+            if record.status.cancel_requested {
+                record.cancellation.cancel();
+            }
+        }
+        let recovered: Vec<_> = ledger
+            .records
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r.status.phase,
+                    crate::common::proto::DeployPhase::RequiresManualSwitch
+                        | crate::common::proto::DeployPhase::Queued
+                )
+            })
+            .map(|r| (r.request.clone(), r.status.job_id, r.cancellation.clone()))
+            .collect();
+        let ledger = Arc::new(Mutex::new(ledger));
+        for (request, id, cancellation) in recovered {
+            let context = JobContext {
+                id,
+                ledger: ledger.clone(),
+                cancellation,
+                shutdown: shutdown.clone(),
+                terminal: Arc::new(std::sync::Mutex::new(terminal::TerminalOutput::default())),
+            };
+            if queue.try_send(QueuedDeploy { request, context }).is_err() {
+                // Existing history is bounded; this cannot occur for valid controlled handoff.
+                log::error!("recovered queue exceeded bound; no mutation replayed");
+            }
+        }
         let worker = tokio::spawn(worker::run(receiver, executor, shutdown.clone()));
         Self {
             queue,

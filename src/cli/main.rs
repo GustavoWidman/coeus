@@ -18,6 +18,58 @@ pub struct MainCLIArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum ClientCommand {
+    /// Print exact binary version/protocol/OS/arch, without config or network access.
+    Identity,
+    /// Independently activate a retained daemon-changing build through verified SSH.
+    Switch {
+        job_id: JobId,
+        #[command(flatten)]
+        remote: crate::activation::RemoteArgs,
+    },
+    /// Verify an interrupted activation without replaying any switch command.
+    Reconcile {
+        job_id: JobId,
+        #[command(flatten)]
+        remote: crate::activation::RemoteArgs,
+    },
+    /// First installation via SSH; requires Nix, existing private config and operator privilege.
+    Bootstrap {
+        job_id: JobId,
+        #[command(flatten)]
+        remote: crate::activation::RemoteArgs,
+        #[arg(long)]
+        flake: String,
+        #[arg(long)]
+        hostname: String,
+        /// Absolute target Nix executable; SSH shells need not have Nix on PATH.
+        #[arg(long)]
+        nix_binary: PathBuf,
+    },
+    #[command(hide = true)]
+    ActivateLocal {
+        job_id: JobId,
+        #[command(flatten)]
+        local: crate::activation::LocalArgs,
+    },
+    #[command(hide = true)]
+    ReconcileLocal {
+        job_id: JobId,
+        #[command(flatten)]
+        local: crate::activation::LocalArgs,
+    },
+    #[command(hide = true)]
+    BootstrapLocal {
+        job_id: JobId,
+        #[command(flatten)]
+        local: crate::activation::LocalArgs,
+        #[arg(long)]
+        flake: String,
+        #[arg(long)]
+        hostname: String,
+        /// Absolute target Nix executable; SSH shells need not have Nix on PATH.
+        #[arg(long)]
+        nix_binary: PathBuf,
+    },
     /// Accept a deployment; disconnecting after acceptance does not cancel it.
     Deploy(DeployRequest),
     /// Inspect one job or all retained jobs. Nix progress is phase-based, not a percentage.

@@ -382,6 +382,16 @@ async fn resize_and_gap_are_explicit_and_cancel_remains_separate() -> Result<()>
 
 #[tokio::test]
 async fn tty_ctrl_c_restores_local_modes_and_cursor_without_signalling_job() -> Result<()> {
+    check_tty_detach_restores_modes(false).await
+}
+
+#[tokio::test]
+async fn tty_ctrl_c_preserves_preexisting_nonblocking_output() -> Result<()> {
+    check_tty_detach_restores_modes(true).await
+}
+
+async fn check_tty_detach_restores_modes(initially_nonblocking: bool) -> Result<()> {
+    use nix::fcntl::{FcntlArg, OFlag, fcntl};
     use std::io::Read;
     timeout(Duration::from_secs(12), async {
         let harness = Harness::new().await?;
@@ -394,7 +404,18 @@ async fn tty_ctrl_c_restores_local_modes_and_cursor_without_signalling_job() -> 
         let mut master = std::fs::File::from(pair.master);
         let slave = std::fs::File::from(pair.slave);
         let before = nix::sys::termios::tcgetattr(&slave)?;
-        let flags = nix::fcntl::fcntl(&slave, nix::fcntl::FcntlArg::F_GETFL)?;
+        let mut initial_flags = OFlag::from_bits_truncate(fcntl(&slave, FcntlArg::F_GETFL)?);
+        initial_flags.set(OFlag::O_NONBLOCK, initially_nonblocking);
+        fcntl(&slave, FcntlArg::F_SETFL(initial_flags))?;
+        // Compare access mode and meaningful F_SETFL status flags, not every
+        // raw kernel bit. On Darwin an ordinary PTY write adds 0x10000 even
+        // when F_SETFL restores the original flags. That write-history bit is
+        // not an attach mode leak. In particular, O_NONBLOCK must be restored
+        // in BOTH directions: initially blocking and initially nonblocking.
+        let status_flags =
+            OFlag::O_ACCMODE | OFlag::O_APPEND | OFlag::O_ASYNC | OFlag::O_NONBLOCK | OFlag::O_SYNC;
+        let flags = OFlag::from_bits_truncate(fcntl(&slave, FcntlArg::F_GETFL)?) & status_flags;
+        assert_eq!(flags.contains(OFlag::O_NONBLOCK), initially_nonblocking);
         let mut command = harness.command(&["attach", "806"]);
         command.stdin(slave.try_clone()?).stdout(slave.try_clone()?);
         let mut view = command.spawn()?;
@@ -418,8 +439,9 @@ async fn tty_ctrl_c_restores_local_modes_and_cursor_without_signalling_job() -> 
         assert!(view.wait().await?.success());
         assert_eq!(nix::sys::termios::tcgetattr(&slave)?, before);
         assert_eq!(
-            nix::fcntl::fcntl(&slave, nix::fcntl::FcntlArg::F_GETFL)?,
-            flags
+            OFlag::from_bits_truncate(fcntl(&slave, FcntlArg::F_GETFL)?) & status_flags,
+            flags,
+            "attach must restore output status flags after Ctrl+C"
         );
         loop {
             let mut bytes = [0; 1024];

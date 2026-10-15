@@ -12,6 +12,15 @@ use std::time::Duration;
 impl CoeusClient {
     pub async fn run_command(&mut self, command: ClientCommand) -> Result<()> {
         match command {
+            ClientCommand::Identity
+            | ClientCommand::Switch { .. }
+            | ClientCommand::Reconcile { .. }
+            | ClientCommand::Bootstrap { .. }
+            | ClientCommand::ActivateLocal { .. }
+            | ClientCommand::ReconcileLocal { .. }
+            | ClientCommand::BootstrapLocal { .. } => {
+                bail!("independent operator commands must not be sent through coeusd");
+            }
             ClientCommand::Deploy(mut request) => {
                 if request.request_id == 0 {
                     request.request_id = rand::random::<u64>().max(1);

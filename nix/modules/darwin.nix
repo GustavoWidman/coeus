@@ -9,7 +9,10 @@ let
   cfg = config.services.coeusd;
   runtime = import ./runtime.nix {
     inherit cfg pkgs lib;
+    configHost = config.networking.hostName;
     platform = "darwin";
+    accountUid = cfg.uid;
+    accountGid = cfg.gid;
   };
 in
 {
@@ -25,6 +28,9 @@ in
     description = "Existing primary group ID for a created Darwin account; 20 is staff. Match this with group when overriding.";
   };
   config = lib.mkIf cfg.enable {
+    system.systemBuilderCommands = ''
+      cp ${runtime.manifest} $out/coeus-service.toml
+    '';
     assertions = runtime.assertions ++ [
       {
         assertion = !cfg.createUser || (cfg.uid != null && cfg.uid > 0 && cfg.gid >= 0);

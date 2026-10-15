@@ -27,14 +27,15 @@ let
         }
       ];
     };
-  darwin =
-    args:
+  darwinHost =
+    host: args:
     inputs.nix-darwin.lib.darwinSystem {
       system = "aarch64-darwin";
       modules = [
         inputs.self.darwinModules.coeusd
         {
           system.stateVersion = 6;
+          networking.hostName = host;
           nixpkgs.config.allowUnfree = false;
           services.coeusd = {
             enable = true;
@@ -46,6 +47,7 @@ let
         }
       ];
     };
+  darwin = darwinHost "fixture";
   l = (linux { }).config;
   d = (darwin { }).config;
   existingLinux =
@@ -112,6 +114,32 @@ let
     disabledHasNoDirectory =
       !(lib.hasInfix (darwinDirectory d) disabledDarwin.system.activationScripts.script.text);
   };
+  # Real module configurations feed the SAME manifest generator as the service.
+  # Drop store contexts for this format/identity check only: do not cross-build a
+  # Darwin system merely to realize its TOML. The generated text is parsed below.
+  manifestFor =
+    cfg: platform:
+    (import ../modules/runtime.nix {
+      cfg = cfg.services.coeusd;
+      inherit pkgs lib platform;
+      configHost = cfg.networking.hostName;
+      accountUid = cfg.users.users.${cfg.services.coeusd.user}.uid or null;
+      accountGid =
+        if platform == "darwin" then
+          cfg.services.coeusd.gid
+        else
+          (cfg.users.groups.${cfg.services.coeusd.group}.gid or null);
+    }).manifestData;
+  manifests = (pkgs.formats.toml { }).generate "coeus-manifests.toml" (
+    builtins.fromJSON (
+      builtins.unsafeDiscardStringContext (
+        builtins.toJSON {
+          linux = manifestFor l "linux";
+          darwin = manifestFor d "darwin";
+        }
+      )
+    )
+  );
   facts = {
     # Force genuine full NixOS and nix-darwin evaluation, not stubbed option sets.
     linuxSystem = builtins.unsafeDiscardStringContext l.system.build.toplevel.drvPath;
@@ -123,6 +151,20 @@ let
     inherit darwinOrdering;
   };
   checks = (builtins.attrValues darwinOrdering) ++ [
+    (
+      (manifestFor d "darwin").account == {
+        managed = true;
+        uid = 498;
+        gid = 20;
+      }
+    )
+    ((manifestFor (darwin { uid = 499; }).config "darwin").account != (manifestFor d "darwin").account)
+    ((manifestFor (darwin { gid = 21; }).config "darwin").account != (manifestFor d "darwin").account)
+    ((manifestFor existingDarwin "darwin").account == { managed = false; })
+    (lib.hasInfix "coeus-service.toml" l.system.systemBuilderCommands)
+    (lib.hasInfix "coeus-service.toml" d.system.systemBuilderCommands)
+    (lib.hasSuffix "-coeus-service.toml" l.systemd.services.coeusd.environment.COEUS_SERVICE_MANIFEST)
+    (lib.hasSuffix "-coeus-service.toml" d.launchd.daemons.coeusd.serviceConfig.EnvironmentVariables.COEUS_SERVICE_MANIFEST)
     (linuxRule.users == [ "coeus" ] && linuxCommand.options == [ "NOPASSWD" ])
     (lib.hasSuffix "-coeus-nh-activate" linuxCommand.command)
     (builtins.length linuxRule.commands == 1)
@@ -153,12 +195,31 @@ let
     (invalid { configFile = "relative.toml"; })
     (invalid { environment.PATH = "/usr/bin"; })
     (builtins.any (a: !a.assertion) (darwin { uid = null; }).config.assertions)
+    (builtins.any (a: !a.assertion) (darwinHost null { }).config.assertions)
+    (builtins.any (a: !a.assertion) (darwinHost "bad.host" { }).config.assertions)
   ];
 in
 assert lib.assertMsg (builtins.all (x: x) checks) "Coeus module regression failed";
 pkgs.runCommand "coeus-module-evaluation-${system}"
-  { nativeBuildInputs = lib.optionals (!pkgs.stdenv.isDarwin) [ pkgs.sudo ]; }
+  { nativeBuildInputs = [ pkgs.python3 ] ++ lib.optionals (!pkgs.stdenv.isDarwin) [ pkgs.sudo ]; }
   ''
+    python3 - ${manifests} <<'PYTHON'
+    import sys, tomllib
+    with open(sys.argv[1], 'rb') as source:
+        manifests = tomllib.load(source)
+    expected = {'linux': 'nixos', 'darwin': 'fixture'}
+    required = {'host', 'platform', 'daemon', 'version', 'protocol', 'user',
+                'state_directory', 'config_file', 'runner', 'elevation_adapter', 'nix', 'account'}
+    for platform, host in expected.items():
+        identity = manifests[platform]
+        assert identity.keys() == required, identity.keys()
+        assert identity['host'] == host
+        assert identity['platform'] == platform
+        assert identity['protocol'] == 5
+        assert all(isinstance(value, str) and value for key, value in identity.items() if key not in ('protocol', 'account'))
+        assert isinstance(identity['account']['managed'], bool)
+    assert manifests['darwin']['account'] == {'managed': True, 'uid': 498, 'gid': 20}
+    PYTHON
     cat > darwin.sudoers <<'RULE'
     ${builtins.unsafeDiscardStringContext d.security.sudo.extraConfig}
     RULE

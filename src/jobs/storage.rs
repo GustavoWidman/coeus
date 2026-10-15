@@ -23,6 +23,9 @@ pub(super) struct JobStorage {
 }
 
 impl JobStorage {
+    pub(super) fn directory(&self) -> &Path {
+        &self.directory
+    }
     pub async fn open(
         directory: PathBuf,
         scope: String,
@@ -111,7 +114,12 @@ impl JobStorage {
     pub async fn save(self: &Arc<Self>, record: &JobRecord) -> Result<()> {
         let snapshot = Snapshot::from_record(record, self.scope.clone());
         let storage = self.clone();
-        tokio::task::spawn_blocking(move || storage.write(snapshot)).await?
+        tokio::task::spawn_blocking(move || {
+            let result = storage.write(snapshot);
+            drop(storage); // release the lease reference before completion is observed
+            result
+        })
+        .await?
     }
 
     fn write(&self, snapshot: Snapshot) -> Result<()> {

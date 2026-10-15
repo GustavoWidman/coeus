@@ -111,8 +111,9 @@ its own correct permissions. Changing the module working directory or TOML
 ledger path **does not migrate history**; stop an idle daemon, preserve and
 migrate its entire ledger deliberately. Never delete it merely to unblock
 admission or silently replay interrupted jobs. See [durable-job limits](async-deployments.md).
-The daemon has a 128-record durable cap and lacks an automatic reconciliation
-command. An Interrupted job blocks new admission pending manual reconciliation.
+The daemon has a 128-record durable cap. General Interrupted jobs still block new
+admission pending operator reconciliation; independent activation receipts have
+a verification-only `coeus reconcile JOB` path.
 
 The module does not open a firewall, enable a Tailscale route, or grant Nix
 `trusted-users`. Explicitly configure transport exposure and any required
@@ -129,7 +130,7 @@ This is the passwordless elevation used by nh; it is deliberately **not**
 A rule allowing just `nh` is ineffective: nh internally elevates profile and
 activation commands, not another nh invocation. Running all of nh as root
 also evaluates/builds with root credentials and repeats the HOME / Git SSH
-ownership failures. With this module, checkout/evaluation/build and nh stay
+ownership failures. With this module, checkout/evaluation/build stay
 non-root. The custom `NH_ELEVATION_STRATEGY` adapter strips nh's literal
 `env KEY=VALUE...` envelope without evaluating or forwarding its assignments,
 then executes absolute `sudo -n -- STORE_HELPER COMMAND ARGS`. No password
@@ -168,60 +169,9 @@ systems with a nondeprecated `activate-user` take nh's unprivileged activation
 branch and are **not supported by this elevation integration**. The separate
 Determinate Nix / nom activity-type incompatibility is not fixed here.
 
-## Self-deploy is not self-upgrade safety
+## Bootstrap and daemon-changing deployments
 
-NixOS sets `restartIfChanged`, `reloadIfChanged` and `stopIfChanged` to false
-so a changed unit definition alone does not restart the daemon in-flight.
-The running service retains its old definition until a deliberate idle
-restart. Removing/disabling the service or explicitly restarting it during
-activation can still kill the job. No service option makes these scenarios
-safe automatically.
-
-**Darwin: do not use this daemon to deploy a configuration changing its own
-launchd plist, package, identity or environment.** nix-darwin unloads/reloads
-changed plists during activation, which can kill coeusd and its deployment
-before the switch completes. Do that daemon upgrade from an independent
-operator session while Coeus is idle. The module does not set
-`AbandonProcessGroup` or intentionally orphan children as a workaround.
-The agreed next design is a **manual CLI switch**, not a daemon-owned
-activation supervisor: build once and retain a GC-rooted closure; if the
-Coeus service changes (or the comparison is uncertain), persist a durable
-"requires manual switch" handoff and pause the deployment queue. A local
-`coeus switch JOB` would activate that exact closure outside the daemon's
-process tree and verify the replacement daemon. Explicit CLI bootstrap on
-NixOS/macOS with Nix would reuse that activation path for a first install.
-These commands, change detection, queue handoff and post-switch reconciliation
-are **not implemented**; normal deployments still run nh build then nh switch.
-Until that work is verified, use the independent operator session described
-above. Restart marks unfinished jobs Interrupted and blocks admission; lack
-of a terminal success is not evidence that nothing switched.
-
-Inspect `systemctl status coeusd` / `journalctl -u coeusd` on NixOS. On Darwin,
-inspect `sudo launchctl print system/org.nixos.coeusd`; launchd output uses the
-private working directory's `coeusd.stdout.log` and `coeusd.stderr.log`.
-Launchd may create these as root-owned private files; administrators can read
-them. Configure rotation externally for a long-running service. Client status/logs
-and `attach` remain the durable / terminal views described in the async docs.
-Both client and daemon must use protocol v4. These source checks do not certify
-real Darwin or Linux activation, credential access, or a successful self-switch.
-
-## Local validation
-
-```sh
-nix build .#coeus
-nix build .#checks.x86_64-linux.modules .#checks.x86_64-linux.elevation
-nix flake check --no-build
-```
-
-The module check evaluates actual NixOS **and** nix-darwin system derivations,
-checks disabled/default/existing-user/invalid configurations and generated
-sudoers syntax. It also checks the composed Darwin activation script for
-user creation → state-directory preparation → launchd loading, plus
-existing-user and disabled-service cases. No activation script is executed.
-The Python check exercises the strict policy with temporary
-fake closures and mocked execution; it never runs sudo or activation. Native
-Darwin builds and real host service behavior remain separate validation.
-
-Cross-platform module evaluation runs on Linux without building host systems.
-The full all-systems package check is a separate gate: Linux evaluation may
-need foreign Fenix manifest derivations and is not a native Darwin build.
+See [independent activation](independent-activation.md) for the implemented exact-closure
+manual-switch workflow, supported SSH bootstrap path, migration prerequisites,
+receipt reconciliation, and native-platform validation limits. Never run a legacy
+`nh switch` through the daemon being replaced.

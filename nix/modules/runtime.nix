@@ -3,6 +3,9 @@
   pkgs,
   lib,
   platform,
+  configHost,
+  accountUid ? null,
+  accountGid ? null,
 }:
 let
   packages = [
@@ -37,7 +40,29 @@ let
   adapter = pkgs.writeShellScript "coeus-nh-elevate" ''
     exec ${pkgs.python3}/bin/python3 -I ${../elevation.py} ${args "adapter" (toString helper)} "$@"
   '';
+  manifestData = {
+    # An unset nix-darwin hostName is null. Never generate an omitted TOML host
+    # or guess runtime identity: the enabled-module assertion below explains it.
+    host = if configHost == null then "" else configHost;
+    inherit platform;
+    daemon = "${cfg.package}/bin/coeusd";
+    version = lib.getVersion cfg.package;
+    protocol = 5;
+    user = cfg.user;
+    account = {
+      managed = cfg.createUser;
+    }
+    // lib.optionalAttrs (cfg.createUser && accountUid != null) { uid = accountUid; }
+    // lib.optionalAttrs (cfg.createUser && accountGid != null) { gid = accountGid; };
+    state_directory = cfg.stateDirectory;
+    config_file = cfg.configFile;
+    runner = toString runner;
+    elevation_adapter = toString adapter;
+    nix = "${cfg.nixPackage}/bin/nix";
+  };
+  manifest = (pkgs.formats.toml { }).generate "coeus-service.toml" manifestData;
   environment = cfg.environment // {
+    COEUS_SERVICE_MANIFEST = toString manifest;
     HOME = cfg.home;
     USER = cfg.user;
     LOGNAME = cfg.user;
@@ -63,6 +88,13 @@ let
     exec ${cfg.package}/bin/coeusd --config "$actual"
   '';
   assertions = [
+    {
+      assertion =
+        builtins.isString configHost
+        && builtins.match "[a-zA-Z0-9_-]+" configHost != null
+        && builtins.stringLength configHost < 128;
+      message = "Coeus requires an explicit networking.hostName (1-127 letters, digits, hyphen or underscore) for verified target identity";
+    }
     {
       assertion =
         builtins.match "[a-z_][a-z0-9_-]*" cfg.user != null
@@ -115,5 +147,7 @@ in
     environment
     runner
     assertions
+    manifest
+    manifestData
     ;
 }

@@ -9,12 +9,18 @@ let
   cfg = config.services.coeusd;
   runtime = import ./runtime.nix {
     inherit cfg pkgs lib;
+    configHost = config.networking.hostName;
     platform = "linux";
+    accountUid = config.users.users.${cfg.user}.uid or null;
+    accountGid = config.users.groups.${cfg.group}.gid or null;
   };
 in
 {
   imports = [ (import ./options.nix self) ];
   config = lib.mkIf cfg.enable {
+    system.systemBuilderCommands = ''
+      cp ${runtime.manifest} $out/coeus-service.toml
+    '';
     assertions = runtime.assertions;
     users.users = lib.mkIf cfg.createUser {
       ${cfg.user} = {

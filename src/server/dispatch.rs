@@ -14,6 +14,10 @@ impl CoeusServer {
     }
     async fn handle_request(&self, packet: Packet) -> Result<Packet> {
         Ok(match packet {
+            Packet::IdentityRequest(_) => IdentityResponse {
+                identity: tokio::task::spawn_blocking(crate::activation::daemon_identity).await??,
+            }
+            .into(),
             Packet::DeployRequest(request) => {
                 let job_id = self.jobs.accept(*request).await?;
                 DeployAccepted {

@@ -3,7 +3,7 @@ use tokio::process::{Child, Command};
 
 /// Own the child's process group, not just the `nh` parent. Cancellation must also
 /// reap Nix/build descendants that inherited the output pipes.
-pub(super) struct DeploymentProcess {
+pub(crate) struct DeploymentProcess {
     pub child: Child,
     #[cfg(unix)]
     group: Option<nix::unistd::Pid>,
