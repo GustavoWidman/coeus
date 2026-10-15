@@ -55,7 +55,15 @@ in
     '';
     launchd.daemons.coeusd = {
       serviceConfig = {
-        ProgramArguments = [ (toString runtime.runner) ];
+        ProgramArguments = [
+          (toString runtime.runner)
+          "--service-home"
+          cfg.home
+          "--service-state-directory"
+          cfg.stateDirectory
+          "--config"
+          cfg.configFile
+        ];
         UserName = cfg.user;
         GroupName = cfg.group;
         WorkingDirectory = cfg.stateDirectory;

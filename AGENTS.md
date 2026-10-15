@@ -24,6 +24,7 @@ any section inaccurate.
 - `config.server.default.toml` — embedded server defaults.
 - `src/bin/coeus.rs` — client executable entry point.
 - `src/bin/coeusd.rs` — daemon executable entry point.
+- `src/service_startup.rs` — native module-managed ownership/permission checks (Darwin).
 - `src/cli/` — clap argument definitions for the two binaries.
 - `src/client/` — client connection, request sending and raw output-only attachment.
 - `src/server/` — listener, connection handling, and packet dispatch.
@@ -57,7 +58,9 @@ files merely because they are already public entry points.
 
 ### Server
 
-1. `coeusd` parses `DaemonCLIArgs` and loads `ServerConfig`.
+1. `coeusd` parses `DaemonCLIArgs`; Darwin's module launches the native binary directly
+   and requests in-process service ownership/permission checks before loading
+   `ServerConfig`. Linux retains its existing service startup wrapper.
 2. `CoeusServer::new` binds an `EncryptedListener` and constructs a `Deployer`.
 3. `run` accepts TCP sockets cancellation-safely. Each tracked Tokio task owns a
    ten-second Noise handshake followed by its authenticated session; both pending and

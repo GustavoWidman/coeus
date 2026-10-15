@@ -41,7 +41,8 @@ pub struct ServiceIdentity {
     pub account: AccountPolicy,
     pub state_directory: PathBuf,
     pub config_file: PathBuf,
-    /// Immutable runner path captures configuration, environment, HOME, and elevation policy.
+    /// Immutable initial service executable (native daemon on Darwin, wrapper on Linux).
+    /// The full service_definition also captures arguments, environment and policy.
     pub runner: PathBuf,
     pub elevation_adapter: PathBuf,
     pub nix: PathBuf,

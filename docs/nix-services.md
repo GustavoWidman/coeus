@@ -175,3 +175,36 @@ See [independent activation](independent-activation.md) for the implemented exac
 manual-switch workflow, supported SSH bootstrap path, migration prerequisites,
 receipt reconciliation, and native-platform validation limits. Never run a legacy
 `nh switch` through the daemon being replaced.
+
+## Darwin native entrypoint and privacy permission limits
+
+The Darwin module starts the exact package's native `bin/coeusd` as
+`ProgramArguments[0]`, not a shell trampoline. Paired `--service-home` and
+`--service-state-directory` arguments enforce startup checks in-process before
+configuration loading, ledger access or listening: non-root effective UID;
+service-owned home and private mode-0700 working directory; readable, regular,
+service-owned mode-0400/0600 config resolving outside `/nix/store`. It follows
+runtime-secret links, sets umask 077, and enters the configured working directory.
+A failed check exits without creating config or opening the ledger. Linux's
+existing wrapper and the restricted exact-closure elevation helper are unchanged.
+
+This simplifies the LaunchDaemon's initial executable and macOS TCC responsible
+process chain, following the [Munki 7 launchd design](https://github.com/munki/munki/wiki/Munki-7-launchd-job-changes).
+It does **not** grant App Management/Full Disk Access, establish which process
+macOS attributes Coeus activation to, or prove unattended application updates work.
+The [Munki PPPC guidance](https://github.com/munki/munki/wiki/PPPC-Privacy-permissions)
+requires permissions appropriate to the background execution identity; it is not
+a substitute for an actual Coeus deployment test.
+
+A stable native path alone is not upgrade-stable permission identity. Current
+ad-hoc-signed Nix builds use a cdhash designated requirement, which changes when
+the binary changes. Apple's [TN3127](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements)
+explains why persistent privacy grants rely on designated requirements. A suitable
+stable signing identity/designated requirement and one-time consent (or managed
+PPPC policy) would need separate design and verification; this module neither
+creates a signing key nor claims that ad-hoc signing confers consent. For bare
+binaries, Apple's [PPPC schema](https://github.com/apple/device-management/blob/release/mdm/profiles/com.apple.TCC.configuration-profile-policy.yaml)
+also identifies the installation path, so Nix-store path changes remain an
+upgrade concern even with stable signing. Manual permission retention and a
+second-version/path upgrade require real platform tests. Removing
+App Management checks or skipping app updates is not part of this change.

@@ -69,24 +69,30 @@ let
     PATH = path;
     NH_ELEVATION_STRATEGY = if cfg.enablePasswordlessActivation then toString adapter else "none";
   };
-  runner = pkgs.writeShellScript "coeusd-start" ''
-    set -eu
-    uid=$(${pkgs.coreutils}/bin/id -u)
-    test "$uid" != 0 || { echo "coeusd must not run as root" >&2; exit 1; }
-    test "$(${pkgs.coreutils}/bin/stat -Lc %u -- ${lib.escapeShellArg cfg.home})" = "$uid"
-    test "$(${pkgs.coreutils}/bin/stat -Lc %u -- ${lib.escapeShellArg cfg.stateDirectory})" = "$uid"
-    test "$(${pkgs.coreutils}/bin/stat -Lc %a -- ${lib.escapeShellArg cfg.stateDirectory})" = 700
-    config=${lib.escapeShellArg cfg.configFile}
-    actual=$(${pkgs.coreutils}/bin/realpath -e -- "$config")
-    case "$actual" in /nix/store/*) echo "coeusd config must not be in the store" >&2; exit 1;; esac
-    test -f "$actual" && test -r "$actual"
-    test "$(${pkgs.coreutils}/bin/stat -Lc %u -- "$actual")" = "$(${pkgs.coreutils}/bin/id -u)"
-    mode=$(${pkgs.coreutils}/bin/stat -Lc %a -- "$actual")
-    test "$mode" = 600 || test "$mode" = 400
-    umask 077
-    cd ${lib.escapeShellArg cfg.stateDirectory}
-    exec ${cfg.package}/bin/coeusd --config "$actual"
-  '';
+  # A native initial executable gives launchd/TCC a concrete daemon identity.
+  # Keep the Linux wrapper unchanged. Darwin performs its checks in Rust.
+  runner =
+    if platform == "darwin" then
+      "${cfg.package}/bin/coeusd"
+    else
+      pkgs.writeShellScript "coeusd-start" ''
+        set -eu
+        uid=$(${pkgs.coreutils}/bin/id -u)
+        test "$uid" != 0 || { echo "coeusd must not run as root" >&2; exit 1; }
+        test "$(${pkgs.coreutils}/bin/stat -Lc %u -- ${lib.escapeShellArg cfg.home})" = "$uid"
+        test "$(${pkgs.coreutils}/bin/stat -Lc %u -- ${lib.escapeShellArg cfg.stateDirectory})" = "$uid"
+        test "$(${pkgs.coreutils}/bin/stat -Lc %a -- ${lib.escapeShellArg cfg.stateDirectory})" = 700
+        config=${lib.escapeShellArg cfg.configFile}
+        actual=$(${pkgs.coreutils}/bin/realpath -e -- "$config")
+        case "$actual" in /nix/store/*) echo "coeusd config must not be in the store" >&2; exit 1;; esac
+        test -f "$actual" && test -r "$actual"
+        test "$(${pkgs.coreutils}/bin/stat -Lc %u -- "$actual")" = "$(${pkgs.coreutils}/bin/id -u)"
+        mode=$(${pkgs.coreutils}/bin/stat -Lc %a -- "$actual")
+        test "$mode" = 600 || test "$mode" = 400
+        umask 077
+        cd ${lib.escapeShellArg cfg.stateDirectory}
+        exec ${cfg.package}/bin/coeusd --config "$actual"
+      '';
   assertions = [
     {
       assertion =

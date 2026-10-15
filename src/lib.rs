@@ -8,4 +8,6 @@ pub mod config;
 pub mod deploy;
 pub mod jobs;
 pub mod server;
+#[cfg(unix)]
+pub mod service_startup;
 pub mod utils;

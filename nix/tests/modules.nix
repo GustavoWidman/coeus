@@ -146,6 +146,9 @@ let
     darwinSystem = builtins.unsafeDiscardStringContext d.system.build.toplevel.drvPath;
     linuxService = l.systemd.services.coeusd.serviceConfig;
     darwinService = d.launchd.daemons.coeusd.serviceConfig;
+    # Actual XML emitted by nix-darwin, parsed below without a Darwin activation.
+    darwinPlist = d.environment.launchDaemons."org.nixos.coeusd.plist".text;
+    darwinDaemon = "${d.services.coeusd.package}/bin/coeusd";
     linuxSudo = linuxRule;
     darwinSudo = d.security.sudo.extraConfig;
     inherit darwinOrdering;
@@ -182,6 +185,19 @@ let
     (l.systemd.services.coeusd.environment.HOME == "/var/lib/coeus")
     (!(l.systemd.services.coeusd.serviceConfig.NoNewPrivileges or false))
     (d.launchd.daemons.coeusd.serviceConfig.UserName == "coeus")
+    (
+      d.launchd.daemons.coeusd.serviceConfig.ProgramArguments == [
+        "${d.services.coeusd.package}/bin/coeusd"
+        "--service-home"
+        d.services.coeusd.home
+        "--service-state-directory"
+        d.services.coeusd.stateDirectory
+        "--config"
+        d.services.coeusd.configFile
+      ]
+    )
+    ((manifestFor d "darwin").runner == (manifestFor d "darwin").daemon)
+    (lib.hasSuffix "-coeusd-start" (toString l.systemd.services.coeusd.serviceConfig.ExecStart))
     (d.users.users.coeus.uid == 498)
     (existingLinux.systemd.services.coeusd.environment.HOME == "/home/deploy")
     (!(builtins.hasAttr "deploy" existingLinux.users.users))
@@ -228,6 +244,21 @@ pkgs.runCommand "coeus-module-evaluation-${system}"
     RULE
     ${if pkgs.stdenv.isDarwin then "/usr/sbin/visudo" else "visudo"} -c -f darwin.sudoers
     ${if pkgs.stdenv.isDarwin then "/usr/sbin/visudo" else "visudo"} -c -f linux.sudoers
+    cat > facts.json <<'JSON'
+    ${builtins.unsafeDiscardStringContext (builtins.toJSON facts)}
+    JSON
+    python3 - <<'PYTHON'
+    import json, plistlib
+    with open('facts.json') as source:
+        facts = json.load(source)
+    plist = plistlib.loads(facts['darwinPlist'].encode())
+    assert plist['ProgramArguments'][0] == facts['darwinDaemon']
+    assert plist['ProgramArguments'] == facts['darwinService']['ProgramArguments']
+    assert plist.get('Program', facts['darwinDaemon']) == facts['darwinDaemon']
+    assert plist['UserName'] == 'coeus'
+    assert plist['Umask'] == 63
+    assert 'coeusd-start' not in plist['ProgramArguments'][0]
+    PYTHON
     cat > $out <<'JSON'
     ${builtins.unsafeDiscardStringContext (builtins.toJSON facts)}
     JSON
