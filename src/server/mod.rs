@@ -1,18 +1,23 @@
-use std::sync::Arc;
+mod shutdown;
+
+use std::{sync::Arc, time::Duration};
 
 use colored::Colorize;
-use eyre::Result;
+use eyre::{Context, Result};
 use log::{debug, error, info};
-use tokio::sync::Mutex;
+use tokio::{sync::Mutex, task::JoinSet, time::timeout};
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
         proto::{DeployAccepted, Packet},
-        stream::{EncryptedListener, EncryptedStream},
+        stream::{EncryptedListener, EncryptedStream, PendingConnection},
     },
     config::ServerConfig,
     deploy::Deployer,
 };
+
+pub const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(10);
 
 pub struct CoeusServer {
     listener: EncryptedListener,
@@ -39,32 +44,66 @@ impl CoeusServer {
     }
 
     pub async fn run(self) -> Result<()> {
+        let mut signals = shutdown::Signals::register()?;
+        let shutdown = CancellationToken::new();
+
+        let server = self.serve(shutdown.clone());
+        tokio::pin!(server);
+
+        tokio::select! {
+            result = &mut server => result, // server crash
+            signal_result = signals.wait() => {
+                // graceful shutdown
+                shutdown.cancel();
+                let server_result = server.await;
+                signal_result.and(server_result)
+            },
+        }
+    }
+
+    async fn serve(self, shutdown: CancellationToken) -> Result<()> {
         info!(
             "coeus server listening on {}",
             self.config.address().to_string().magenta()
         );
 
         let server = Arc::new(self);
+        let mut connections = JoinSet::new();
+
         loop {
-            let (stream, addr) = server.listener.accept().await?;
-
-            debug!(
-                "hamdling new connection from {}",
-                addr.to_string().magenta()
-            );
-
-            tokio::spawn({
-                let server = server.clone();
-                async move {
-                    if let Err(e) = server.handle_connection(stream).await {
-                        error!("error handling connection:\n{}", e);
+            tokio::select! {
+                biased;
+                _ = shutdown.cancelled() => break,
+                Some(_) = connections.join_next(), if !connections.is_empty() => {},
+                // Tokio TCP accept is cancellation-safe. Noise belongs to the spawned
+                // task, not a sibling select branch; reaping another task cannot close it.
+                accepted = server.listener.listen() => {
+                    // if connections.len() < connection::MAX_CONNECTIONS => {
+                    match accepted {
+                        Ok(pending) => {
+                            let server = server.clone();
+                            connections.spawn(async move {
+                                if let Err(error) = server.handle_connection(pending).await {
+                                    debug!("connection ended: {error}");
+                                }
+                            });
+                        }
+                        Err(error) => error!("TCP accept failed: {error}"),
                     }
                 }
-            });
+            }
         }
+        connections.abort_all();
+        while connections.join_next().await.is_some() {}
+        // server.jobs.shutdown().await;
+        Ok(())
     }
 
-    pub async fn handle_connection(&self, mut stream: EncryptedStream) -> Result<()> {
+    pub async fn handle_connection(&self, pending: PendingConnection) -> Result<()> {
+        let mut stream = timeout(HANDSHAKE_DEADLINE, pending.authenticate())
+            .await
+            .wrap_err("Noise handshake deadline reached")??;
+
         loop {
             let packet = stream.recv().await.inspect_err(|e| {
                 error!(
