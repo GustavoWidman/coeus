@@ -1,7 +1,10 @@
 use std::net::SocketAddr;
 
 use eyre::Result;
-use tokio::{io, net::TcpListener};
+use tokio::{
+    io,
+    net::{TcpListener, TcpStream},
+};
 
 use crate::common::stream::EncryptedStream;
 
@@ -22,12 +25,32 @@ impl EncryptedListener {
         self.listener.local_addr()
     }
 
+    /// listens until a new connection is accepted and authenticates it,
+    /// returning the [EncryptedStream] and the peer's [SocketAddr]
     pub async fn accept(&self) -> Result<(EncryptedStream, SocketAddr)> {
-        let (stream, addr) = self.listener.accept().await?;
+        let pending = self.listen().await?;
+        let address = pending.stream.peer_addr()?;
+        Ok((pending.authenticate().await?, address))
+    }
 
-        Ok((
-            EncryptedStream::handshake(stream, &self.psk, false).await?,
-            addr,
-        ))
+    /// listens for new connections and returns a [PendingConnection]
+    /// which can be used to authenticate the connection
+    pub async fn listen(&self) -> Result<PendingConnection> {
+        let (stream, _) = self.listener.accept().await?;
+        Ok(PendingConnection {
+            stream,
+            psk: self.psk,
+        })
+    }
+}
+
+pub struct PendingConnection {
+    stream: TcpStream,
+    psk: [u8; 32],
+}
+
+impl PendingConnection {
+    pub async fn authenticate(self) -> Result<EncryptedStream> {
+        EncryptedStream::handshake(self.stream, &self.psk, false).await
     }
 }
