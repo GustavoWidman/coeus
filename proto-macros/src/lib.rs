@@ -219,13 +219,30 @@ pub fn packet_enum(_attributes: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
+/// Implements packet serialization for enums, or conversion into the same-named
+/// `coeus::common::proto::Packet` variant for payload structs.
 #[proc_macro_derive(Packet, attributes(packet))]
 pub fn derive_packet(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let ident = input.ident;
 
+    if let Data::Struct(_) = &input.data {
+        let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+        return quote! {
+            impl #impl_generics ::core::convert::From<#ident #ty_generics>
+                for ::coeus::common::proto::Packet #where_clause
+            {
+                fn from(value: #ident #ty_generics) -> Self {
+                    Self::#ident(::std::boxed::Box::new(value))
+                }
+            }
+        }
+        .into();
+    }
+
     let Data::Enum(data) = input.data else {
-        return syn::Error::new_spanned(ident, "Packet can only be derived for an enum")
+        return syn::Error::new_spanned(ident, "Packet can only be derived for a struct or enum")
             .to_compile_error()
             .into();
     };
