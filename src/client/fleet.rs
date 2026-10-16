@@ -1,5 +1,6 @@
 //! CLI orchestration: resolve/authenticate before dispatch, never retry ambiguous ACKs.
-use super::{CoeusClient, EndpointUnreachable, target::Target};
+use super::presentation::{self, DisplayRow, Interrupt, Style, Watch};
+use super::{CoeusClient, EndpointUnreachable, RequestRejection, target::Target};
 use crate::{
     cli::main::{ClientCommand, DeployArgs},
     common::proto::*,
@@ -23,11 +24,12 @@ pub(super) struct AcceptedTarget {
 }
 
 pub async fn run(config: ClientConfig, command: ClientCommand, no_tty: bool) -> Result<()> {
-    let interactive = interactive(
-        no_tty,
-        std::io::stdin().is_terminal(),
-        std::io::stdout().is_terminal(),
-    );
+    let interactive = presentation::terminal_capable()
+        && interactive(
+            no_tty,
+            std::io::stdin().is_terminal(),
+            std::io::stdout().is_terminal(),
+        );
     match command {
         ClientCommand::Deploy(args) => deploy(config, args, interactive).await,
         ClientCommand::Status { target, watch, job } => {
@@ -41,8 +43,10 @@ pub async fn run(config: ClientConfig, command: ClientCommand, no_tty: bool) -> 
                     .await;
             }
             let names = targets(&config, target.as_deref())?;
+            let mut display = Watch::new(watch)?;
+            let mut interrupt = Interrupt::new()?;
             loop {
-                let results = stream::iter(names.iter().cloned())
+                let query = stream::iter(names.iter().cloned())
                     .map(|name| {
                         let config = config.clone();
                         async move {
@@ -53,38 +57,41 @@ pub async fn run(config: ClientConfig, command: ClientCommand, no_tty: bool) -> 
                                 else {
                                     bail!("unexpected machine status response");
                                 };
-                                Ok(status)
+                                Ok::<_, eyre::Report>(status)
                             }
                             .await;
                             (name, result)
                         }
                     })
-                    .buffer_unordered(8)
-                    .collect::<Vec<_>>()
-                    .await;
-                println!("TARGET\tACTIVITY\tJOB\tREVISION\tOUTCOME");
+                    .buffered(8)
+                    .collect::<Vec<_>>();
+                let results = if watch {
+                    tokio::select! { biased; signal = interrupt.recv() => { signal?; return Ok(()); }, result = query => result }
+                } else {
+                    query.await
+                };
                 let mut failed = false;
+                let mut rows = Vec::new();
                 for (name, result) in results {
-                    match result {
-                        Ok(status) => {
-                            println!("{}", status_row(&name, &status));
-                            if target.is_some()
-                                && let Some(job) = status.active.as_ref().or(status.latest.as_ref())
-                            {
-                                super::commands::print_status(std::slice::from_ref(job));
-                            }
-                        }
+                    rows.push(match result {
+                        Ok(status) => machine_row(&name, &status),
                         Err(error) => {
                             failed = true;
-                            eprintln!("{}: {error}", plain_text::bounded(&name, 512));
+                            DisplayRow::error(&name, None, "Unavailable", &error.to_string())
                         }
-                    }
+                    });
                 }
+                let text =
+                    presentation::snapshot(&rows, Style::stdout(), std::io::stdout().is_terminal());
+                tokio::select! { biased; signal = interrupt.recv(), if watch => { signal?; return Ok(()); }, result = display.emit(&text) => result? }
                 if !watch {
-                    ensure!(!failed, "one or more targets could not be queried");
+                    ensure!(
+                        !failed,
+                        "one or more targets are unavailable. See the target results above"
+                    );
                     return Ok(());
                 }
-                tokio::select! { _ = tokio::time::sleep(Duration::from_millis(500)) => {}, signal = tokio::signal::ctrl_c() => { signal?; return Ok(()) } }
+                tokio::select! { _ = tokio::time::sleep(Duration::from_millis(500)) => {}, signal = interrupt.recv() => { signal?; return Ok(()) } }
             }
         }
         ClientCommand::Attach {
@@ -186,6 +193,7 @@ async fn deploy(config: ClientConfig, args: DeployArgs, interactive: bool) -> Re
         "explicit --request-id requires one target (fleet retries must be individually reviewed)"
     );
     let used = Arc::new(Mutex::new(HashSet::new()));
+    let order = names.clone();
     let tasks = stream::iter(names)
         .map(|name| {
             let config = config.clone();
@@ -211,11 +219,17 @@ async fn deploy(config: ClientConfig, args: DeployArgs, interactive: bool) -> Re
         match result {
             Ok(target) => accepted.push(target),
             Err(error) => {
-                eprintln!("{}: {error:#}", plain_text::bounded(&name, 512));
-                errors.push(name);
+                eprintln!(
+                    "{}: {}",
+                    presentation::safe(&name),
+                    presentation::safe(&format!("{error:#}"))
+                );
+                errors.push(failed_target(&name, &error));
             }
         }
     }
+    accepted.sort_by_key(|item| order.iter().position(|name| name == &item.name));
+    errors.sort_by_key(|row| order.iter().position(|item| item == &row.target));
     if interactive {
         if args.target.is_some() {
             if let Some(mut target) = accepted.pop() {
@@ -227,7 +241,7 @@ async fn deploy(config: ClientConfig, args: DeployArgs, interactive: bool) -> Re
     }
     ensure!(
         errors.is_empty(),
-        "deployment dispatch failed for {} target(s); accepted deployments continue independently",
+        "Dispatch errors on {} target(s). Check target results before submitting again",
         errors.len()
     );
     Ok(())
@@ -273,21 +287,24 @@ async fn dispatch(
         dry_run: args.dry_run,
         clean_substituters: args.clean_substituters,
     };
-    let Packet::DeployAccepted(accepted) = client.request(request).await.wrap_err(
-        "submission may have been accepted: query this target's status; do not automatically retry",
-    )?
+    let Packet::DeployAccepted(accepted) = client
+        .request(request)
+        .await
+        .map_err(|error| submission_error(error, name, nonce))?
     else {
-        bail!("unexpected deployment response; query status before retrying");
+        return Err(unknown_submission(
+            name,
+            nonce,
+            "unexpected deployment response",
+        ));
     };
-    ensure!(
-        accepted.job_id != 0,
-        "invalid assigned job ID; query status before retrying"
-    );
+    if accepted.job_id == 0 {
+        return Err(unknown_submission(name, nonce, "invalid assigned job ID"));
+    }
     println!(
-        "{} accepted {} — {}",
-        plain_text::bounded(name, 512),
-        accepted.job_id,
-        plain_text::bounded(&accepted.message, 1024)
+        "{}: job {} accepted.",
+        presentation::safe(name),
+        accepted.job_id
     );
     Ok(AcceptedTarget {
         name: name.into(),
@@ -296,8 +313,77 @@ async fn dispatch(
     })
 }
 
+#[derive(Debug)]
+enum SubmissionFailure {
+    Rejected {
+        request_id: u64,
+        cause: String,
+        action: String,
+    },
+    Unknown {
+        request_id: u64,
+        cause: String,
+        action: String,
+    },
+}
+impl std::fmt::Display for SubmissionFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Rejected {
+                request_id,
+                cause,
+                action,
+            } => {
+                write!(
+                    f,
+                    "Request {request_id} refused (rejection). Acceptance unknown. {cause}. Inspect: {action}. Do not resubmit until status is checked"
+                )
+            }
+            Self::Unknown {
+                request_id,
+                cause,
+                action,
+            } => write!(
+                f,
+                "Acceptance unknown for request {request_id}. {cause}. Inspect: {action}. Do not resubmit until status is checked"
+            ),
+        }
+    }
+}
+impl std::error::Error for SubmissionFailure {}
+fn unknown_submission(target: &str, request_id: u64, cause: &str) -> eyre::Report {
+    SubmissionFailure::Unknown {
+        request_id,
+        cause: presentation::safe(cause),
+        action: format!("coeus status {}", super::tui::shell_word(target)),
+    }
+    .into()
+}
+fn submission_error(error: eyre::Report, target: &str, request_id: u64) -> eyre::Report {
+    if error.is::<RequestRejection>() {
+        SubmissionFailure::Rejected {
+            request_id,
+            cause: presentation::safe(&error.to_string()),
+            action: format!("coeus status {}", super::tui::shell_word(target)),
+        }
+        .into()
+    } else {
+        unknown_submission(target, request_id, &format!("{error:#}"))
+    }
+}
+fn failed_target(name: &str, error: &eyre::Report) -> DisplayRow {
+    let state = if error.downcast_ref::<SubmissionFailure>().is_some() {
+        "Acceptance unknown"
+    } else {
+        "Not submitted"
+    };
+    DisplayRow::error(name, None, state, &format!("{error:#}"))
+}
+
 async fn bootstrap_offer(config: &ClientConfig, name: &str) -> Result<()> {
-    let settings = config.bootstrap.get(name).ok_or_else(|| eyre!("endpoint unreachable; bootstrap prerequisites not configured for this target. Use explicit coeus bootstrap --help (never auto-retry a deployment)"))?;
+    let settings = config.bootstrap.get(name).ok_or_else(|| {
+        eyre!("endpoint unreachable. Bootstrap is not configured. See: coeus bootstrap --help")
+    })?;
     eprintln!(
         "{name} unreachable. Bootstrap via verified SSH with existing configured prerequisites? [y/N]"
     );
@@ -331,27 +417,19 @@ async fn bootstrap_offer(config: &ClientConfig, name: &str) -> Result<()> {
     .await
 }
 
-pub(super) fn status_row(name: &str, status: &MachineStatusResponse) -> String {
-    let (activity, job) = match (&status.active, &status.latest) {
-        (Some(job), _) => ("Active", Some(job)),
-        (None, Some(job)) if !job.phase.is_terminal() => ("Pending", Some(job)),
-        (None, Some(job)) => ("Completed", Some(job)),
-        _ => ("Idle", None),
-    };
-    match job {
-        Some(job) => format!(
-            "{}\t{activity}\t{}\t{}\t{:?}{}",
-            plain_text::bounded(name, 512),
-            job.job_id,
-            plain_text::bounded(&job.revision, 256),
-            job.phase,
-            if job.cancel_requested {
-                " (cancel requested)"
-            } else {
-                ""
+fn machine_row(name: &str, status: &MachineStatusResponse) -> DisplayRow {
+    match status.active.as_ref().or(status.latest.as_ref()) {
+        Some(job) => {
+            let mut row = DisplayRow::job(name, job);
+            if status.active.is_none()
+                && job.phase.is_terminal()
+                && job.phase != DeployPhase::Interrupted
+            {
+                row.detail = format!("Last job. {}", row.detail).trim().into();
             }
-        ),
-        None => format!("{}\t{activity}\t-\t-\t-", plain_text::bounded(name, 512)),
+            row
+        }
+        None => DisplayRow::idle(name),
     }
 }
 #[cfg(test)]
@@ -375,13 +453,50 @@ mod tests {
             cancel_requested: false,
             message: None,
         };
-        let row = status_row(
+        let row = machine_row(
             "lab",
             &MachineStatusResponse {
                 active: None,
                 latest: Some(job),
             },
         );
-        assert!(row.contains("Completed\t7\tmain\tFailed"));
+        assert_eq!(row.state, "Failed");
+        assert!(row.detail.contains("Last job."));
+    }
+    #[test]
+    fn rejection_is_not_a_lost_ack_and_interrupted_is_not_completed() {
+        let error = submission_error(
+            RequestRejection(
+                "interrupted deployment requires operator reconciliation; new admission blocked"
+                    .into(),
+            )
+            .into(),
+            "me",
+            42,
+        );
+        let text = format!("{error:#}");
+        assert!(text.contains("rejection"));
+        assert!(text.contains("Acceptance unknown"));
+        let ambiguous = submission_error(eyre!("connection closed"), "me", 42);
+        assert!(format!("{ambiguous:#}").contains("Acceptance unknown"));
+        assert_eq!(failed_target("me", &ambiguous).state, "Acceptance unknown");
+        assert_eq!(failed_target("me", &error).state, "Acceptance unknown");
+        let job = JobStatus {
+            job_id: 1,
+            revision: "main".into(),
+            commit: None,
+            phase: DeployPhase::Interrupted,
+            cancel_requested: true,
+            message: None,
+        };
+        for active in [false, true] {
+            let status = MachineStatusResponse {
+                active: active.then(|| job.clone()),
+                latest: Some(job.clone()),
+            };
+            let row = machine_row("me", &status);
+            assert_eq!(row.state, "Recovery required");
+            assert!(row.detail.contains("New deployments blocked."));
+        }
     }
 }

@@ -64,7 +64,7 @@ coeus deploy me                      # configured revision, one daemon
 coeus deploy lab --rev COMMIT         # interactive: follow accepted job to terminal
 coeus deploy                         # configured fleet; interactive real-time view
 coeus deploy --no-tty                 # dispatch fleet, ACKs/errors, then exit
-coeus status                         # fleet table, never a TUI
+coeus status                         # ordinary fleet table, no live view
 coeus status lab                      # active job or last-active job with details
 coeus status lab --job 2 --watch       # explicit historical job inspection
 coeus attach lab                      # shared raw output across future jobs
@@ -78,6 +78,8 @@ row's activity `Completed` means *idle with retained activity*, not successful
 deployment: its separate outcome remains Failed/Cancelled/Interrupted/Succeeded.
 It does not dump all historical jobs. Queued work and manual-switch barriers retain
 their actual phase. Structured status output remains visible at quiet verbosity.
+Default `status` prints an ordinary table. Opt-in `status --watch` uses an alternate-screen view on
+capable terminals and changed-only plain snapshots otherwise.
 
 Only interactive stdin **and** stdout enable auto-follow. `--no-tty` or noninteractive
 execution dispatches and exits after ACKs/errors; it never prompts or opens a TUI.

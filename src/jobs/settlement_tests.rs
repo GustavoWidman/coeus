@@ -134,14 +134,15 @@ async fn assert_persistence_stop(
     Ok(())
 }
 
-async fn assert_restart_stays_blocked(path: &Path, first: u64) -> Result<()> {
+async fn assert_restart_resyncs_terminal_receipt(path: &Path, first: u64) -> Result<()> {
     let (jobs, mut started, _) = prepared_jobs(path).await?;
+    // The failed run remains blocked. Restart obtains a NEW lease and performs
+    // a successful receipt fsync, then commits the terminal ledger before FIFO.
+    assert_eq!(started.recv().await.as_deref(), Some("ordinary"));
     assert_eq!(
         jobs.status(Some(first)).await?[0].phase,
-        DeployPhase::Interrupted
+        DeployPhase::Cancelled
     );
-    assert!(jobs.accept(request("restart-attempt")).await.is_err());
-    blocked(&mut started).await;
     jobs.shutdown().await;
     Ok(())
 }
@@ -164,7 +165,7 @@ async fn post_rename_fsync_failure_in_build_revocation_and_dry_run_stops_admissi
             assert_persistence_stop(&jobs, first, second, &mut started, &path).await?;
             jobs.shutdown().await;
             drop(jobs);
-            assert_restart_stays_blocked(&path, first).await?;
+            assert_restart_resyncs_terminal_receipt(&path, first).await?;
         }
         Ok::<_, eyre::Report>(())
     })
@@ -190,7 +191,7 @@ async fn post_rename_fsync_failure_in_handoff_cancellation_stops_admission() -> 
         assert_persistence_stop(&jobs, first, second, &mut started, &path).await?;
         jobs.shutdown().await;
         drop(jobs);
-        assert_restart_stays_blocked(&path, first).await?;
+        assert_restart_resyncs_terminal_receipt(&path, first).await?;
         Ok::<_, eyre::Report>(())
     })
     .await??;

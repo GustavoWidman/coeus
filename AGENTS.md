@@ -82,8 +82,10 @@ files merely because they are already public entry points.
 admission order under its FIFO Tokio mutex, not network arrival time. File/rename/
 directory sync precedes ACK and executable queue insertion. Writes own their tasks:
 disconnecting/cancelling an await must not reorder snapshots. One private state-directory
-lease excludes another daemon. Restart persists every unfinished record as Interrupted,
-never replays it, and blocks new admission pending operator reconciliation. Durable IDs
+lease excludes another daemon. Restart interrupts started work, preserves never-started FIFO behind uncertainty,
+and restores passive observers for Interrupted/manual barriers. Terminal receipt
+settlement durably updates the ledger before FIFO/admission resumes. No started
+job is replayed; missing/corrupt/nonterminal receipts remain blocked. Durable IDs
 are not silently evicted. Git remains joined `spawn_blocking` with cooperative transfer
 cancellation, not a hard checkout deadline. Child commands own Unix process groups.
 See `docs/fleet-client.md` and `docs/async-deployments.md` for crash windows, storage bounds and remaining gates.

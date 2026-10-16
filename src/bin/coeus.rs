@@ -8,13 +8,24 @@ use coeus::{
 use eyre::Result;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> std::process::ExitCode {
     let args = MainCLIArgs::parse();
+    let verbose = args.verbosity >= log::LevelFilter::Debug;
+    match run(args).await {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("{}", Logger::client_error(&error, verbose));
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+async fn run(args: MainCLIArgs) -> Result<()> {
     // Attach stdout is a byte-exact terminal stream, never a logger target.
     if matches!(args.command, coeus::cli::main::ClientCommand::Attach { .. }) {
         Logger::init_attach();
     } else {
-        Logger::init(args.verbosity);
+        Logger::init_client(args.verbosity);
     }
 
     use coeus::cli::main::ClientCommand;
@@ -31,6 +42,9 @@ async fn main() -> Result<()> {
         }
         ClientCommand::Reconcile { job_id, remote } => {
             return coeus::activation::run_remote(remote, *job_id, None, true).await;
+        }
+        ClientCommand::Recover { job_id, recovery } => {
+            return coeus::activation::operator_recovery::run(*job_id, recovery.clone()).await;
         }
         ClientCommand::Bootstrap {
             job_id,

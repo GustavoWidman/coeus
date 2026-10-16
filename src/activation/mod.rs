@@ -2,6 +2,7 @@
 mod build;
 mod identity;
 mod local;
+pub mod operator_recovery;
 mod receipt;
 mod remote;
 mod switch;

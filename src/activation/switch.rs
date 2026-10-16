@@ -85,6 +85,7 @@ pub(crate) fn prepare_built(
         state: ActivationState::Ready,
         previous_process_id,
         message: "built and retained; not activated".into(),
+        operator_resolution: None,
     };
     store.save(&receipt)?;
     Ok(receipt)
@@ -332,7 +333,7 @@ pub(crate) fn activation_commands(receipt: &Receipt) -> Vec<Vec<String>> {
     // Darwin activation reloads the changed launchd plist. Verification requires a new PID.
     commands
 }
-fn validate_store_path(path: &Path) -> Result<()> {
+pub(crate) fn validate_store_path(path: &Path) -> Result<()> {
     ensure!(
         path.parent() == Some(Path::new("/nix/store")),
         "expected direct Nix store closure"

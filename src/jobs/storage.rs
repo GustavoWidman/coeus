@@ -32,12 +32,19 @@ impl JobStorage {
         directory: PathBuf,
         scope: String,
     ) -> Result<(Arc<Self>, VecDeque<JobRecord>)> {
-        tokio::task::spawn_blocking(move || Self::load(directory, scope)).await?
+        tokio::task::spawn_blocking(move || Self::load(directory, scope, true)).await?
     }
 
-    fn load(directory: PathBuf, scope: String) -> Result<(Arc<Self>, VecDeque<JobRecord>)> {
+    fn load(
+        directory: PathBuf,
+        scope: String,
+        initialize: bool,
+    ) -> Result<(Arc<Self>, VecDeque<JobRecord>)> {
         if scope.len() > 4096 {
             bail!("repository scope exceeds storage limit");
+        }
+        if !initialize {
+            Self::regular_directory(&directory)?;
         }
         if !directory.exists() {
             #[cfg(unix)]
@@ -48,21 +55,27 @@ impl JobStorage {
             #[cfg(not(unix))]
             fs::create_dir(&directory)?;
         }
-        // Sync the parent's directory entry too (state_directory's parent must exist).
-        File::open(
-            directory
-                .parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-                .unwrap_or(Path::new(".")),
-        )?
-        .sync_all()?;
+        if initialize {
+            // Sync the parent's directory entry too (state_directory's parent must exist).
+            File::open(
+                directory
+                    .parent()
+                    .filter(|parent| !parent.as_os_str().is_empty())
+                    .unwrap_or(Path::new(".")),
+            )?
+            .sync_all()?;
+        }
         Self::regular_directory(&directory)?;
         let lock_path = directory.join("ledger.lock");
         if fs::symlink_metadata(&lock_path).is_ok() {
             Self::regular_file(&lock_path)?;
         }
         let mut options = OpenOptions::new();
-        options.read(true).write(true).create(true).truncate(false);
+        options
+            .read(true)
+            .write(true)
+            .create(initialize)
+            .truncate(false);
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
@@ -163,6 +176,12 @@ impl JobStorage {
             }
             _ => {}
         }
+        if !initialize {
+            eyre::ensure!(
+                initialized && saved.is_some(),
+                "operator recovery requires an existing initialized v2 ledger"
+            );
+        }
         // A genuinely new directory or v1-only migration initializes the counter
         // before the marker, and both precede any v2 snapshot or admission. Never
         // reconstruct an initialized v2 counter from retained (possibly pruned) IDs.
@@ -178,6 +197,13 @@ impl JobStorage {
             storage.write_atomic("ledger-format", LEDGER_FORMAT)?;
         }
         Ok((storage, records.into()))
+    }
+
+    pub(super) fn existing(
+        directory: PathBuf,
+        scope: String,
+    ) -> Result<(Arc<Self>, VecDeque<JobRecord>)> {
+        Self::load(directory, scope, false)
     }
 
     pub fn high_water(&self) -> u64 {
@@ -267,6 +293,8 @@ impl JobStorage {
             self.directory
                 .join(format!("{}.job", snapshot.status.job_id)),
         )?;
+        #[cfg(test)]
+        snapshot_sync_fault::check(&self.directory)?;
         File::open(&self.directory)?.sync_all()?;
         Ok(())
     }
@@ -279,7 +307,10 @@ impl JobStorage {
         #[cfg(unix)]
         {
             use std::os::unix::fs::{MetadataExt, PermissionsExt};
-            if metadata.permissions().mode() & 0o077 != 0 || metadata.nlink() != 1 {
+            if metadata.permissions().mode() & 0o077 != 0
+                || metadata.nlink() != 1
+                || metadata.uid() != nix::unistd::geteuid().as_raw()
+            {
                 bail!("ledger files must be private and not hard-linked");
             }
         }
@@ -293,11 +324,70 @@ impl JobStorage {
         }
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            if metadata.permissions().mode() & 0o077 != 0 {
+            use std::os::unix::fs::{MetadataExt, PermissionsExt};
+            if metadata.uid() != nix::unistd::geteuid().as_raw()
+                || metadata.permissions().mode() & 0o077 != 0
+            {
                 bail!("ledger directory must have private permissions (0700)");
             }
         }
+        Ok(())
+    }
+}
+
+// Only snapshot writes: never counter/format writes or production I/O. Unique
+// temporary directories isolate parallel tests; dropping a guard disarms it.
+#[cfg(test)]
+pub(super) mod snapshot_sync_fault {
+    use std::{
+        collections::HashSet,
+        path::{Path, PathBuf},
+        sync::Mutex,
+    };
+    static FAILURES: Mutex<Option<HashSet<PathBuf>>> = Mutex::new(None);
+    pub(in crate::jobs) struct Failure(PathBuf);
+    pub(in crate::jobs) fn fail_next(directory: &Path) -> Failure {
+        assert!(
+            FAILURES
+                .lock()
+                .unwrap()
+                .get_or_insert_default()
+                .insert(directory.into()),
+            "snapshot sync fault already armed for directory"
+        );
+        Failure(directory.into())
+    }
+    pub(super) fn check(directory: &Path) -> eyre::Result<()> {
+        if FAILURES
+            .lock()
+            .unwrap()
+            .as_mut()
+            .is_some_and(|paths| paths.remove(directory))
+        {
+            eyre::bail!("injected post-rename snapshot directory fsync failure");
+        }
+        Ok(())
+    }
+    impl Drop for Failure {
+        fn drop(&mut self) {
+            if let Some(paths) = FAILURES.lock().unwrap().as_mut() {
+                paths.remove(&self.0);
+            }
+        }
+    }
+
+    #[test]
+    fn fault_is_directory_scoped_one_shot_and_unused_guard_disarms() -> eyre::Result<()> {
+        let first = tempfile::tempdir()?;
+        let other = tempfile::tempdir()?;
+        let guard = fail_next(first.path());
+        check(other.path())?;
+        assert!(check(first.path()).is_err());
+        check(first.path())?;
+        drop(guard);
+        let unused = fail_next(first.path());
+        drop(unused);
+        check(first.path())?;
         Ok(())
     }
 }

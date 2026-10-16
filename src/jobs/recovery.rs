@@ -17,59 +17,42 @@ impl DeploymentJobs {
             storage: Some(storage),
             unhealthy: false,
         };
-        let controlled = ledger
+        use crate::common::proto::DeployPhase;
+        // Never-started FIFO entries may survive behind a durable uncertainty
+        // barrier. Started jobs are observed, never sent back to the executor.
+        let barrier = ledger
             .records
             .iter()
-            .any(|r| r.status.phase == crate::common::proto::DeployPhase::RequiresManualSwitch);
-        if controlled {
+            .filter(|r| {
+                matches!(
+                    r.status.phase,
+                    DeployPhase::RequiresManualSwitch | DeployPhase::Interrupted
+                ) || (!r.status.phase.is_terminal() && r.status.phase != DeployPhase::Queued)
+            })
+            .map(|r| r.sequence)
+            .max();
+        if barrier.is_some() {
             eyre::ensure!(
                 ledger
                     .records
                     .iter()
-                    .filter(|r| r.status.phase == crate::common::proto::DeployPhase::Queued)
+                    .filter(|r| r.status.phase == DeployPhase::Queued)
                     .count()
                     <= super::QUEUE_CAPACITY,
                 "recovered FIFO exceeds bound; reconcile offline"
             );
-            eyre::ensure!(
-                !ledger
-                    .records
-                    .iter()
-                    .any(|r| r.status.phase == crate::common::proto::DeployPhase::Interrupted),
-                "interrupted work conflicts with controlled handoff; reconcile offline"
-            );
-            eyre::ensure!(
-                ledger
-                    .records
-                    .iter()
-                    .filter(|r| r.status.phase
-                        == crate::common::proto::DeployPhase::RequiresManualSwitch)
-                    .count()
-                    == 1,
-                "multiple manual handoffs in ledger; reconcile offline"
-            );
-            let barrier = ledger
-                .records
-                .iter()
-                .find(|r| r.status.phase == crate::common::proto::DeployPhase::RequiresManualSwitch)
-                .map(|r| r.sequence)
-                .ok_or_else(|| eyre::eyre!("missing barrier"))?;
-            eyre::ensure!(
-                ledger.records.iter().all(|r| r.status.phase
-                    != crate::common::proto::DeployPhase::Queued
-                    || r.sequence > barrier),
-                "queued job predates manual barrier; reconcile offline"
-            );
         }
-        // An unrelated crash still interrupts all work. Only a durable manual handoff
-        // preserves never-started queued jobs; the worker claims Checkout before effects.
+        // A crash interrupts started work. Preserve only never-started queued jobs
+        // behind that barrier; the worker claims Checkout durably before effects.
         let unfinished: Vec<_> = ledger
             .records
             .iter()
             .filter(|r| {
                 !r.status.phase.is_terminal()
                     && r.status.phase != crate::common::proto::DeployPhase::RequiresManualSwitch
-                    && !(controlled && r.status.phase == crate::common::proto::DeployPhase::Queued)
+                    && !(r.status.phase == crate::common::proto::DeployPhase::Queued
+                        && !r.started
+                        && barrier.is_some_and(|sequence| r.sequence > sequence))
             })
             .map(|r| r.status.job_id)
             .collect();

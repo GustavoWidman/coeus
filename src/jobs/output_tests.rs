@@ -86,7 +86,7 @@ async fn cancellation_during_incomplete_escape_does_not_block_drain_or_terminal_
                 .iter()
                 .all(|(_, t)| !t.contains("unterminated") && !t.contains('\x1b'))
         );
-        assert!(before.last().unwrap().1.starts_with("Cancelled — "));
+        assert!(before.last().unwrap().1.starts_with("Cancelled: "));
         jobs.shutdown().await;
         drop(jobs);
         let recovered = DeploymentJobs::open(executor, state, "output-cancel".into()).await?;

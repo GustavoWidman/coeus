@@ -34,6 +34,7 @@ impl DeploymentExecutor for Fixture {
                     printf '\360\237'; sleep 0.02; printf '\246\200\033[0m\n'
                     printf '\033]0;fixture'; sleep 0.02; printf '\007stderr\n' >&2"#
                 }
+                "punctuation" => r#"printf 'child \342\200\224 em \342\200\223 en\n'"#,
                 "detach" => {
                     r#"trap 'printf "unexpected SIGINT\n"; exit 19' INT
                     printf 'ready\n'; while [ ! -f release ]; do sleep 0.02; done; printf 'completed\n'"#
@@ -151,6 +152,7 @@ impl Harness {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        command.env("TERM", "xterm-256color");
         command
     }
     async fn stop(self) -> Result<()> {
@@ -750,6 +752,27 @@ async fn interactive_single_observed_cancellation_exits_error_and_restores_termi
         assert!(!child.wait().await?.success());
         assert_eq!(nix::sys::termios::tcgetattr(&slave)?, before);
         assert_eq!(h.finish(&mut client, 1).await?, DeployPhase::Cancelled);
+        h.stop().await
+    })
+    .await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn raw_attach_preserves_child_punctuation_not_generated_by_coeus() -> Result<()> {
+    timeout(Duration::from_secs(8), async {
+        let h = Harness::new().await?;
+        let mut client = h.accept(123, "punctuation").await?;
+        assert_eq!(h.finish(&mut client, 1).await?, DeployPhase::Succeeded);
+        let raw = raw_history(&mut client, 1).await?;
+        assert_eq!(raw, "child — em – en\r\n".as_bytes());
+        // Shared attachment intentionally never stops at a job boundary. Capture
+        // the exact expected page, then Ctrl+C detaches only this subscriber.
+        let mut command = h.command(&["attach", "unused"]);
+        command.args(["--after", "0"]);
+        let attached = capture_attachment(command, raw.len()).await?;
+        assert_eq!(attached.stdout, raw);
+        assert!(attached.stderr.is_empty());
         h.stop().await
     })
     .await??;

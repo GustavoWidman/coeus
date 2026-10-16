@@ -34,7 +34,7 @@ async fn terminal_failure_cause_survives_restart_in_status_and_logs() -> Result<
     assert!(logs.finished);
     assert_eq!(
         logs.entries.last().unwrap().text,
-        "Failed — isolated failure"
+        "Failed: isolated failure"
     );
     recovered.shutdown().await;
     Ok(())
@@ -300,13 +300,15 @@ async fn mid_execution_log_failure_cancels_worker_and_blocks_following_job() -> 
     drop(jobs);
     std::fs::remove_dir(state.join("snapshot.pending"))?;
     let restarted = open(&state).await?;
-    assert!(
-        restarted
-            .status(None)
-            .await?
-            .iter()
-            .all(|status| status.phase == DeployPhase::Interrupted)
+    assert_eq!(
+        restarted.status(Some(first)).await?[0].phase,
+        DeployPhase::Interrupted
     );
+    assert_eq!(
+        restarted.status(Some(second)).await?[0].phase,
+        DeployPhase::Queued
+    );
+    assert!(restarted.accept(request("still-blocked")).await.is_err());
     restarted.shutdown().await;
     Ok(())
 }
@@ -356,5 +358,117 @@ async fn legacy_control_fragments_load_without_rewriting_history() -> Result<()>
     recovered.shutdown().await;
     drop(recovered);
     assert_eq!(std::fs::read(path)?, before);
+    Ok(())
+}
+
+#[tokio::test]
+async fn post_rename_rejection_retains_job_and_blocks_execution_and_restart_replay() -> Result<()> {
+    use crate::{
+        common::{proto::*, stream::EncryptedStream},
+        server::CoeusServer,
+    };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct CountExecutions(Arc<AtomicUsize>);
+    impl DeploymentExecutor for CountExecutions {
+        fn execute(
+            &self,
+            _: DeployRequest,
+            _: JobContext,
+        ) -> futures_util::future::BoxFuture<'_, Result<()>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok(()) })
+        }
+    }
+    async fn rejected(client: &mut EncryptedStream, request: DeployRequest) -> Result<String> {
+        client.send(request).await?;
+        let Some(Packet::RequestRejected(response)) = client.recv().await? else {
+            panic!("expected actual authenticated RequestRejected");
+        };
+        Ok(response.message)
+    }
+
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        let directory = tempfile::tempdir()?;
+        let state = directory.path().join("state");
+        let calls = Arc::new(AtomicUsize::new(0));
+        let executor = Arc::new(CountExecutions(calls.clone()));
+        let key = [0x53; 32];
+        let server = CoeusServer::with_durable_executor(
+            "127.0.0.1:0".parse()?,
+            &key,
+            executor.clone(),
+            state.clone(),
+            "fixture".into(),
+        )
+        .await?;
+        let address = server.local_addr()?;
+        let shutdown = CancellationToken::new();
+        let task = tokio::spawn(server.run_until_cancelled(shutdown.clone()));
+        let mut client = EncryptedStream::connect(address, &key).await?;
+        client.send(HelloRequest {}).await?;
+        assert!(matches!(
+            client.recv().await?,
+            Some(Packet::HelloResponse(_))
+        ));
+
+        let original = request("saved-before-fsync-failure");
+        let fault = storage::snapshot_sync_fault::fail_next(&state);
+        let message = rejected(&mut client, original.clone()).await?;
+        assert!(
+            message.contains("post-rename snapshot directory fsync failure"),
+            "{message}"
+        );
+        // The daemon refused the request, but the renamed admission snapshot exists.
+        // This is why RequestRejected alone is not proof of non-admission.
+        let saved = std::fs::read(state.join("1.job"))?;
+        let snapshot = super::snapshot::Snapshot::decode(&saved)?;
+        snapshot.validate("fixture", &state.join("1.job"))?;
+        let record = snapshot.into_record();
+        assert_eq!(record.request, original);
+        assert_eq!(record.status.phase, DeployPhase::Queued);
+        assert_eq!(std::fs::read(state.join("id-counter"))?, 1u64.to_be_bytes());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+        client
+            .send(StatusRequest {
+                job_id: Some(1),
+                after: None,
+            })
+            .await?;
+        let Some(Packet::StatusResponse(status)) = client.recv().await? else {
+            panic!("missing uncertain status")
+        };
+        assert_eq!(status.jobs[0].phase, DeployPhase::Interrupted);
+        assert!(
+            status.jobs[0]
+                .message
+                .as_deref()
+                .unwrap()
+                .contains("persistence failure")
+        );
+        for retry in [original.clone(), request("new-request")] {
+            let message = rejected(&mut client, retry).await?;
+            assert!(message.contains("ledger persistence failed"), "{message}");
+        }
+        assert!(!state.join("2.job").exists());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        drop(fault); // used one-shot is harmless; unused faults also disarm on drop
+        drop(client);
+        shutdown.cancel();
+        task.await??;
+
+        let restarted = DeploymentJobs::open(executor, state.clone(), "fixture".into()).await?;
+        assert_eq!(
+            restarted.status(Some(1)).await?[0].phase,
+            DeployPhase::Interrupted
+        );
+        assert_eq!(restarted.accept(original).await?, 1); // inspect/deduplicate, never execute
+        assert!(restarted.accept(request("still-blocked")).await.is_err());
+        restarted.shutdown().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        Ok::<_, eyre::Report>(())
+    })
+    .await??;
     Ok(())
 }

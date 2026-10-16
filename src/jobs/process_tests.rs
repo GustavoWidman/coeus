@@ -345,7 +345,7 @@ async fn supervised_activation_cancel_kills_separate_group_and_preserves_uncerta
                 .status(None)
                 .await?
                 .iter()
-                .all(|s| s.phase == DeployPhase::Interrupted)
+                .all(|s| s.phase == DeployPhase::Interrupted || s.phase == DeployPhase::Queued)
         );
         assert!(restarted.accept(request()).await.is_err());
         restarted.shutdown().await;
@@ -435,7 +435,8 @@ async fn production_activation_deadline_joins_supervisor_before_uncertain_barrie
                 .status(None)
                 .await?
                 .iter()
-                .all(|status| status.phase == DeployPhase::Interrupted)
+                .all(|status| status.phase == DeployPhase::Interrupted
+                    || status.phase == DeployPhase::Queued)
         );
         assert!(restarted.accept(request()).await.is_err());
         assert_eq!(
@@ -525,7 +526,8 @@ async fn nonacknowledging_supervisor_blocks_fifo_admission_and_restart_replay() 
                 .status(None)
                 .await?
                 .iter()
-                .all(|status| status.phase == DeployPhase::Interrupted)
+                .all(|status| status.phase == DeployPhase::Interrupted
+                    || status.phase == DeployPhase::Queued)
         );
         assert!(restarted.accept(request()).await.is_err());
         restarted.shutdown().await;

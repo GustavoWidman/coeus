@@ -1,32 +1,39 @@
-use super::CoeusClient;
+use super::{
+    CoeusClient,
+    presentation::{self, Interrupt, Style, Watch},
+};
 use crate::{common::proto::*, utils::plain_text};
-use colored::Colorize;
 use eyre::{Result, bail};
-use log::warn;
 use std::time::Duration;
 
 impl CoeusClient {
     pub(super) async fn show_status(&mut self, job_id: Option<JobId>, watch: bool) -> Result<()> {
+        let mut display = Watch::new(watch)?;
+        let mut interrupt = Interrupt::new()?;
         loop {
             let mut after = None;
-            let mut finished = true;
+            let mut jobs = Vec::new();
             loop {
-                let Packet::StatusResponse(response) =
+                let response = if watch {
+                    tokio::select! { biased; signal = interrupt.recv() => { signal?; return Ok(()); }, result = self.request(StatusRequest { job_id, after }) => result? }
+                } else {
                     self.request(StatusRequest { job_id, after }).await?
-                else {
+                };
+                let Packet::StatusResponse(response) = response else {
                     bail!("unexpected status response");
                 };
-                print_status(&response.jobs);
-                finished &= response.jobs.iter().all(|job| job.phase.is_terminal());
+                jobs.extend(response.jobs);
                 after = response.next_after;
                 if after.is_none() {
                     break;
                 }
             }
-            if !watch || finished {
+            let text = presentation::job_details(&jobs, Style::stdout());
+            tokio::select! { biased; signal = interrupt.recv(), if watch => { signal?; return Ok(()); }, result = display.emit(&text) => result? }
+            if !watch || jobs.iter().all(|job| job.phase.is_terminal()) {
                 return Ok(());
             }
-            if stop_watching().await? {
+            if stop_watching(&mut interrupt).await? {
                 return Ok(());
             }
         }
@@ -40,14 +47,20 @@ impl CoeusClient {
         metadata: bool,
         source: Option<crate::cli::main::LogFilter>,
     ) -> Result<()> {
+        let mut warned_gap = false;
+        let mut interrupt = Interrupt::new()?;
         loop {
-            let Packet::LogsResponse(response) =
+            let response = if follow {
+                tokio::select! { biased; signal = interrupt.recv() => { signal?; return Ok(()); }, result = self.request(LogsRequest { job_id, after }) => result? }
+            } else {
                 self.request(LogsRequest { job_id, after }).await?
-            else {
+            };
+            let Packet::LogsResponse(response) = response else {
                 bail!("unexpected logs response");
             };
-            if response.gap {
-                warn!("older output was evicted");
+            if response.gap && !warned_gap {
+                eprintln!("Job {job_id}: older output is no longer retained.");
+                warned_gap = true;
             }
             for entry in &response.entries {
                 let text = plain_text::bounded(&entry.text, 1024);
@@ -61,20 +74,20 @@ impl CoeusClient {
                         LogSource::Stderr => "stderr",
                         LogSource::Terminal => "terminal",
                     };
-                    println!("{} [{}] {}", entry.cursor, label, text);
+                    println!("{} [{label}] {text}", entry.cursor);
                 } else {
                     println!("{text}");
                 }
             }
             after = response.next_cursor;
-            // Drain all retained pages, including after a terminal status.
+            // Drain retained pages before stopping, even after a terminal result.
             if !response.entries.is_empty() {
                 continue;
             }
             if !follow || response.finished {
                 return Ok(());
             }
-            if stop_watching().await? {
+            if stop_watching(&mut interrupt).await? {
                 return Ok(());
             }
         }
@@ -82,36 +95,11 @@ impl CoeusClient {
 }
 
 pub(super) fn print_status(jobs: &[JobStatus]) {
-    for job in jobs {
-        let phase = format!("{:?}", job.phase);
-        let phase = match job.phase {
-            DeployPhase::Succeeded => phase.green(),
-            DeployPhase::Failed | DeployPhase::Interrupted => phase.red(),
-            DeployPhase::Cancelled => phase.yellow(),
-            _ => phase.cyan(),
-        };
-        println!(
-            "{} {} {phase}{}{}",
-            job.job_id,
-            plain_text::bounded(&job.revision, 256),
-            if job.cancel_requested {
-                " (cancellation requested)"
-            } else {
-                ""
-            },
-            job.message
-                .as_ref()
-                .map_or(String::new(), |message| format!(
-                    " — {}",
-                    plain_text::bounded(message, 1024)
-                ))
-        );
-    }
+    print!("{}", presentation::job_details(jobs, Style::stdout()));
 }
-
-async fn stop_watching() -> Result<bool> {
+async fn stop_watching(interrupt: &mut Interrupt) -> Result<bool> {
     tokio::select! {
         _ = tokio::time::sleep(Duration::from_millis(500)) => Ok(false),
-        signal = tokio::signal::ctrl_c() => { signal?; Ok(true) },
+        signal = interrupt.recv() => { signal?; Ok(true) },
     }
 }

@@ -210,3 +210,58 @@ simple 1–127 character hostname (letters, digits, hyphen or underscore). In
 particular, nix-darwin's default `null` is not a target identity and is rejected
 with a module assertion before installation; Coeus never guesses it from an SSH
 alias or emits a manifest with a missing host.
+
+## Operator-attested partial activation recovery
+
+`reconcile` only verifies the intended closure. It cannot declare a partial failed
+activation safe. `recover` is a separate local, explicit operator-trust path.
+It does not inspect processes as proof of cleanup, rerun activation, or roll back.
+
+Before recovery, the operator must stop the daemon and establish that all prior
+activation writers, descendants and manual attempts have stopped and cannot resume.
+Prevent concurrent deployment attempts during the operation. Run as the configured
+non-root service user, not an ordinary remote PSK client. Recovery refuses a running
+or restarting daemon by taking the existing ledger lease and activation lease.
+No service is stopped, started, or granted privileges by the command.
+
+Preview using the actual installed service's server configuration:
+
+```sh
+coeus recover JOB --server-config /existing/service/server.toml
+```
+
+The command derives ledger/receipt paths from that config and the immutable
+installed service identity. There are no arbitrary directory overrides. Preview
+and failed preconditions do not create, initialize, migrate, or change state.
+Only a started Interrupted job with an attempted Activating/Uncertain receipt is
+eligible. Ready builds are not eligible. The retained closure, root, job/request,
+configuration and service layout must still match.
+
+Preview prints target/job/closure, queue impact, risk, and a challenge-bound
+confirmation command. Confirming requires a bounded inspection reason and BOTH
+`--attest-no-writers` and `--accept-partial-state`. These are human assertions that
+no activation writer can resume and that partial system changes are acceptable
+before later work runs. They are not machine-proven cleanup or successful deployment.
+Any changed job/nonce/receipt/closure/identity/config/layout invalidates the challenge.
+
+Confirmation writes only a distinct `OperatorResolved` receipt, durably before
+any ledger release. Its immutable audit retains the original receipt/hash,
+job/request/config/layout fingerprint, actor UID, timestamp, reason and both
+attestations. Exact repeats inspect the original audit without overwriting it;
+conflicting confirmations/reasons fail. No history, retry nonce, counter or GC root
+is deleted. A lost response is not permission to replay activation.
+
+After the command releases both leases, an operator may restart the daemon.
+Normal passive observation validates the complete audit and job binding, re-saves
+the terminal receipt under lease, and commits the old job as Failed before FIFO
+can advance. This outcome is not Verified, Succeeded, normal cancellation or
+rollback. Only never-started queued jobs resume; any other unresolved barrier
+still blocks. A receipt/ledger persistence error remains fail-closed, with a fresh
+leased/durable observation required after restart.
+
+This is a recovery trust boundary, not a fix for the underlying activation error.
+The command is local-only and never goes through the ordinary daemon request API.
+
+Per-job `logs --follow` stops when local execution is terminal, including Interrupted.
+Recovery can append later lifecycle records; query logs again after an operator
+action. Raw attach never resumes the interrupted executor.

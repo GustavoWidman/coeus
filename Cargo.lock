@@ -340,11 +340,13 @@ dependencies = [
  "rand",
  "rustix",
  "serde",
+ "sha2",
  "snow",
  "tempfile",
  "tokio",
  "tokio-util",
  "toml 1.1.4+spec-1.1.0",
+ "unicode-width",
  "vt100",
 ]
 
@@ -1422,6 +1424,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest",
 ]
 
 [[package]]

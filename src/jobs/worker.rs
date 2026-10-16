@@ -8,16 +8,35 @@ pub(super) async fn run(
     mut queue: mpsc::Receiver<QueuedDeploy>,
     executor: Arc<dyn DeploymentExecutor>,
     shutdown: CancellationToken,
+    recovered: Vec<QueuedDeploy>,
 ) {
-    loop {
-        let next = tokio::select! {
-            biased;
-            _ = shutdown.cancelled() => { queue.close(); queue.recv().await }
-            next = queue.recv() => next,
+    let mut recovered = recovered.into_iter();
+    'fifo: loop {
+        let next = if let Some(job) = recovered.next() {
+            Some(job)
+        } else {
+            tokio::select! {
+                biased;
+                _ = shutdown.cancelled() => { queue.close(); queue.recv().await }
+                next = queue.recv() => next,
+            }
         };
         let Some(job) = next else {
             break;
         };
+        let interrupted = job
+            .context
+            .ledger
+            .lock()
+            .await
+            .record(job.context.id)
+            .is_ok_and(|r| r.status.phase == DeployPhase::Interrupted);
+        if interrupted {
+            if !job.context.observe_interrupted().await {
+                return;
+            }
+            continue;
+        }
         // A recovered manual handoff is a passive receipt observer even when
         // cancellation was persisted. In-flight cancellation is not rollback:
         // only Ready -> Cancelled or verified reconciliation can release FIFO.
@@ -92,7 +111,10 @@ pub(super) async fn run(
                     pending => {
                         if cancel {
                             interrupt_cancelled_activation(&job.context, &cause).await;
-                            return;
+                            if !job.context.observe_interrupted().await {
+                                return;
+                            }
+                            continue 'fifo;
                         }
                         if let Err(error) = pending {
                             job.context
@@ -159,7 +181,10 @@ pub(super) async fn run(
                                         .is_ok_and(|record| record.status.cancel_requested);
                                     if cancelled {
                                         interrupt_cancelled_activation(&job.context, &cause).await;
-                                        return;
+                                        if !job.context.observe_interrupted().await {
+                                            return;
+                                        }
+                                        continue 'fifo;
                                     }
                                     safe_terminal = false;
                                 }
@@ -203,7 +228,7 @@ pub(super) async fn run(
                 .err()
                 .map(|error| bounded_text(&format!("{error:#}")));
             let outcome = match &record.status.message {
-                Some(message) => format!("{:?} — {message}", record.status.phase),
+                Some(message) => format!("{:?}: {message}", record.status.phase),
                 None => format!("{:?}", record.status.phase),
             };
             // Attachments need the same failure cause as status, even when the

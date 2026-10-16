@@ -315,3 +315,32 @@ view disconnects never own any of these resources. Hard daemon death may still l
 children, as documented above; attachment does not solve host reconciliation or
 production readiness. Validation uses harmless real-PTY shell fixtures and encrypted
 loopback, not a real `nh`/Mac switch.
+
+## Interrupted activation recovery
+
+Cancellation stops owned execution; it is not rollback. If an attempted activation
+has an uncertain result, the job is `Interrupted` and the machine reports
+`Recovery required`. New admission and queued effects remain blocked. The FIFO
+worker stays alive as a passive receipt observer, including after daemon restart.
+It never re-executes that job. Never-started queued jobs remain queued behind the
+barrier instead of being lost during restart.
+
+A compatible terminal receipt is observed under the activation lease and made
+durable before the job ledger is settled. `Verified` becomes `Succeeded`, even if
+cancellation was requested: the intended system state was verified, not undone.
+`Cancelled` means the receipt was revoked before activation intent. Missing,
+corrupt, busy, `Ready`, `Activating`, or `Uncertain` receipts cannot release an
+Interrupted barrier. Every barrier must settle before later queued effects run.
+Receipt or ledger persistence failure blocks the current daemon instance.
+
+`coeus reconcile` is verification only. When it records a valid `Verified` receipt,
+the observer updates the ledger and resumes FIFO without replay or a daemon
+restart. It cannot resolve a failed partial activation that does not verify as the
+new closure. Such a partial failure requires a separate explicit operator recovery
+path; neither exit status nor process absence proves writer cleanup. Do not wipe
+state or replay activation to remove the barrier.
+
+An authenticated rejection is shown as a rejection, not a lost acknowledgement.
+Transport loss still warns that submission might have been accepted. Always query
+the target's status before another submission when persistence or transport is
+uncertain.

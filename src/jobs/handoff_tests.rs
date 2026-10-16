@@ -49,6 +49,7 @@ pub(super) fn receipt(store: &ReceiptStore, id: u64) -> Receipt {
         manual: true,
         previous_process_id: Some(123),
         message: "fake built closure".into(),
+        operator_resolution: None,
     }
 }
 impl DeploymentExecutor for HandoffExecutor {
@@ -303,7 +304,7 @@ async fn cancelled_inflight_handoff_survives_restart_without_replay() -> Result<
             assert_eq!(status.phase, DeployPhase::Interrupted);
             assert_eq!(
                 recovered.status(Some(second)).await?[0].phase,
-                DeployPhase::Interrupted
+                DeployPhase::Queued
             );
             assert_eq!(
                 crate::activation::read_receipt(&directory(&path)?, first)?.state,
@@ -341,7 +342,7 @@ async fn leased_receipt_cancellation_cannot_claim_safe_revocation_or_replay() ->
         );
         assert_eq!(
             recovered.status(Some(second)).await?[0].phase,
-            DeployPhase::Interrupted
+            DeployPhase::Queued
         );
         blocked(&mut after_restart).await;
         assert_eq!(

@@ -1,5 +1,6 @@
 mod commands;
 mod fleet;
+mod presentation;
 pub mod target;
 mod tui;
 pub use fleet::run;
@@ -23,6 +24,16 @@ impl std::fmt::Display for EndpointUnreachable {
     }
 }
 impl std::error::Error for EndpointUnreachable {}
+
+/// Authenticated daemon response, distinct from a lost/ambiguous ACK.
+#[derive(Debug)]
+pub struct RequestRejection(pub String);
+impl std::fmt::Display for RequestRejection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "request rejected: {}", self.0)
+    }
+}
+impl std::error::Error for RequestRejection {}
 
 pub struct CoeusClient {
     stream: EncryptedStream,
@@ -143,7 +154,10 @@ impl CoeusClient {
         match result {
             Ok(Ok(Packet::RequestRejected(rejected))) => {
                 self.usable = true;
-                Err(eyre!("request rejected: {}", rejected.message))
+                Err(
+                    RequestRejection(crate::utils::plain_text::bounded(&rejected.message, 1024))
+                        .into(),
+                )
             }
             Ok(Ok(response)) => {
                 self.usable = true;

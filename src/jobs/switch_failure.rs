@@ -18,6 +18,7 @@ pub(super) enum Settlement {
     Pending,
     Cancelled,
     Verified,
+    OperatorResolved,
 }
 
 pub(super) async fn settle(
@@ -29,44 +30,56 @@ pub(super) async fn settle(
     let directory = context.activation_directory().await?;
     let id = context.job_id();
     tokio::task::spawn_blocking(move || {
-        // Even absence and terminal observations require the exclusive lease.
-        // Never use an unlocked Cancelled read as proof of durable revocation.
-        let store = ReceiptStore::open(&directory)?;
-        let mut receipt = match store.load(id) {
-            Ok(receipt) => receipt,
-            Err(error) => {
-                let absent = std::fs::symlink_metadata(directory.join(format!("{id}.toml")))
-                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound);
-                let no_pending = std::fs::symlink_metadata(directory.join("receipt.pending"))
-                    .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound);
-                if !receipt_required && absent && no_pending {
-                    return Ok(Settlement::Absent);
-                }
-                return Err(error);
-            }
-        };
-        if receipt.state == ActivationState::Ready && revoke_ready {
-            receipt.state = ActivationState::Cancelled;
-            receipt.message = super::ledger::bounded_text(&format!(
-                "failed before activation intent; activation revoked: {cause}"
-            ));
-        }
-        let outcome = match receipt.state {
-            ActivationState::Cancelled => Settlement::Cancelled,
-            ActivationState::Verified => Settlement::Verified,
-            _ => return Ok(Settlement::Pending),
-        };
-        // Re-save even an existing Cancelled/Verified state. The preceding writer
-        // may have renamed it but failed its directory fsync. Under this lease a
-        // successful save proves the exact terminal observation is now durable.
-        store.save(&receipt).map_err(|error| {
-            RevocationFailure(format!(
-                "activation settlement/revocation persistence failed: {error:#}"
-            ))
-        })?;
-        Ok(outcome)
+        observe(directory, id, cause, revoke_ready, receipt_required)
+            .map(|(outcome, _lease)| outcome)
     })
     .await?
+}
+
+/// Keep the exclusive activation lease alive through the caller's ledger commit.
+/// A terminal observation must not be reopened between receipt and FIFO settlement.
+pub(super) fn observe(
+    directory: std::path::PathBuf,
+    id: u64,
+    cause: String,
+    revoke_ready: bool,
+    receipt_required: bool,
+) -> Result<(Settlement, ReceiptStore)> {
+    // Even absence and terminal observations require the exclusive lease.
+    let store = ReceiptStore::open(&directory)?;
+    let mut receipt = match store.load(id) {
+        Ok(receipt) => receipt,
+        Err(error) => {
+            let absent = std::fs::symlink_metadata(directory.join(format!("{id}.toml")))
+                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound);
+            let no_pending = std::fs::symlink_metadata(directory.join("receipt.pending"))
+                .is_err_and(|e| e.kind() == std::io::ErrorKind::NotFound);
+            if !receipt_required && absent && no_pending {
+                return Ok((Settlement::Absent, store));
+            }
+            return Err(error);
+        }
+    };
+    if receipt.state == ActivationState::Ready && revoke_ready {
+        receipt.state = ActivationState::Cancelled;
+        receipt.message = super::ledger::bounded_text(&format!(
+            "failed before activation intent; activation revoked: {cause}"
+        ));
+    }
+    let outcome = match receipt.state {
+        ActivationState::Cancelled => Settlement::Cancelled,
+        ActivationState::Verified => Settlement::Verified,
+        ActivationState::OperatorResolved => Settlement::OperatorResolved,
+        _ => return Ok((Settlement::Pending, store)),
+    };
+    // A preceding writer may have renamed without directory fsync. Re-save
+    // under this lease before trusting this terminal observation as durable.
+    store.save(&receipt).map_err(|error| {
+        RevocationFailure(format!(
+            "activation settlement/revocation persistence failed: {error:#}"
+        ))
+    })?;
+    Ok((outcome, store))
 }
 
 impl JobContext {

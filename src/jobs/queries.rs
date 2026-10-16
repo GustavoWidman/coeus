@@ -9,7 +9,8 @@ impl DeploymentJobs {
     pub async fn machine_status(&self) -> Result<crate::common::proto::MachineStatusResponse> {
         let ledger = self.ledger.lock().await;
         let active = ledger.records.iter().find(|r| {
-            !r.status.phase.is_terminal()
+            (r.status.phase == crate::common::proto::DeployPhase::Interrupted
+                || !r.status.phase.is_terminal())
                 && r.status.phase != crate::common::proto::DeployPhase::Queued
         });
         let latest = active

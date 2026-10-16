@@ -1,4 +1,4 @@
-use std::io::{Error, Write};
+use std::io::{Error, IsTerminal, Write};
 
 use colog::format::CologStyle;
 use colog::formatter;
@@ -69,18 +69,14 @@ impl CologStyle for CustomLevelTokens {
 pub struct Logger;
 
 impl Logger {
-    /// Log and flush the retry key before any deployment request is sent. Only
+    /// Print and flush the request nonce before any deployment request is sent. Only
     /// this safety-critical message bypasses the ordinary verbosity filter.
     pub fn retry_id(request_id: u64) -> std::io::Result<()> {
         // Use this logger's presentation directly for the safety exception:
         // log's facade discards output errors, whereas a failed write/flush
         // must prevent submission (just as the former println + flush did).
         let mut stdout = std::io::stdout().lock();
-        writeln!(
-            stdout,
-            "{} request-id: {request_id} (retry with identical options)",
-            CustomLevelTokens.prefix_token(&Level::Info)
-        )?;
+        writeln!(stdout, "request-id: {request_id}")?;
         stdout.flush()
     }
 
@@ -97,12 +93,71 @@ impl Logger {
         builder
     }
 
+    /// One auto-color policy for CLI diagnostics, tables and interactive views.
+    pub fn use_color(terminal: bool) -> bool {
+        terminal
+            && std::env::var_os("NO_COLOR").is_none()
+            && std::env::var("CLICOLOR").as_deref() != Ok("0")
+            && std::env::var("TERM").as_deref() != Ok("dumb")
+    }
+
+    pub fn client_error(error: &eyre::Report, verbose: bool) -> String {
+        if verbose {
+            return format!("error: {error:?}");
+        }
+        let message = error
+            .chain()
+            .take(3)
+            .map(|cause| cause.to_string())
+            .collect::<Vec<_>>()
+            .join(": ");
+        let label = if Self::use_color(std::io::stderr().is_terminal()) {
+            "\x1b[1;31merror:\x1b[0m"
+        } else {
+            "error:"
+        };
+        format!(
+            "{label} {}",
+            crate::utils::plain_text::bounded(&message, 2048)
+        )
+    }
+
+    pub fn init_client(level: LevelFilter) {
+        let color = Self::use_color(std::io::stderr().is_terminal());
+        Builder::new()
+            .filter(Some("coeus"), level)
+            .target(Target::Stderr)
+            .write_style(WriteStyle::Auto)
+            .format(move |buffer, record| {
+                let label = match record.level() {
+                    Level::Warn => "warning: ",
+                    Level::Error => "error: ",
+                    Level::Debug => "debug: ",
+                    Level::Trace => "trace: ",
+                    Level::Info => "",
+                };
+                let label = if color && record.level() == Level::Error {
+                    "\x1b[1;31merror:\x1b[0m "
+                } else if color && record.level() == Level::Warn {
+                    "\x1b[33mwarning:\x1b[0m "
+                } else {
+                    label
+                };
+                writeln!(
+                    buffer,
+                    "{label}{}",
+                    crate::utils::plain_text::bounded(&record.args().to_string(), 4096)
+                )
+            })
+            .init();
+    }
+
     pub fn init(level: LevelFilter) {
         Builder::new()
             .filter("coeus".into(), level)
             .target(Target::Stdout)
             .format(formatter(CustomLevelTokens))
-            .write_style(WriteStyle::Always)
+            .write_style(WriteStyle::Auto)
             .init();
     }
 }

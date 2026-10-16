@@ -15,8 +15,9 @@ pub enum ActivationState {
     Verified,
     Uncertain,
     Cancelled,
+    OperatorResolved,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Receipt {
     pub format: u8,
     pub job_id: u64,
@@ -28,6 +29,8 @@ pub struct Receipt {
     pub manual: bool,
     pub previous_process_id: Option<u32>,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operator_resolution: Option<super::operator_recovery::OperatorResolution>,
 }
 
 pub fn directory_for_ledger(ledger: &Path) -> Result<PathBuf> {
@@ -48,11 +51,22 @@ pub struct ReceiptStore {
 }
 impl ReceiptStore {
     pub fn open(directory: &Path) -> Result<Self> {
+        Self::acquire(directory, true)
+    }
+    pub(crate) fn existing(directory: &Path) -> Result<Self> {
+        Self::acquire(directory, false)
+    }
+    fn acquire(directory: &Path, create: bool) -> Result<Self> {
         use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+        if !create {
+            private(directory, true)?;
+        }
         if !directory.exists() {
             fs::DirBuilder::new().mode(0o700).create(directory)?;
         }
-        File::open(directory.parent().unwrap_or(Path::new(".")))?.sync_all()?;
+        if create {
+            File::open(directory.parent().unwrap_or(Path::new(".")))?.sync_all()?;
+        }
         private(directory, true)?;
         let lock_path = directory.join("activation.lock");
         if lock_path.exists() {
@@ -61,7 +75,7 @@ impl ReceiptStore {
         let lease = OpenOptions::new()
             .read(true)
             .write(true)
-            .create(true)
+            .create(create)
             .truncate(false)
             .mode(0o600)
             .custom_flags(nix::libc::O_NOFOLLOW)
@@ -122,6 +136,7 @@ impl ReceiptStore {
             receipt.format == 1 && receipt.job_id != 0,
             "invalid receipt"
         );
+        super::operator_recovery::validate_audit(receipt)?;
         let pending = self.directory.join("receipt.pending");
         if pending.exists() {
             private(&pending, false)?;
@@ -162,6 +177,7 @@ pub fn read(directory: &Path, id: u64) -> Result<Receipt> {
         "incompatible receipt"
     );
     receipt.expected.validate()?;
+    super::operator_recovery::validate_audit(&receipt)?;
     ensure!(
         receipt.root == directory.join(format!("{id}.root")),
         "receipt root not owned by this store"

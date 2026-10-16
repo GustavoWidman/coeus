@@ -80,7 +80,8 @@ pub struct LogsResponse {
     pub next_cursor: u64,
     /// True if entries after the requested cursor have already been evicted.
     pub gap: bool,
-    /// No future output when true; existing pages still need draining.
+    /// Local execution stopped; retained pages still need draining. Explicit
+    /// operator recovery may append later lifecycle records to Interrupted jobs.
     pub finished: bool,
 }
 

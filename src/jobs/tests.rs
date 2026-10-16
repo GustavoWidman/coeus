@@ -165,11 +165,11 @@ async fn failure_cause_is_visible_in_bounded_attachment_logs() -> Result<()> {
         let logs = jobs.logs(id, 0).await?;
         let entry = logs.entries.last().unwrap();
         assert!(matches!(entry.source, LogSource::Lifecycle));
-        assert!(entry.text.starts_with("Failed — "));
+        assert!(entry.text.starts_with("Failed: "));
         assert!(entry.text.len() <= 1024);
         assert!(!entry.text.chars().any(char::is_control));
         if rev == "fail" {
-            assert_eq!(entry.text, "Failed — isolated failure");
+            assert_eq!(entry.text, "Failed: isolated failure");
         }
     }
     jobs.shutdown().await;
@@ -209,7 +209,7 @@ async fn failed_spawn_is_inspectable_without_child_output() -> Result<()> {
     );
     assert_eq!(
         logs.entries.last().unwrap().text,
-        format!("Failed — {message}")
+        format!("Failed: {message}")
     );
     jobs.shutdown().await;
     Ok(())

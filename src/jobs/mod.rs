@@ -7,10 +7,15 @@ mod fleet_tests;
 mod handoff;
 #[cfg(test)]
 mod handoff_tests;
+mod interrupted;
+#[cfg(test)]
+mod interrupted_tests;
 mod ledger;
+mod operator_recovery;
 #[cfg(test)]
 mod output_tests;
 mod persistence;
+pub(crate) use operator_recovery::{ExistingJob, existing_job};
 #[cfg(test)]
 mod process_tests;
 mod queries;
@@ -86,6 +91,7 @@ impl DeploymentJobs {
                 matches!(
                     r.status.phase,
                     crate::common::proto::DeployPhase::RequiresManualSwitch
+                        | crate::common::proto::DeployPhase::Interrupted
                         | crate::common::proto::DeployPhase::Queued
                 )
             })
@@ -95,6 +101,7 @@ impl DeploymentJobs {
         let feed = Arc::new(std::sync::Mutex::new(
             shared_terminal::SharedOutput::default(),
         ));
+        let mut recovered_jobs = Vec::new();
         for (request, id, cancellation) in recovered {
             let context = JobContext {
                 id,
@@ -104,12 +111,14 @@ impl DeploymentJobs {
                 shutdown: shutdown.clone(),
                 terminal: Arc::new(std::sync::Mutex::new(terminal::TerminalOutput::default())),
             };
-            if queue.try_send(QueuedDeploy { request, context }).is_err() {
-                // Existing history is bounded; this cannot occur for valid controlled handoff.
-                log::error!("recovered queue exceeded bound; no mutation replayed");
-            }
+            recovered_jobs.push(QueuedDeploy { request, context });
         }
-        let worker = tokio::spawn(worker::run(receiver, executor, shutdown.clone()));
+        let worker = tokio::spawn(worker::run(
+            receiver,
+            executor,
+            shutdown.clone(),
+            recovered_jobs,
+        ));
         Self {
             queue,
             ledger,

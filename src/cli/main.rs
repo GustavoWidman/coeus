@@ -35,6 +35,12 @@ pub enum ClientCommand {
         #[command(flatten)]
         remote: crate::activation::RemoteArgs,
     },
+    /// Record an operator-attested resolution of a partial activation (local, stopped daemon).
+    Recover {
+        job_id: JobId,
+        #[command(flatten)]
+        recovery: crate::activation::operator_recovery::RecoverArgs,
+    },
     /// First installation via SSH; requires Nix, existing private config and operator privilege.
     Bootstrap {
         job_id: JobId,
