@@ -13,6 +13,9 @@ pub use types::*;
 #[packet_enum]
 #[derive(Debug)]
 pub enum Packet {
+    #[packet(id = 0x0000, type = Error)]
+    Error,
+
     #[packet(id = 0x0001, type = HelloRequest)]
     HelloRequest,
     #[packet(id = 0x0002, type = HelloResponse)]
