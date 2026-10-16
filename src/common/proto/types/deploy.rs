@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::common::proto::Packet;
 
-#[derive(Args, Debug, Serialize, Deserialize)]
+#[derive(Args, Debug, Serialize, Deserialize, Packet)]
 pub struct DeployRequest {
     #[arg(short, long, value_name = "REVISION", default_value = "main")]
     pub rev: String,
@@ -17,19 +17,7 @@ pub struct DeployRequest {
     pub clean_substituters: bool,
 }
 
-impl From<DeployRequest> for Packet {
-    fn from(value: DeployRequest) -> Self {
-        Packet::DeployRequest(Box::new(value))
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Packet)]
 pub struct DeployAccepted {
     pub message: String,
-}
-
-impl From<DeployAccepted> for Packet {
-    fn from(value: DeployAccepted) -> Self {
-        Packet::DeployAccepted(Box::new(value))
-    }
 }
