@@ -27,6 +27,8 @@ fn packet_round_trips_with_stable_kind() {
             assert!(request.dry_run);
         }
         Packet::DeployAccepted(_) => panic!("decoded the wrong packet variant"),
+        // todo add more packet variants to the test
+        _ => panic!("decoded the wrong packet variant"),
     }
 }
 
