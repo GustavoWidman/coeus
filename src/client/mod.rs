@@ -1,6 +1,6 @@
 use colored::Colorize;
 use eyre::Result;
-use log::info;
+use log::debug;
 
 use crate::{
     common::{proto::Packet, stream::EncryptedStream},
@@ -16,7 +16,7 @@ impl CoeusClient {
     pub async fn new(config: ClientConfig) -> Result<Self> {
         let stream = EncryptedStream::connect(config.address(), &config.key).await?;
 
-        info!(
+        debug!(
             "connected to coeus peer at {}",
             config.address().to_string().magenta()
         );

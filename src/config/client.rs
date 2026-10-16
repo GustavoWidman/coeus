@@ -20,7 +20,7 @@ pub type ClientConfig = Arc<ConfigStore<ConfigInner>>;
 pub fn client_config(path: PathBuf) -> Result<ClientConfig> {
     let config = ConfigStore::<ConfigInner>::read(path, "settings".to_string())?;
 
-    info!("config parsing successful");
+    debug!("config parsing successful");
     debug!(
         "loaded configuration:\n{}",
         toml::to_string_pretty(&*config)?
