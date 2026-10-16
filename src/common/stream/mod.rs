@@ -1,4 +1,5 @@
 mod listener;
+mod nonce;
 mod packet;
 mod read;
 mod write;
@@ -6,21 +7,22 @@ mod write;
 #[cfg(test)]
 mod test;
 
-use bytes::BytesMut;
 use eyre::{Result, eyre};
 pub use listener::EncryptedListener;
-use snow::{Builder, HandshakeState, TransportState, params::NoiseParams};
-use std::net::SocketAddr;
+pub use listener::PendingConnection;
+use snow::{Builder, HandshakeState, params::NoiseParams};
+use std::{net::SocketAddr, sync::Arc};
 use tokio::{
     io::{self, AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
 };
-use tokio_util::codec::{Framed, LengthDelimitedCodec};
+
+use read::EncryptedReadHalf;
+use write::EncryptedWriteHalf;
 
 pub struct EncryptedStream {
-    framed: Framed<TcpStream, LengthDelimitedCodec>,
-    transport: TransportState,
-    plaintext: BytesMut,
+    reader: EncryptedReadHalf,
+    writer: EncryptedWriteHalf,
 }
 
 impl EncryptedStream {
@@ -40,11 +42,15 @@ impl EncryptedStream {
     }
 
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {
-        self.framed.get_ref().peer_addr()
+        Ok(self.reader.peer_addr)
     }
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        self.framed.get_ref().local_addr()
+        Ok(self.reader.local_addr)
+    }
+
+    pub fn split(&mut self) -> (&mut EncryptedReadHalf, &mut EncryptedWriteHalf) {
+        (&mut self.reader, &mut self.writer)
     }
 
     async fn handshake(mut stream: TcpStream, psk: &[u8; 32], initiator: bool) -> Result<Self> {
@@ -82,15 +88,12 @@ impl EncryptedStream {
             }
         }
 
-        let codec = LengthDelimitedCodec::builder()
-            .length_field_type::<u16>()
-            .max_frame_length(Self::MAX_FRAME)
-            .new_codec();
+        let transport = Arc::new(state.into_stateless_transport_mode()?);
+        let (read_stream, write_stream) = stream.into_split();
 
         Ok(Self {
-            framed: Framed::new(stream, codec),
-            transport: state.into_transport_mode()?,
-            plaintext: BytesMut::new(),
+            reader: EncryptedReadHalf::new(read_stream, transport.clone())?,
+            writer: EncryptedWriteHalf::new(write_stream, transport),
         })
     }
 }
