@@ -1,5 +1,6 @@
 mod ask;
 mod board;
+mod checklist;
 mod journal;
 mod plain;
 mod status;
