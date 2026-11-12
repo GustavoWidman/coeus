@@ -413,3 +413,20 @@ fn a_confirmation_appears_over_the_dashboard() {
     assert!(lines.contains("reboot lab now?"), "{lines}");
     assert!(lines.contains("y yes   n no"), "{lines}");
 }
+
+#[test]
+fn idle_machines_leave_room_for_their_badges() {
+    let mut top = top(&["altar", "lab"]);
+    see(&mut top, view("altar", None, Vec::new()));
+    top.apply(FleetEvent::Link {
+        host: host("altar"),
+        link: Link::Connecting,
+    });
+
+    let lines = screen(&top, 100, 30);
+    let row = lines
+        .iter()
+        .find(|line| line.contains("altar  idle"))
+        .unwrap();
+    assert!(row.contains("↻ reconnecting"), "{row}");
+}
