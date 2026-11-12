@@ -1,4 +1,5 @@
 mod attach;
+mod bootstrap;
 mod cancel;
 mod deploy;
 mod doctor;
@@ -12,6 +13,7 @@ mod top;
 mod watch;
 
 pub use attach::{AttachArgs, LogsArgs};
+pub use bootstrap::BootstrapArgs;
 pub use cancel::CancelArgs;
 pub use deploy::DeployArgs;
 pub use doctor::DoctorArgs;
@@ -44,6 +46,7 @@ impl Command {
             Self::Rollback(args) => args.run(&context()?).await,
             Self::Generations(args) => args.run(&context()?).await,
             Self::Reboot(args) => args.run(&context()?).await,
+            Self::Bootstrap(args) => args.run(&context()?).await,
             Self::Doctor(args) => args.run(&context()?).await,
             Self::Top(args) => args.run(&context()?).await,
             Self::Keygen => Ok(keygen()),
