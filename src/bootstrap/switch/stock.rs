@@ -79,7 +79,7 @@ pub async fn switch(
 ) -> Result<(FleetCoeus, StorePath, Ending)> {
     let source = ship(stock, plan, console).await?;
     let coeus = fleet_coeus(stock, &source, plan.host, console).await?;
-    let order = match status(stock, &coeus, plan.release).await? {
+    let order = match status(stock, &coeus, &source, plan).await? {
         Attempt::Fresh(order) => order,
         Attempt::Running(job) | Attempt::Succeeded(job) => job.order,
         Attempt::Failed { last, next } => match (plan.retry, next) {
@@ -276,11 +276,19 @@ pub async fn fleet_coeus(
 }
 
 /// `coeusd adopt --status`, where this snapshot's switch stands on the
-/// machine. a coeus without `adopt` blocks, naming its version.
-pub async fn status(stock: &Stock, coeus: &FleetCoeus, release: &Release) -> Result<Attempt> {
+/// machine, read in the state directory the configuration in `source`
+/// names. a coeus without `adopt` blocks, naming its version.
+pub async fn status(
+    stock: &Stock,
+    coeus: &FleetCoeus,
+    source: &StorePath,
+    plan: &Plan<'_>,
+) -> Result<Attempt> {
     let call = Call::AdoptStatus {
         coeus: coeus.path.clone(),
-        nar_hash: release.nar_hash.clone(),
+        nar_hash: plan.release.nar_hash.clone(),
+        source: source.as_str().into(),
+        hostname: plan.host.clone(),
     };
     let output = stock.output(&call).await?;
     let stderr = String::from_utf8_lossy(&output.stderr);

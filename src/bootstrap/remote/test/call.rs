@@ -30,6 +30,17 @@ fn adopt(install_bootloader: bool, follow: Option<u64>) -> Call {
     })
 }
 
+fn adopt_status() -> Call {
+    Call::AdoptStatus {
+        coeus: COEUS.parse().unwrap(),
+        nar_hash: "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+            .parse()
+            .unwrap(),
+        source: SOURCE.into(),
+        hostname: "nova".parse().unwrap(),
+    }
+}
+
 #[test]
 fn the_probe_reads_its_script_on_stdin_and_is_told_the_login() {
     let call = Call::Probe {
@@ -129,19 +140,18 @@ fn the_rest_are_pinned() {
         Call::HardwareConfig.argv()[4..],
         ["nixos-generate-config", "--show-hardware-config"]
     );
-    let status = Call::AdoptStatus {
-        coeus: COEUS.parse().unwrap(),
-        nar_hash: "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-            .parse()
-            .unwrap(),
-    };
+    let status = adopt_status();
     assert_eq!(
         status.argv()[5..],
         [
             "adopt",
             "--status",
             "--nar-hash",
-            "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+            "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            "--source",
+            SOURCE,
+            "--hostname",
+            "nova"
         ]
     );
     assert!(status.privileged());
@@ -182,12 +192,7 @@ fn coeusd_parses_every_adopt_it_is_sent() {
 
     use crate::cli::daemon::DaemonCLIArgs;
 
-    let status = Call::AdoptStatus {
-        coeus: COEUS.parse().unwrap(),
-        nar_hash: "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
-            .parse()
-            .unwrap(),
-    };
+    let status = adopt_status();
     let calls = [adopt(false, None), adopt(true, Some(214)), status];
     for call in calls {
         let argv = call.argv();

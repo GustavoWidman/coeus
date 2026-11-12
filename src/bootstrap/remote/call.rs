@@ -35,8 +35,15 @@ pub enum Call {
     },
     /// `<coeus>/bin/coeusd adopt …`, as root
     Adopt(AdoptCall),
-    /// `<coeus>/bin/coeusd adopt --status --nar-hash …`, as root
-    AdoptStatus { coeus: StorePath, nar_hash: NarHash },
+    /// `<coeus>/bin/coeusd adopt --status --nar-hash … --source …
+    /// --hostname …`, as root: the source and hostname name the state
+    /// directory the configuration gives coeusd
+    AdoptStatus {
+        coeus: StorePath,
+        nar_hash: NarHash,
+        source: PathBuf,
+        hostname: Hostname,
+    },
     /// `tailscale status --json`, when coeusd stays silent
     Tailscale,
     /// System Settings' Full Disk Access pane, and `launcher` shown in
@@ -170,12 +177,21 @@ impl Call {
                 &format!("path:{source}#{attribute}"),
             ]),
             Self::Adopt(adopt) => with_nix(adopt.argv()),
-            Self::AdoptStatus { coeus, nar_hash } => with_nix([
+            Self::AdoptStatus {
+                coeus,
+                nar_hash,
+                source,
+                hostname,
+            } => with_nix([
                 &coeusd(coeus),
                 "adopt",
                 "--status",
                 "--nar-hash",
                 nar_hash.as_str(),
+                "--source",
+                &source.display().to_string(),
+                "--hostname",
+                hostname.as_str(),
             ]),
             Self::Tailscale => words(["sh", "-c", TAILSCALE]),
             Self::OpenFullDiskAccess { launcher } => {

@@ -420,7 +420,7 @@ fn the_module_options_render_as_coeusd_reads_them() {
 }
 
 #[test]
-fn status_reads_coeusds_state_directory_unless_told_another() {
+fn status_reads_the_configurations_state_directory_or_the_one_it_is_told() {
     let parse = |args: &[&str]| {
         DaemonCLIArgs::try_parse_from(
             ["coeusd", "adopt", "--nar-hash", NAR_HASH]
@@ -437,6 +437,12 @@ fn status_reads_coeusds_state_directory_unless_told_another() {
     assert_eq!(
         state_dir(&["--status", "--state-dir", "/srv/coeus"]),
         Some("/srv/coeus".into())
+    );
+    let configured = ["--status", "--source", SOURCE, "--hostname", "lab"];
+    assert!(parse(&configured).is_ok());
+    assert!(
+        parse(&["--status", "--source", SOURCE]).is_err(),
+        "the configuration is named by both"
     );
     assert_eq!(
         super::default_state_dir(),

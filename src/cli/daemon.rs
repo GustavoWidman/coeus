@@ -47,7 +47,12 @@ pub enum DaemonCommand {
 #[derive(Args, Debug)]
 pub struct AdoptArgs {
     /// The snapshot's store path, shipped in by `coeus bootstrap`
-    #[arg(long, value_name = "STORE_PATH", required_unless_present = "status")]
+    #[arg(
+        long,
+        value_name = "STORE_PATH",
+        required_unless_present = "status",
+        requires = "hostname"
+    )]
     pub source: Option<StorePath>,
 
     /// The snapshot's NAR hash, e.g. sha256-…
@@ -59,7 +64,7 @@ pub struct AdoptArgs {
     pub label: Option<String>,
 
     /// This machine's name in the flake
-    #[arg(long, required_unless_present = "status")]
+    #[arg(long, required_unless_present = "status", requires = "source")]
     pub hostname: Option<Hostname>,
 
     /// The order to admit, one of the snapshot's bootstrap orders
@@ -74,12 +79,18 @@ pub struct AdoptArgs {
     #[arg(long, value_name = "OFFSET")]
     pub follow: Option<u64>,
 
-    /// Print where the snapshot's switch stands, as JSON, and admit nothing
-    #[arg(long, conflicts_with_all = ["source", "label", "hostname", "order", "install_bootloader", "follow"])]
+    /// Print where the snapshot's switch stands, as JSON, and admit nothing;
+    /// with --source and --hostname, in the state directory the machine's
+    /// configuration names
+    #[arg(long, conflicts_with_all = ["label", "order", "install_bootloader", "follow"])]
     pub status: bool,
 
-    /// The state directory `--status` reads, /var/lib/coeus by default;
-    /// adopting uses the one the machine's configuration names
-    #[arg(long, value_name = "DIR", conflicts_with_all = ["source", "label", "hostname", "order"])]
+    /// The state directory `--status` reads instead, /var/lib/coeus when
+    /// neither this nor --source and --hostname say
+    #[arg(
+        long,
+        value_name = "DIR",
+        conflicts_with_all = ["label", "order", "install_bootloader", "follow"]
+    )]
     pub state_dir: Option<PathBuf>,
 }
