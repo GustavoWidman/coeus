@@ -155,6 +155,11 @@ pub fn ending(
 
     if let Some(changes) = changes {
         lines.push(String::new());
+        if matches!(outcome, Outcome::RolledBack(_)) {
+            lines.push(say::warn(
+                "rolled back, so the machine runs its previous system; the rejected one would have changed:",
+            ));
+        }
         lines.extend(diff::lines(changes, limit));
     }
 
