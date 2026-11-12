@@ -1,5 +1,5 @@
 # coeusd's settings. on NixOS and nix-darwin the coeus module writes this file
-# to /etc/coeus/coeusd.toml from `services.coeus.daemon`.
+# to /etc/coeus/coeusd.toml from `services.coeus`.
 [settings]
 # the fleet's pre-shared key: `key = "<64 hex digits>"` inline, or a file
 # such as an agenix secret. `coeus keygen` makes one.
