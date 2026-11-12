@@ -201,3 +201,26 @@ fn stop_requests_round_trip() {
         Some(Outcome::Superseded { by: JobId(2) })
     );
 }
+
+#[test]
+fn concurrent_summary_writers_never_trip_over_each_other() {
+    let (_state, store) = store();
+    let dir = store.create(&spec(1)).unwrap();
+    let summary = dir.queued().unwrap().summary;
+
+    let writers: Vec<_> = (0..2)
+        .map(|_| {
+            let (dir, summary) = (dir.clone(), summary.clone());
+            std::thread::spawn(move || {
+                for _ in 0..200 {
+                    dir.write_summary(&summary).unwrap();
+                }
+            })
+        })
+        .collect();
+
+    for writer in writers {
+        writer.join().expect("a writer failed");
+    }
+    assert_eq!(dir.summary().unwrap(), Some(summary));
+}
