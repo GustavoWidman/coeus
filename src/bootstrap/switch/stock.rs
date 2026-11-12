@@ -3,6 +3,7 @@
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
+    time::Duration,
 };
 
 use eyre::{Result, WrapErr, bail, eyre};
@@ -17,14 +18,14 @@ use super::{
     show,
 };
 use crate::{
-    adopt::DAEMON_HERE,
+    adopt::{DAEMON_HERE, NEEDS_FULL_DISK_ACCESS},
     bootstrap::{
         Blocker, Bootstrap, Step,
         remote::{AdoptCall, Call, Platform, Ssh, Stock},
     },
     cli::Console,
     client::Snapshot,
-    common::model::{Attempt, Hostname, JobSummary, NarHash, OrderId, StorePath},
+    common::model::{Attempt, Hostname, JobSummary, NarHash, OrderId, StorePath, Timestamp},
     nix::LogFold,
     ui::checklist::{Live, Mark, Row},
 };
@@ -322,24 +323,17 @@ pub async fn adopt(
         install_bootloader: plan.release.install_bootloader,
         follow: Some(from),
     });
-    let mut child = stock.spawn(&call)?;
-    let mut stderr = child.stderr.take().expect("stderr is piped");
-    let said = tokio::spawn(async move {
-        let mut text = String::new();
-        let _ = stderr.read_to_string(&mut text).await;
-        text
-    });
-
-    let mut lines = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        feed.line(AdoptLine::parse(&line));
-        show(console, feed, None);
-        if feed.finished().is_some() {
-            break;
+    let mut asked = None;
+    let (status, said) = loop {
+        let (status, said) = run_adopt(stock, &call, feed, console).await?;
+        if status.code() != Some(NEEDS_FULL_DISK_ACCESS) {
+            break (status, said);
         }
-    }
-    let status = child.wait().await?;
-    let said = said.await.unwrap_or_default();
+        let first = asked.is_none();
+        let since = *asked.get_or_insert_with(Timestamp::now);
+        ask_for_full_disk_access(stock, plan.host, &said, since, first, console).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    };
 
     if let Some(job) = feed.finished() {
         return Ok(Ending::Finished(job.clone()));
@@ -412,4 +406,75 @@ pub(super) fn built_path(printed: &str) -> Result<StorePath> {
         .as_str()
         .ok_or_else(|| eyre!("nix build named no output"))?;
     out.parse()
+}
+
+/// one `coeusd adopt --follow`, its lines folded into `feed` as they come
+async fn run_adopt(
+    stock: &Stock,
+    call: &Call,
+    feed: &mut Feed,
+    console: &Console,
+) -> Result<(std::process::ExitStatus, String)> {
+    let mut child = stock.spawn(call)?;
+    let mut stderr = child.stderr.take().expect("stderr is piped");
+    let said = tokio::spawn(async move {
+        let mut text = String::new();
+        let _ = stderr.read_to_string(&mut text).await;
+        text
+    });
+
+    let mut lines = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        feed.line(AdoptLine::parse(&line));
+        show(console, feed, None);
+        if feed.finished().is_some() {
+            break;
+        }
+    }
+    let status = child.wait().await?;
+    Ok((status, said.await.unwrap_or_default()))
+}
+
+/// macOS lets a launchd job write where nix-darwin's first activation
+/// writes only with Full Disk Access, and only a person at the Mac grants
+/// it: the pane and the launcher are opened on its screen the first time,
+/// and the row says what to do until adopt finds the grant
+async fn ask_for_full_disk_access(
+    stock: &Stock,
+    host: &Hostname,
+    said: &str,
+    since: Timestamp,
+    first: bool,
+    console: &Console,
+) {
+    let launcher = said
+        .lines()
+        .find_map(|line| line.split_once(" needs Full Disk Access"))
+        .map_or(crate::client::Checkup::LAUNCHER, |(path, _)| path.trim());
+    if first {
+        let open = Call::OpenFullDiskAccess {
+            launcher: launcher.to_owned(),
+        };
+        let _ = stock.run(&open).await;
+    }
+    console.update(Row {
+        step: Step::Switch,
+        mark: Mark::Active,
+        detail: format!("waiting for Full Disk Access on {host}"),
+        live: vec![
+            Live::Waiting {
+                since,
+                on: format!("someone at {host}"),
+            },
+            Live::Tail(vec![
+                "nix-darwin's first activation writes where macOS lets only Full Disk Access write"
+                    .to_owned(),
+                format!(
+                    "on {host}: System Settings > Privacy & Security > Full Disk Access, add {launcher}"
+                ),
+                "(Finder shows it: drag it into the list) and turn it on; this goes on by itself"
+                    .to_owned(),
+            ]),
+        ],
+    });
 }

@@ -25,18 +25,22 @@ use self::admit::{Admitted, Revival};
 use crate::{
     cli::daemon::AdoptArgs,
     common::model::{
-        Action, Attempt, Failure, HostInfo, Hostname, JobId, NarHash, NixOptions, Order, OrderId,
-        Origin, Outcome, Phase, Source, StorePath,
+        Action, Attempt, Failure, FdaStatus, HostInfo, Hostname, JobId, NarHash, NixOptions, Order,
+        OrderId, Origin, Outcome, Phase, Platform, Source, StorePath,
     },
     config::DaemonSettings,
-    engine::Snapshots,
+    engine::{Host, Snapshots},
     job::{JobDir, JobSpec, JobStore},
-    platform::{Launcher, SystemRoot},
+    platform::{Launcher, Machine, SystemRoot},
 };
 
 /// what adopt exits with when a coeusd already serves here: the CLI orders
 /// through it instead
 pub const DAEMON_HERE: i32 = 3;
+
+/// what adopt exits with on a Mac whose launcher lacks Full Disk Access: a
+/// first activation writes where only it may, and only a person grants it
+pub const NEEDS_FULL_DISK_ACCESS: i32 = 4;
 
 /// who an adopted job's history names as having ordered it, from the host
 /// the label names
@@ -58,6 +62,14 @@ pub async fn run(args: &AdoptArgs) -> Result<i32> {
     if settings::listening(port).await {
         eprintln!("coeusd already serves on port {port}: order through it");
         return Ok(DAEMON_HERE);
+    }
+
+    if request.lacks_full_disk_access(&settings).await? {
+        eprintln!(
+            "{} needs Full Disk Access before its first activation",
+            settings.launcher.display()
+        );
+        return Ok(NEEDS_FULL_DISK_ACCESS);
     }
 
     let dir = request.admit(&settings).await?;
@@ -99,15 +111,28 @@ impl Request {
         })
     }
 
+    /// on a Mac about to admit the order's job, whether the launcher it runs
+    /// through still lacks the grant. a job admitted already goes its way.
+    async fn lacks_full_disk_access(&self, settings: &DaemonSettings) -> Result<bool> {
+        if Platform::current() != Platform::Darwin {
+            return Ok(false);
+        }
+        create_private(&settings.state_dir)?;
+        if JobStore::open(&settings.state_dir)?
+            .find(self.order)?
+            .is_some()
+        {
+            return Ok(false);
+        }
+        let machine = Machine::new(settings)?;
+        Ok(machine.probe_fda().await == FdaStatus::Missing)
+    }
+
     /// places the snapshot, finds or admits the order's job and sees that
     /// a runner carries it out
     async fn admit(&self, settings: &DaemonSettings) -> Result<JobDir> {
         let state_dir = &settings.state_dir;
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(0o700)
-            .create(state_dir)
-            .wrap_err_with(|| format!("failed to create {}", state_dir.display()))?;
+        create_private(state_dir)?;
 
         Snapshots::new(state_dir)
             .place(&self.source, &self.nar_hash)
@@ -182,4 +207,12 @@ impl Request {
 /// the state directory `--status` reads when not told another, coeusd's
 fn default_state_dir() -> PathBuf {
     DaemonSettings::default().state_dir
+}
+
+fn create_private(dir: &std::path::Path) -> Result<()> {
+    fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .wrap_err_with(|| format!("failed to create {}", dir.display()))
 }

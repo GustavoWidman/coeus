@@ -199,3 +199,17 @@ fn coeusd_parses_every_adopt_it_is_sent() {
             .unwrap_or_else(|error| panic!("coeusd refuses {:?}: {error}", &argv[coeusd..]));
     }
 }
+
+#[test]
+fn the_full_disk_access_pane_opens_for_whoever_sits_at_the_mac() {
+    let call = Call::OpenFullDiskAccess {
+        launcher: "/Library/Application Support/coeus/coeus-launcher".into(),
+    };
+    let argv = call.argv();
+    assert!(call.privileged(), "launchctl asuser needs root");
+    assert!(argv[2].contains("Privacy_AllFiles"), "{argv:?}");
+    assert_eq!(
+        argv.last().unwrap(),
+        "/Library/Application Support/coeus/coeus-launcher"
+    );
+}
