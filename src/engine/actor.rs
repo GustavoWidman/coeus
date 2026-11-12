@@ -382,8 +382,14 @@ impl<H: Host> Actor<H> {
         }
 
         // the pid comes from the job log: never let it name a process group
-        // or every process (0, -1) or init
-        let pid = self.running.as_ref().and_then(|running| running.pid);
+        // or every process (0, -1) or init, and only while the runner still
+        // holds the log, so a pid reused after it died is never signalled
+        let alive = dir.log().is_held().unwrap_or(false);
+        let pid = self
+            .running
+            .as_ref()
+            .filter(|_| alive)
+            .and_then(|running| running.pid);
         let pid = pid
             .and_then(|pid| i32::try_from(pid).ok())
             .filter(|pid| *pid > 1)
