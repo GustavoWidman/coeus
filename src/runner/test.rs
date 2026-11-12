@@ -578,7 +578,7 @@ async fn stopping_a_process_kills_everything_it_started() {
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     for pid in pids {
-        let alive = std::process::Command::new("/bin/ps")
+        let alive = std::process::Command::new("ps")
             .args(["-o", "stat=", "-p", &pid.to_string()])
             .output()
             .unwrap();
