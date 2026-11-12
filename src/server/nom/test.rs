@@ -23,6 +23,19 @@ fn nom_reads_nix_lines_verbatim() {
 }
 
 #[test]
+fn nom_never_reads_activities_it_does_not_know() {
+    let standard = "@nix {\"action\":\"start\",\"id\":7,\"level\":3,\"type\":102,\"text\":\"\",\"parent\":231928233984000,\"fields\":[]}\n@nix {\"action\":\"stop\",\"id\":7}\n";
+    let determinate = concat!(
+        "@nix {\"action\":\"start\",\"id\":231928233984000,\"level\":4,\"name\":\"BuildInstallables\",\"parent\":0,\"payload\":{},\"sid\":\"01a1cfdd-77a3-720f-8078-c6aa31765611\",\"text\":\"\",\"type\":10113}\n",
+        "@nix {\"action\":\"start\",\"id\":231941118885888,\"level\":6,\"name\":\"QueryMissing\",\"parent\":0,\"payload\":{},\"sid\":\"01a1cfdd-77a3-720f-8078-c6aa31765611\",\"text\":\"querying info about missing paths\",\"type\":10113}\n",
+    );
+
+    let mixed = format!("{determinate}{standard}");
+    assert_eq!(fed(&LogItem::Nix(mixed.into_bytes())), standard);
+    assert_eq!(fed(&LogItem::Nix(determinate.as_bytes().to_vec())), "");
+}
+
+#[test]
 fn nom_reads_events_as_the_lines_attach_shows() {
     let phase = LogItem::Event(Stamped::now(JobEvent::Phase(Phase::Building)));
     assert_eq!(fed(&phase), "[›] building\n");
