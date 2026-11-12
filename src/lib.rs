@@ -1,5 +1,6 @@
 extern crate self as coeus;
 
+pub mod adopt;
 pub mod bootstrap;
 pub mod cli;
 pub mod client;

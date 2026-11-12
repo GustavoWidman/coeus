@@ -2,6 +2,7 @@ use std::os::unix::fs::DirBuilderExt;
 
 use clap::Parser;
 use coeus::{
+    adopt,
     cli::daemon::{DaemonCLIArgs, DaemonCommand},
     config::daemon_config,
     engine::Engine,
@@ -23,6 +24,7 @@ async fn main() -> Result<()> {
     match &args.command {
         Some(DaemonCommand::Run { dir }) => runner::run(dir).await,
         Some(DaemonCommand::Probe { verdict }) => runner::probe(verdict).await,
+        Some(DaemonCommand::Adopt(adopt)) => std::process::exit(adopt::run(adopt).await?),
         None => {
             info!(
                 "starting coeusd {}",
