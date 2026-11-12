@@ -3,8 +3,12 @@
 
 pub mod board;
 pub mod describe;
+pub mod diff;
 pub mod format;
+pub mod history;
+pub mod journal;
 pub mod say;
+pub mod status;
 pub mod text;
 
 mod plain;
