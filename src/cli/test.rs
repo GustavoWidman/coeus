@@ -115,3 +115,24 @@ fn a_failure_budget_lets_the_rollout_continue() {
         }
     );
 }
+
+#[test]
+fn deploy_pins_a_commit_and_names_its_branch() {
+    use clap::Parser;
+
+    use crate::cli::main::{Command, MainCLIArgs};
+
+    let sha = "caf4e2b9a1d6c3e8f0b2a4c6d8e0f1a3b5c7d9e1";
+    let args =
+        MainCLIArgs::try_parse_from(["coeus", "deploy", "@all", "--rev", sha, "--ref", "main"])
+            .expect("CI orders a commit together with its branch");
+    let Command::Deploy(deploy) = args.command else {
+        panic!("parsed as another command");
+    };
+    assert_eq!(deploy.rev.map(|rev| rev.to_string()).as_deref(), Some(sha));
+    assert_eq!(deploy.git_ref.as_deref(), Some("main"));
+
+    assert!(
+        MainCLIArgs::try_parse_from(["coeus", "deploy", "--local", ".", "--ref", "main"]).is_err()
+    );
+}
