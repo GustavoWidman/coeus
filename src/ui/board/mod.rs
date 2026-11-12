@@ -1,11 +1,13 @@
 //! the fleet as the CLI sees it: one row per machine, folded from the
 //! machines' views and from what this invocation ordered
 
+mod cells;
 mod eta;
 mod render;
 mod row;
 
-pub use eta::eta;
+pub use cells::Cells;
+pub use eta::{eta, extrapolate};
 pub use render::{Frame, Tally};
 pub use row::{Ordering, Row, Status, Verdict};
 
