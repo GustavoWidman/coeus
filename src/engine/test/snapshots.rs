@@ -95,3 +95,26 @@ async fn a_source_that_is_not_the_snapshot_is_refused() {
         "nothing is left half placed"
     );
 }
+
+#[tokio::test]
+async fn sources_placed_at_once_each_unpack_on_their_own() {
+    let tree = tempfile::tempdir().unwrap();
+    let Some((source, hash)) = archived(tree.path()) else {
+        eprintln!("skipped: no nix store to add a source to");
+        return;
+    };
+
+    let state = tempfile::tempdir().unwrap();
+    let snapshots = Snapshots::new(state.path());
+    let placing = (0..4).map(|_| snapshots.place(&source, &hash));
+    for placed in futures_util::future::join_all(placing).await {
+        placed.unwrap();
+    }
+
+    assert!(snapshots.has(&hash));
+    let entries: Vec<String> = std::fs::read_dir(state.path().join("sources"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(entries, [hash.file_name()], "nothing is left half placed");
+}
