@@ -42,8 +42,8 @@ impl Finding {
 }
 
 impl Checkup {
-    /// the path System Settings asks for when adding a Full Disk Access entry
-    pub const LAUNCHER: &'static str = "/usr/bin/time";
+    /// what System Settings needs Full Disk Access granted to
+    pub const LAUNCHER: &'static str = "/Library/Application Support/coeus/coeus-launcher";
 
     pub fn unreachable(host: Hostname, error: &str) -> Self {
         Self {
@@ -82,8 +82,8 @@ impl Checkup {
         if host.platform == Platform::Darwin && system.fda == FdaStatus::Missing {
             findings.push(
                 Finding::new(
-                    Severity::Fail,
-                    "cannot activate: Full Disk Access is missing",
+                    Severity::Warn,
+                    "cannot create or delete users: Full Disk Access is missing",
                 )
                 .fix(format!(
                     "grant it to {} in System Settings > Privacy & Security > Full Disk Access, or run `coeus doctor --fix` on {}",

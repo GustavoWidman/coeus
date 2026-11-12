@@ -5,7 +5,7 @@ in
 {
   options.services.coeus.launcher = lib.mkOption {
     type = lib.types.str;
-    default = "/usr/bin/time";
+    default = "/Library/Application Support/coeus/coeus-launcher";
     description = ''
       The Apple-signed program coeus' deployment runners start under. Grant it
       Full Disk Access once so nix-darwin's activation passes its checks.

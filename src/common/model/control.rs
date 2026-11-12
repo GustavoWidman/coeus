@@ -27,8 +27,6 @@ pub enum Placement {
 /// why a machine refused an order
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Rejection {
-    /// macOS cannot activate without Full Disk Access for the launcher
-    FullDiskAccessMissing { launcher: String },
     /// the action does not exist on this platform (boot or test on darwin)
     Unsupported { action: Action, platform: Platform },
     /// the uploaded snapshot this order names is not on the machine

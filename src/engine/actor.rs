@@ -284,12 +284,6 @@ impl<H: Host> Actor<H> {
             });
         }
 
-        if order.action != Action::Build && self.fda == FdaStatus::Missing {
-            return Err(Rejection::FullDiskAccessMissing {
-                launcher: self.settings.launcher.display().to_string(),
-            });
-        }
-
         match &order.source {
             Source::Snapshot { nar_hash, .. } => {
                 let path = self.sources().join(nar_hash.file_name());

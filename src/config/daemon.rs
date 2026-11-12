@@ -59,8 +59,9 @@ pub struct DaemonSettings {
     #[serde(default)]
     pub notify: Option<NotifySettings>,
 
-    /// the Apple-signed program macOS runners start under; it holds the Full
-    /// Disk Access grant, so it must spawn its command as a child, not exec it
+    /// the program macOS runners start under, which holds their Full Disk
+    /// Access grant. coeusd installs it here once from its own package and
+    /// never replaces it, so the grant survives coeus updates.
     #[serde(default = "DaemonSettings::default_launcher")]
     pub launcher: PathBuf,
 }
@@ -79,7 +80,7 @@ impl DaemonSettings {
     }
 
     fn default_launcher() -> PathBuf {
-        PathBuf::from("/usr/bin/time")
+        PathBuf::from("/Library/Application Support/coeus/coeus-launcher")
     }
 }
 
