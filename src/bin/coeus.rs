@@ -1,27 +1,16 @@
 use clap::Parser;
-use coeus::{
-    cli::main::MainCLIArgs,
-    client::CoeusClient,
-    config::{ClientConfig, client_config},
-    utils::log::Logger,
-};
+use coeus::{cli::main::MainCLIArgs, client::CoeusClient, config::ClientSettings, utils::log::Logger};
 use eyre::Result;
-use log::error;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = MainCLIArgs::parse();
     Logger::init(args.verbosity);
 
-    let config: ClientConfig = client_config(args.config).inspect_err(|e| {
-        error!("failed to load server configuration: {}", e);
-    })?;
+    let settings = ClientSettings::load(args.config.as_deref())?;
+    let key = settings.key.load()?;
+    let endpoint = settings.endpoint(&args.host);
 
-    let mut client = CoeusClient::new(config).await.inspect_err(|e| {
-        error!("failed to initialize server: {}", e);
-    })?;
-
-    client.send(args.options).await?;
-
-    Ok(())
+    let mut client = CoeusClient::connect(&settings, &endpoint, &key).await?;
+    client.send(args.options).await
 }

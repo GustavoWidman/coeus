@@ -1,7 +1,7 @@
 use clap::Parser;
 use coeus::{
     cli::daemon::DaemonCLIArgs,
-    config::{ServerConfig, server_config},
+    config::{DaemonConfig, daemon_config},
     server::CoeusServer,
     utils::log::Logger,
 };
@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
         format!("v{}", env!("CARGO_PKG_VERSION")).magenta()
     );
 
-    let config: ServerConfig = server_config(args.config).inspect_err(|e| {
+    let config: DaemonConfig = daemon_config(&args.config).inspect_err(|e| {
         error!("failed to load server configuration: {}", e);
     })?;
 

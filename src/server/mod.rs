@@ -13,19 +13,20 @@ use crate::{
         proto::{Error, Packet},
         stream::{EncryptedListener, EncryptedStream, PendingConnection},
     },
-    config::ServerConfig,
+    config::DaemonConfig,
 };
 
 pub const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(10);
 
 pub struct CoeusServer {
     listener: EncryptedListener,
-    config: ServerConfig,
+    config: DaemonConfig,
 }
 
 impl CoeusServer {
-    pub async fn new(config: ServerConfig) -> Result<Self> {
-        let listener = EncryptedListener::bind(config.address(), &config.key).await?;
+    pub async fn new(config: DaemonConfig) -> Result<Self> {
+        let key = config.key.load()?;
+        let listener = EncryptedListener::bind(config.listen, key.as_bytes()).await?;
         Ok(Self { listener, config })
     }
 
@@ -50,7 +51,7 @@ impl CoeusServer {
     async fn serve(self, shutdown: CancellationToken) -> Result<()> {
         info!(
             "coeus server listening on {}",
-            self.config.address().to_string().magenta()
+            self.config.listen.to_string().magenta()
         );
 
         let server = Arc::new(self);
