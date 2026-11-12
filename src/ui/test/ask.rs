@@ -249,3 +249,20 @@ fn a_question_carries_its_id_and_refuses_a_bad_pattern() {
     let error = Prompt::question(&broken).err().unwrap();
     assert!(format!("{error:#}").contains("question name's pattern"));
 }
+
+#[test]
+fn a_long_question_wraps_instead_of_hiding_its_options() {
+    let prompt = Prompt::confirm(
+        "ssh://nixos@192.168.1.40:22 presents a host key coeus has never seen\n\
+         trust it and enroll it as nova's key, the one agenix will encrypt its secrets to?"
+            .into(),
+        true,
+    );
+    let lines = plain(&prompt.lines(40));
+    assert!(lines.iter().all(|line| !line.contains('…')), "{lines:#?}");
+    assert!(lines.last().unwrap().ends_with("[Y/n]"), "{lines:#?}");
+    assert!(
+        lines.iter().any(|line| line.starts_with("› trust it")),
+        "{lines:#?}"
+    );
+}
