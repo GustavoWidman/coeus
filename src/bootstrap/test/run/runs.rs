@@ -224,3 +224,46 @@ async fn a_second_run_is_refused_while_one_holds_the_lock() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].0, host());
 }
+
+#[tokio::test]
+async fn a_rekey_stopped_before_its_commit_is_finished_and_an_edit_blocks() {
+    if !has_nix() {
+        return;
+    }
+    let fleet = Fleet::new().await;
+    fleet.assert_in_the_fleet(&fleet.run(&Kill::default()).await.unwrap());
+
+    // the rekey commit never made: its secrets rewritten, nothing committed
+    // or pushed
+    super::git(&fleet.clone(), &["reset", "--quiet", "--mixed", "HEAD~1"]);
+    super::git(
+        &fleet.clone(),
+        &[
+            "push",
+            "--quiet",
+            "--force",
+            "origin",
+            "HEAD:coeus/bootstrap/nova",
+        ],
+    );
+    let finished = fleet.run(&Kill::default()).await.unwrap();
+    fleet.assert_in_the_fleet(&finished);
+    assert_eq!(finished.mark(Step::Rekey), Mark::Done);
+
+    // a person's `agenix -e`: the same recipients, another secret
+    let shared = fleet.clone().join("secrets/shared.age");
+    let edited = fleet.root.join("edited.age");
+    let everyone = [fleet.admin.clone(), fleet.old.clone(), fleet.nova.clone()];
+    crate::bootstrap::secrets::create(&edited, b"edited", &everyone).unwrap();
+    std::fs::rename(&edited, &shared).unwrap();
+    let ran = fleet.run(&Kill::default()).await.unwrap();
+
+    let Finale::Blocked {
+        at: Step::Rekey,
+        blocker: Blocker::Uncommitted { files, .. },
+    } = &ran.finale
+    else {
+        panic!("{:?}", ran.finale);
+    };
+    assert_eq!(files, &["secrets/shared.age"]);
+}
