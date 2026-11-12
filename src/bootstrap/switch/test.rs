@@ -2,7 +2,7 @@ use crate::{
     bootstrap::switch::{
         AdoptLine, Feed,
         ship::{Archived, Lock},
-        stock::{Waiting, built_path, drain},
+        stock::{Waiting, built_path, drain, remote_program},
     },
     common::model::{
         Action, JobEvent, JobId, JobState, JobSummary, OrderId, Origin, Outcome, Phase, Progress,
@@ -292,4 +292,26 @@ fn waiting_for_full_disk_access_outlasts_a_dropped_connection_only() {
     let mut streaming = Feed::default();
     streaming.line(AdoptLine::Job(Box::new(job())));
     assert_eq!(Waiting::after(exited(255), true, &streaming), Waiting::Over);
+}
+
+#[test]
+fn the_shipped_inputs_reach_a_nix_daemon_run_as_root() {
+    use zeroize::Zeroizing;
+
+    use crate::bootstrap::remote::{Platform, Privilege};
+
+    let nixos = "/run/current-system/sw/bin/nix-daemon";
+    assert_eq!(remote_program(Platform::Nixos, &Privilege::Root), nixos);
+    assert_eq!(
+        remote_program(Platform::Nixos, &Privilege::Sudo),
+        format!("sudo -n {nixos}")
+    );
+    assert_eq!(
+        remote_program(Platform::Darwin, &Privilege::Sudo),
+        "sudo -n /nix/var/nix/profiles/default/bin/nix-daemon"
+    );
+
+    // sudo cannot be fed a password through nix: the login ships as itself
+    let password = Privilege::SudoPassword(Zeroizing::new("hunter2".into()));
+    assert_eq!(remote_program(Platform::Nixos, &password), nixos);
 }

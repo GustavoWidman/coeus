@@ -109,6 +109,9 @@ pub enum Blocker {
     SwitchFailed { job: Box<JobSummary> },
     /// the coeus the machine's configuration pins has no `coeusd adopt`
     AdoptMissing { version: String },
+    /// root refuses the session key, and nix on the machine refuses what
+    /// `user` ships, since it is no trusted user and sudo asks a password
+    RootRefused { user: String },
     /// the machine is up but not on the tailnet
     OffTailnet,
     /// `gh` is missing, signed out or refused
@@ -132,6 +135,7 @@ impl fmt::Display for Blocker {
             Self::Conflict { .. } => f.write_str("the rebase stopped on a conflict"),
             Self::SwitchFailed { job } => write!(f, "the first switch, job {}, failed", job.id),
             Self::AdoptMissing { version } => write!(f, "coeus {version} has no `coeusd adopt`"),
+            Self::RootRefused { user } => write!(f, "root refuses the key, {user} cannot ship"),
             Self::OffTailnet => f.write_str("the machine is not on the tailnet"),
             Self::Forge(reason) => write!(f, "gh: {reason}"),
             Self::Unanswered { id } => write!(f, "question {id} needs an answer"),
