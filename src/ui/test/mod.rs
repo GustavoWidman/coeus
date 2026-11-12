@@ -1,3 +1,4 @@
+mod ask;
 mod board;
 mod journal;
 mod plain;
