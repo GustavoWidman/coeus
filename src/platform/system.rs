@@ -15,6 +15,9 @@ pub struct SystemFacts {
     pub generation: Option<u32>,
     /// the profile points somewhere other than the running system
     pub pending_boot: bool,
+    /// when the profile's current generation was made, the best record of
+    /// when the machine last switched, whoever did it
+    pub switched_at: Option<Timestamp>,
     /// the running system boots a different kernel than the booted one
     pub reboot_required: bool,
 }
@@ -87,8 +90,20 @@ impl SystemRoot {
             pending_boot: profile.is_some() && profile != current,
             reboot_required: platform == Platform::NixOs && self.boots_differently(),
             generation: self.generation(),
+            switched_at: self.generation().and_then(|number| self.made_at(number)),
             current,
         }
+    }
+
+    fn made_at(&self, number: u32) -> Option<Timestamp> {
+        let modified = self
+            .generation_link(number)
+            .symlink_metadata()
+            .ok()?
+            .modified()
+            .ok()?;
+        let millis = modified.duration_since(UNIX_EPOCH).ok()?.as_millis();
+        Some(Timestamp(millis as i64))
     }
 
     /// every generation of the system profile, newest first

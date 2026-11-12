@@ -25,7 +25,9 @@ pub(super) struct Follower {
 
 /// the machine's last successful deployment
 pub(super) struct Deployed<'a> {
-    pub source: &'a Source,
+    /// what the job that made the running system deployed, or `None` when
+    /// the machine was switched outside coeus
+    pub source: Option<&'a Source>,
     pub at: Timestamp,
 }
 
@@ -87,6 +89,6 @@ impl Follower {
     }
 }
 
-fn runs(latest: &Pinned, source: &Source) -> bool {
-    matches!(source, Source::Git { rev, .. } if *rev == latest.rev)
+fn runs(latest: &Pinned, source: Option<&Source>) -> bool {
+    matches!(source, Some(Source::Git { rev, .. }) if *rev == latest.rev)
 }

@@ -597,6 +597,10 @@ impl<H: Host> Actor<H> {
             return;
         };
 
+        if failed_here(&self.recent, &source) {
+            return;
+        }
+
         info!("catching up with {source}");
         let order = Order {
             id: OrderId::random(),
@@ -629,7 +633,9 @@ impl<H: Host> Actor<H> {
     fn publish(&self) {
         let deployed = deployed(&self.recent, &self.facts);
         let mut system = system_info(&self.facts, self.facts_at, self.fda);
-        system.deployed = deployed.as_ref().map(|deployed| deployed.source.clone());
+        system.deployed = deployed
+            .as_ref()
+            .and_then(|deployed| deployed.source.cloned());
         system.follow = self
             .follower
             .as_ref()
@@ -654,9 +660,10 @@ impl<H: Host> Actor<H> {
     }
 }
 
-/// the newest job that left the machine running what it runs now
+/// the newest job that left the machine running what it runs now, or the
+/// last switch when someone switched it outside coeus
 fn deployed<'a>(recent: &'a VecDeque<JobSummary>, facts: &SystemFacts) -> Option<Deployed<'a>> {
-    recent
+    let by_coeus = recent
         .iter()
         .filter(|job| job.action.activates() && job.toplevel.is_some())
         .find(|job| {
@@ -667,9 +674,26 @@ fn deployed<'a>(recent: &'a VecDeque<JobSummary>, facts: &SystemFacts) -> Option
                 )
         })
         .map(|job| Deployed {
-            source: &job.source,
+            source: Some(&job.source),
             at: job.finished_at.unwrap_or(job.ordered_at),
-        })
+        });
+
+    by_coeus.or_else(|| facts.switched_at.map(|at| Deployed { source: None, at }))
+}
+
+/// whether this machine already tried `source` and it did not stick, so
+/// catching up waits for the ref to move instead of trying it again
+pub(super) fn failed_here(recent: &VecDeque<JobSummary>, source: &Source) -> bool {
+    let Source::Git { rev, .. } = source else {
+        return false;
+    };
+
+    recent
+        .iter()
+        .find(|job| matches!(&job.source, Source::Git { rev: tried, .. } if tried == rev))
+        .is_some_and(
+            |job| matches!(&job.state, JobState::Finished(outcome) if !outcome.is_success()),
+        )
 }
 
 fn system_info(facts: &SystemFacts, checked_at: Timestamp, fda: FdaStatus) -> SystemInfo {
