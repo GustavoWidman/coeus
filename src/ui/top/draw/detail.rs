@@ -162,7 +162,7 @@ fn running(view: &MachineView, job: &JobView, now: Timestamp) -> Vec<String> {
         ),
         None => String::new(),
     };
-    lines.push(format!("  {gauge}{elapsed}{left}"));
+    lines.push(format!("  {gauge}{} {elapsed}{left}", "running".dimmed()));
 
     let counts = format::counts(&job.progress);
     if !counts.is_empty() {
