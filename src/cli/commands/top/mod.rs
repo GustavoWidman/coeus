@@ -148,7 +148,7 @@ impl Dashboard {
         }
     }
 
-    /// the machine's current job through nom on the normal screen. once
+    /// the machine's current job, drawn by its nom on the normal screen. once
     /// the job ends its outcome stays up until a key is pressed; a ctrl-c
     /// detach comes straight back.
     async fn attach(&self, host: &Hostname, keys: &mut EventStream) -> Result<()> {
@@ -156,7 +156,7 @@ impl Dashboard {
             fleet: &self.fleet,
             host,
             job: JobSelector::Current,
-            mode: Mode::Nom,
+            mode: Mode::Live,
             idle: None,
             diff_limit: Some(12),
         }

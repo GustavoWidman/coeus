@@ -33,7 +33,7 @@ pub struct Deployment {
 pub enum Following {
     /// print each machine's answer and leave
     Detach,
-    /// one machine: its job's log through nom
+    /// one machine: its job's log, drawn by the machine's nom on a terminal
     Attach,
     /// the board, live on a terminal, line by line elsewhere
     Board { live: bool },
@@ -90,7 +90,7 @@ impl Deployment {
             fleet: &self.fleet,
             host,
             job: JobSelector::Id(admission.job),
-            mode: Mode::Nom,
+            mode: Mode::Live,
             idle: None,
             diff_limit: self.diff_limit(),
         }
