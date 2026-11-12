@@ -46,6 +46,13 @@ impl JobLog {
         self.path.exists()
     }
 
+    /// creates the log empty if it does not exist, so readers can open it
+    /// before the writer arrives
+    pub fn touch(&self) -> Result<()> {
+        OpenOptions::new().create(true).append(true).open(&self.path)?;
+        Ok(())
+    }
+
     /// takes the writer, or `None` when another process holds it.
     ///
     /// a holder only probing liveness keeps it for microseconds, so a few

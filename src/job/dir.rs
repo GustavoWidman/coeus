@@ -71,14 +71,10 @@ impl JobDir {
         write_json(&self.path.join("summary.json"), summary)
     }
 
-    /// the job as its spec and log describe it now
-    pub async fn view(&self) -> Result<JobView> {
-        if let Some(summary) = self.summary()? {
-            return Ok(JobView::queued(summary));
-        }
-
+    /// the job as its spec describes it, before any runner touched it
+    pub fn queued(&self) -> Result<JobView> {
         let spec = self.spec()?;
-        let mut view = JobView::queued(JobSummary {
+        Ok(JobView::queued(JobSummary {
             id: spec.id,
             order: spec.order.id,
             source: spec.order.source,
@@ -90,8 +86,16 @@ impl JobDir {
             finished_at: None,
             toplevel: None,
             attempt: 0,
-        });
+        }))
+    }
 
+    /// the job as its spec and log describe it now
+    pub async fn view(&self) -> Result<JobView> {
+        if let Some(summary) = self.summary()? {
+            return Ok(JobView::queued(summary));
+        }
+
+        let mut view = self.queued()?;
         let log = self.log();
         if log.exists() {
             let mut reader = log.reader(0).await?;
