@@ -589,3 +589,25 @@ async fn stopping_a_process_kills_everything_it_started() {
         );
     }
 }
+
+#[tokio::test]
+async fn a_process_is_done_when_it_exits_even_if_its_children_hold_the_output() {
+    let (_state, dir) = job(&spec(git(None), Action::Build));
+    let mut writer = dir.log().writer().unwrap().unwrap();
+
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", "sleep 30 & echo started"]);
+    let mut feed = Feed::new(&mut writer);
+    let exit = tokio::time::timeout(
+        Duration::from_secs(5),
+        Process::spawn(command)
+            .unwrap()
+            .finish(&mut feed, Stdout::Capture),
+    )
+    .await
+    .expect("finished while the sleep holds stdout")
+    .unwrap();
+
+    assert!(exit.status.success());
+    assert_eq!(exit.stdout, b"started\n");
+}
