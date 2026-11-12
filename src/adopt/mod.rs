@@ -8,6 +8,10 @@
 //! again finds the job, and does to an unfinished one what coeusd does at
 //! startup (follow it, start a runner again, or close it by what the
 //! machine runs).
+//!
+//! `--boot` admits a try as a boot instead of a switch, for a NixOS that
+//! refused to switch live: the system becomes the boot default, and the
+//! machine runs it once rebooted.
 
 mod admit;
 mod follow;
@@ -18,7 +22,7 @@ mod test;
 
 use std::{fs, os::unix::fs::DirBuilderExt, path::PathBuf};
 
-use eyre::{Result, WrapErr, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use log::{info, warn};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
@@ -73,6 +77,8 @@ struct Request {
     label: String,
     hostname: Hostname,
     order: OrderId,
+    /// a switch, or a boot when NixOS refuses to switch live
+    action: Action,
     install_bootloader: bool,
     follow: Option<u64>,
 }
@@ -126,12 +132,20 @@ impl Request {
 
     fn parse(args: &AdoptArgs) -> Result<Self> {
         let missing = |flag: &str| eyre!("--{flag} is required");
+        let action = match args.boot {
+            true => Action::Boot,
+            false => Action::Switch,
+        };
+        if !Platform::current().supports(action) {
+            bail!("{} cannot {action}", Platform::current());
+        }
         Ok(Self {
             source: args.source.clone().ok_or_else(|| missing("source"))?,
             nar_hash: args.nar_hash.clone(),
             label: args.label.clone().ok_or_else(|| missing("label"))?,
             hostname: args.hostname.clone().ok_or_else(|| missing("hostname"))?,
             order: args.order.ok_or_else(|| missing("order"))?,
+            action,
             install_bootloader: args.install_bootloader,
             follow: args.follow,
         })
@@ -215,7 +229,7 @@ impl Request {
                 nar_hash: self.nar_hash.clone(),
                 label: self.label.clone(),
             },
-            action: Action::Switch,
+            action: self.action,
             options: NixOptions::default(),
             origin: Origin::User {
                 user: ORDERED_BY.to_owned(),

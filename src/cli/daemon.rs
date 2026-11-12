@@ -75,6 +75,11 @@ pub struct AdoptArgs {
     #[arg(long)]
     pub install_bootloader: bool,
 
+    /// Admit the order as a boot rather than a switch: the system becomes
+    /// the boot default and runs from the next reboot (NixOS only)
+    #[arg(long)]
+    pub boot: bool,
+
     /// Print the job's events from this log offset until it finishes
     #[arg(long, value_name = "OFFSET")]
     pub follow: Option<u64>,
@@ -82,7 +87,10 @@ pub struct AdoptArgs {
     /// Print where the snapshot's switch stands, as JSON, and admit nothing;
     /// with --source and --hostname, in the state directory the machine's
     /// configuration names
-    #[arg(long, conflicts_with_all = ["label", "order", "install_bootloader", "follow"])]
+    #[arg(
+        long,
+        conflicts_with_all = ["label", "order", "install_bootloader", "boot", "follow"]
+    )]
     pub status: bool,
 
     /// The state directory `--status` reads instead, /var/lib/coeus when
@@ -90,7 +98,7 @@ pub struct AdoptArgs {
     #[arg(
         long,
         value_name = "DIR",
-        conflicts_with_all = ["label", "order", "install_bootloader", "follow"]
+        conflicts_with_all = ["label", "order", "install_bootloader", "boot", "follow"]
     )]
     pub state_dir: Option<PathBuf>,
 }

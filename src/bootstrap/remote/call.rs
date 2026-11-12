@@ -61,6 +61,8 @@ pub struct AdoptCall {
     pub label: String,
     pub hostname: Hostname,
     pub order: OrderId,
+    /// admit the order as a boot, for a NixOS that refused a live switch
+    pub boot: bool,
     pub install_bootloader: bool,
     /// stream the job's events from this log offset
     pub follow: Option<u64>,
@@ -230,6 +232,9 @@ impl AdoptCall {
             "--order",
             &self.order.to_string(),
         ]);
+        if self.boot {
+            argv.push("--boot".into());
+        }
         if self.install_bootloader {
             argv.push("--install-bootloader".into());
         }

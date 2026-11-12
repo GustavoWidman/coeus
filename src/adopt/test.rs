@@ -11,8 +11,8 @@ use super::{
 use crate::{
     cli::daemon::{DaemonCLIArgs, DaemonCommand},
     common::model::{
-        Attempt, HostInfo, JobEvent, JobState, MachineView, NarHash, OrderId, Origin, Outcome,
-        Phase, Placement, Platform, Source, StorePath, bootstrap_order,
+        Action, Attempt, HostInfo, JobEvent, JobState, MachineView, NarHash, OrderId, Origin,
+        Outcome, Phase, Placement, Platform, Source, StorePath, bootstrap_order,
     },
     config::DaemonSettings,
     job::{JobDir, JobStore},
@@ -33,6 +33,7 @@ fn request(attempt: u8) -> Request {
         label: "altar:coeus/bootstrap/lab@a1b2c3d".into(),
         hostname: "lab".parse().unwrap(),
         order: bootstrap_order(&nar_hash(), attempt),
+        action: Action::Switch,
         install_bootloader: true,
         follow: None,
     }
@@ -162,6 +163,48 @@ async fn a_new_try_is_admitted_only_after_the_last_one_failed() {
 
     let second = created(adopt(&store, state.path(), 1).await.unwrap());
     assert_eq!(second.id().0, first.id().0 + 1);
+}
+
+#[tokio::test]
+async fn a_refused_switch_is_tried_again_as_a_boot_by_the_next_order() {
+    let state = tempfile::tempdir().unwrap();
+    let store = JobStore::open(state.path()).unwrap();
+    let settings = settings(state.path());
+    let switch = created(adopt(&store, state.path(), 0).await.unwrap());
+    assert_eq!(switch.spec().unwrap().order.action, Action::Switch);
+    switch
+        .close(Outcome::RolledBack(crate::common::model::Failure::new(
+            Phase::Activating,
+            "switch-to-configuration failed with exit status: 1",
+        )))
+        .unwrap();
+
+    let boot = Request {
+        action: Action::Boot,
+        ..request(1)
+    };
+    let spec = |id| boot.spec(id, &host(), &settings);
+    let dir = created(
+        admit::admit(&store, &boot.nar_hash, boot.order, spec)
+            .await
+            .unwrap(),
+    );
+
+    let spec = dir.spec().unwrap();
+    assert_eq!(spec.order.action, Action::Boot);
+    assert_eq!(spec.order.id, bootstrap_order(&nar_hash(), 1));
+    assert!(spec.install_bootloader);
+
+    // the boot job is the snapshot's newest try, and once it succeeded the
+    // snapshot counts as deployed
+    dir.close(Outcome::Succeeded).unwrap();
+    let Attempt::Succeeded(job) =
+        Attempt::of(&admit::summaries(&store).await.unwrap(), &nar_hash())
+    else {
+        panic!("a boot that succeeded is the snapshot's success");
+    };
+    assert_eq!(job.id, dir.id());
+    assert_eq!(job.action, Action::Boot);
 }
 
 #[tokio::test]
@@ -497,6 +540,15 @@ fn status_reads_the_configurations_state_directory_or_the_one_it_is_told() {
         "0000000000000001",
     ];
     assert!(parse(&adopting).is_ok());
+    let booting: Vec<&str> = adopting.iter().copied().chain(["--boot"]).collect();
+    match parse(&booting).unwrap().command {
+        Some(DaemonCommand::Adopt(adopt)) => assert!(adopt.boot),
+        command => panic!("not adopt: {command:?}"),
+    }
+    assert!(
+        parse(&["--status", "--boot"]).is_err(),
+        "--status admits nothing"
+    );
     let moved: Vec<&str> = adopting
         .iter()
         .copied()
