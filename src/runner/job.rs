@@ -225,6 +225,7 @@ impl Runner {
                 Source::Generation(number) => Some(number),
                 _ => None,
             },
+            install_bootloader: self.spec.install_bootloader,
         };
 
         self.enter(Phase::Activating)?;

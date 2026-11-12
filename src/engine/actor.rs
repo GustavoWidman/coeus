@@ -338,6 +338,7 @@ impl<H: Host> Actor<H> {
                 daemon_port: self.settings.listen.port(),
                 tailscale: self.settings.guard.tailscale,
             }),
+            install_bootloader: false,
         }
     }
 

@@ -30,6 +30,8 @@ pub struct Activation {
     pub toplevel: StorePath,
     /// the profile generation that already holds `toplevel`, for a rollback
     pub generation: Option<u32>,
+    /// NixOS: install the boot loader, not only update its entries
+    pub install_bootloader: bool,
 }
 
 impl Activation {
@@ -43,6 +45,7 @@ impl Activation {
                 action: Action::Switch,
                 toplevel: system.generation_system(generation).ok()?,
                 generation: Some(generation),
+                install_bootloader: false,
             });
         }
 
@@ -51,6 +54,7 @@ impl Activation {
             action,
             toplevel: system.current()?,
             generation: None,
+            install_bootloader: false,
         })
     }
 
@@ -64,9 +68,14 @@ impl Activation {
         });
 
         let activate = match self.platform {
-            Platform::NixOs => Step::new(format!("{}/bin/switch-to-configuration", self.toplevel))
-                .args([self.action.as_str()])
-                .unset("NIXOS_INSTALL_BOOTLOADER"),
+            Platform::NixOs => {
+                let step = Step::new(format!("{}/bin/switch-to-configuration", self.toplevel))
+                    .args([self.action.as_str()]);
+                match self.install_bootloader {
+                    true => step.set("NIXOS_INSTALL_BOOTLOADER", "1"),
+                    false => step.unset("NIXOS_INSTALL_BOOTLOADER"),
+                }
+            }
             Platform::Darwin => Step::new(format!("{}/activate", self.toplevel))
                 .set("HOME", "/var/root")
                 .set("NIX_REMOTE", "daemon")

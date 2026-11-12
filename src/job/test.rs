@@ -26,6 +26,7 @@ fn spec(id: u64) -> JobSpec {
         },
         ssh_key_file: None,
         guard: None,
+        install_bootloader: false,
     }
 }
 
