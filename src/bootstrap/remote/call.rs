@@ -10,8 +10,9 @@ use crate::{
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Call {
-    /// `sh -s` reading probe.sh on stdin, its `key=value` lines on stdout
-    Probe,
+    /// `sh -s` reading probe.sh on stdin, its `key=value` lines on stdout.
+    /// the login user is passed in, since the probe may run as root
+    Probe { login_user: String },
     /// `nixos-generate-config --show-hardware-config`, as root
     HardwareConfig,
     /// Determinate's installer, as root, without questions
@@ -57,21 +58,161 @@ pub struct AdoptCall {
     pub follow: Option<u64>,
 }
 
+/// where nix is when the login shell did not say: Determinate's profile on
+/// a Mac, the system's on NixOS. root's ssh session on a Mac has neither.
+const NIX_PATH: &str =
+    r#"PATH="/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:$PATH" exec "$@""#;
+
+const INSTALL_NIX: &str = "curl --proto '=https' --tlsv1.2 -fsSL https://install.determinate.systems/nix | sh -s -- install --no-confirm";
+
+/// `$1` the whole `authorized_keys` line, `$2` the key it carries
+const INSTALL_SESSION_KEY: &str = r#"set -eu
+umask 077
+dir=~root/.ssh
+file="$dir/authorized_keys"
+mkdir -p "$dir"
+touch "$file"
+grep -qF "$2" "$file" && exit 0
+if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then echo >> "$file"; fi
+printf '%s\n' "$1" >> "$file"
+"#;
+
+/// `$1` the key; every other line stays as it was
+const REMOVE_SESSION_KEY: &str = r#"set -eu
+file=~root/.ssh/authorized_keys
+[ -f "$file" ] || exit 0
+grep -qF "$1" "$file" || exit 0
+umask 077
+grep -vF "$1" "$file" > "$file.coeus" || true
+mv "$file.coeus" "$file"
+"#;
+
+/// nix-darwin refuses to replace an `/etc` file it does not know, and asks
+/// for exactly this rename. a copy already aside with the same content is
+/// the same move done before.
+const MOVE_ETC_ASIDE: &str = r#"set -eu
+for file in /etc/bashrc /etc/zshrc /etc/zprofile; do
+  [ -e "$file" ] || continue
+  case "$(readlink "$file" || true)" in /etc/static/*) continue ;; esac
+  aside="$file.before-nix-darwin"
+  if [ -e "$aside" ]; then
+    cmp -s "$file" "$aside" || { echo "$file and $aside both exist and differ" >&2; exit 1; }
+    rm "$file"
+  else
+    mv "$file" "$aside"
+  fi
+  echo "$file"
+done
+"#;
+
+const TAILSCALE: &str = r#"for tailscale in tailscale /run/current-system/sw/bin/tailscale /Applications/Tailscale.app/Contents/MacOS/Tailscale; do
+  command -v "$tailscale" >/dev/null 2>&1 && exec "$tailscale" status --json
+done
+echo "tailscale is not installed" >&2
+exit 127
+"#;
+
 impl Call {
     pub fn argv(&self) -> Vec<String> {
-        todo!()
+        match self {
+            Self::Probe { login_user } => words(["sh", "-s", "--", login_user]),
+            Self::HardwareConfig => with_nix(["nixos-generate-config", "--show-hardware-config"]),
+            Self::InstallNix => words(["sh", "-c", INSTALL_NIX]),
+            Self::RepairNix => words(["/nix/nix-installer", "repair", "--no-confirm"]),
+            Self::MoveEtcAside => words(["sh", "-c", MOVE_ETC_ASIDE]),
+            Self::InstallSessionKey { key, host } => words([
+                "sh",
+                "-c",
+                INSTALL_SESSION_KEY,
+                "sh",
+                &format!("{key} coeus-bootstrap@{host}"),
+                &key.to_string(),
+            ]),
+            Self::RemoveSessionKey { key } => {
+                words(["sh", "-c", REMOVE_SESSION_KEY, "sh", &key.to_string()])
+            }
+            Self::BuildCoeus { source, attribute } => with_nix([
+                "nix",
+                "--extra-experimental-features",
+                "nix-command flakes",
+                "build",
+                "--json",
+                "--no-link",
+                "--log-format",
+                "internal-json",
+                "--option",
+                "accept-flake-config",
+                "true",
+                "--no-write-lock-file",
+                &format!("path:{source}#{attribute}"),
+            ]),
+            Self::CoeusVersion { coeus } => words([&coeusd(coeus), "--version"]),
+            Self::Adopt(adopt) => with_nix(adopt.argv()),
+            Self::AdoptStatus { coeus, nar_hash } => with_nix([
+                &coeusd(coeus),
+                "adopt",
+                "--status",
+                "--nar-hash",
+                nar_hash.as_str(),
+            ]),
+            Self::Tailscale => words(["sh", "-c", TAILSCALE]),
+        }
     }
 
     /// whether it must run as root
     pub fn privileged(&self) -> bool {
-        todo!()
+        !matches!(
+            self,
+            Self::Probe { .. } | Self::CoeusVersion { .. } | Self::Tailscale
+        )
     }
 
     /// what the call reads on stdin, beyond a sudo password
     pub fn stdin(&self) -> Option<&'static [u8]> {
         match self {
-            Self::Probe => Some(include_bytes!("probe.sh")),
+            Self::Probe { .. } => Some(include_bytes!("probe.sh")),
             _ => None,
         }
     }
+}
+
+impl AdoptCall {
+    fn argv(&self) -> Vec<String> {
+        let mut argv = words([
+            &coeusd(&self.coeus),
+            "adopt",
+            "--source",
+            &self.source.display().to_string(),
+            "--nar-hash",
+            self.nar_hash.as_str(),
+            "--label",
+            &self.label,
+            "--hostname",
+            self.hostname.as_str(),
+            "--order",
+            &self.order.to_string(),
+        ]);
+        if self.install_bootloader {
+            argv.push("--install-bootloader".into());
+        }
+        if let Some(offset) = self.follow {
+            argv.extend(["--follow".into(), offset.to_string()]);
+        }
+        argv
+    }
+}
+
+fn coeusd(coeus: &StorePath) -> String {
+    format!("{coeus}/bin/coeusd")
+}
+
+fn words<'a>(words: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    words.into_iter().map(str::to_owned).collect()
+}
+
+/// `argv` with nix's usual places on `PATH`
+fn with_nix<S: AsRef<str>>(argv: impl IntoIterator<Item = S>) -> Vec<String> {
+    let mut words = words(["sh", "-c", NIX_PATH, "sh"]);
+    words.extend(argv.into_iter().map(|word| word.as_ref().to_owned()));
+    words
 }

@@ -1,3 +1,10 @@
+mod call;
+mod probe;
+mod quote;
+mod scripts;
+mod session;
+mod ssh;
+
 use serde_json::json;
 
 use super::{BootLoader, Facts, Platform, System};
