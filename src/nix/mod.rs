@@ -10,6 +10,10 @@ mod line;
 #[cfg(test)]
 mod test;
 
+/// the features every nix call reading a fleet's flake enables: a fleet may
+/// write `|>` anywhere, and a stock machine's nix has it off
+pub const FLAKE_FEATURES: &str = "nix-command flakes pipe-operators";
+
 pub use ansi::strip_ansi;
 pub use filter::*;
 pub use flake::FlakeRepo;

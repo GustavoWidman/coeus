@@ -143,7 +143,7 @@ impl Call {
             Self::BuildCoeus { source, attribute } => with_nix([
                 "nix",
                 "--extra-experimental-features",
-                "nix-command flakes",
+                crate::nix::FLAKE_FEATURES,
                 "build",
                 "--json",
                 "--no-link",
