@@ -1,12 +1,12 @@
 use colored::{ColoredString, Colorize};
 
-use super::{Board, Heading, Row, Status, Verdict};
+use super::{Board, Cells, Heading, Row, Status, Verdict};
 use crate::{
     common::model::{JobSummary, JobView, MachineView, Outcome, Phase, Timestamp},
     ui::{
         Theme, describe,
         format::{self, duration},
-        text::{fit, pad, pad_left},
+        text::{fit, pad},
     },
 };
 
@@ -24,7 +24,7 @@ impl Frame {
     const CHROME: usize = 5;
 
     /// the progress bar shrinks on narrow terminals before anything is cut
-    fn bar(&self) -> usize {
+    pub fn bar(&self) -> usize {
         (self.width / 6).clamp(8, 24)
     }
 }
@@ -236,45 +236,18 @@ impl Row {
     }
 
     fn running(&self, job: &JobView, watching: bool, frame: Frame) -> String {
-        let bar = match job.progress.fraction() {
-            Some(fraction) => format!(
-                "{} {}",
-                Theme::bar(fraction, frame.bar()),
-                pad_left(&format::percent(fraction), 4).bold()
-            ),
-            None => format!("{} {}", Theme::idle_bar(frame.bar()), " ".repeat(4)),
-        };
-
-        let elapsed = job
-            .summary
-            .started_at
-            .map(|started| duration(started.until(frame.now)))
-            .unwrap_or_default();
-        let eta = self
+        let left = self
             .view
             .as_ref()
-            .and_then(|view| super::eta(view, job, frame.now))
-            .map(|left| format!(" ~{} left", duration(left)).dimmed().to_string())
-            .unwrap_or_default();
+            .and_then(|view| super::eta(view, job, frame.now));
+        let cells = Cells::of(job, left, frame);
 
-        let mut parts = vec![bar, format!("{}{eta}", pad(&elapsed, 6))];
+        let mut parts = vec![cells.bar, cells.time];
         if watching {
             parts.push(provenance(&job.summary));
         }
-
-        let counts = format::counts(&job.progress);
-        if !counts.is_empty() {
-            parts.push(counts);
-        }
-        if let Some(active) = job.progress.active.first() {
-            let more = job.progress.active.len() - 1;
-            let more = if more > 0 {
-                format!(" +{more}")
-            } else {
-                String::new()
-            };
-            parts.push(format!("{active}{more}").dimmed().to_string());
-        }
+        parts.extend(cells.counts);
+        parts.extend(cells.active);
 
         parts.join("  ")
     }

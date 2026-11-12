@@ -39,7 +39,7 @@ fn typical(view: &MachineView, job: &JobView) -> Option<Duration> {
 
 /// building time so far, scaled by what is left; only once enough is done
 /// for the rate to mean something
-fn extrapolate(job: &JobView, now: Timestamp) -> Option<Duration> {
+pub fn extrapolate(job: &JobView, now: Timestamp) -> Option<Duration> {
     if job.summary.state.phase() != Some(Phase::Building) {
         return None;
     }
