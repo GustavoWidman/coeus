@@ -15,5 +15,5 @@ mod rollout;
 #[cfg(test)]
 mod test;
 
-pub use console::Console;
-pub use context::{Context, within};
+pub use console::{Console, Unanswerable};
+pub use context::{Context, local_hostname, within};
