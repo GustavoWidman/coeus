@@ -3,6 +3,7 @@
 
 mod fleet;
 mod origin;
+mod snapshot;
 mod stream;
 mod targets;
 
@@ -10,12 +11,13 @@ mod targets;
 mod test;
 
 use colored::Colorize;
-use eyre::{Result, bail, eyre};
+use eyre::{Result, eyre};
 use log::debug;
 use tokio::{net::lookup_host, time::timeout};
 
 pub use fleet::{Fleet, FleetEvent, Link};
 pub use origin::detect_origin;
+pub use snapshot::Snapshot;
 pub use stream::{Attachment, AttachmentEvent};
 pub use targets::Targets;
 
@@ -27,7 +29,7 @@ use crate::{
         },
         proto::{
             AttachRequest, CancelRequest, DeployRequest, GenerationsRequest, HistoryRequest,
-            Packet, RebootRequest, ResolveRequest, WatchRequest,
+            Packet, RebootRequest, ResolveRequest, UploadBegin, UploadChunk, WatchRequest,
         },
         stream::EncryptedStream,
     },
@@ -117,6 +119,39 @@ impl CoeusClient {
         match self.ask(RebootRequest {}).await? {
             Packet::Ack(_) => Ok(()),
             other => unexpected(other),
+        }
+    }
+
+    /// sends a working tree for a later `Source::Snapshot`; a daemon that
+    /// already has it answers right away
+    pub async fn upload(&mut self, snapshot: &Snapshot) -> Result<()> {
+        const CHUNK: usize = 48 * 1024;
+        let size = snapshot.nar.len() as u64;
+
+        let offset = match self
+            .ask(UploadBegin {
+                nar_hash: snapshot.nar_hash.clone(),
+                size,
+            })
+            .await?
+        {
+            Packet::UploadReady(ready) => ready.offset.min(size) as usize,
+            other => return unexpected(other),
+        };
+
+        for chunk in snapshot.nar[offset..].chunks(CHUNK) {
+            self.stream
+                .send(UploadChunk {
+                    data: chunk.to_vec(),
+                })
+                .await?;
+        }
+
+        match self.stream.recv().await? {
+            Some(Packet::UploadDone(_)) => Ok(()),
+            Some(Packet::Error(error)) => Err(eyre!("{}: {}", self.host.hostname, error.message)),
+            Some(other) => unexpected(other),
+            None => Err(eyre!("{} closed the connection", self.host.hostname)),
         }
     }
 

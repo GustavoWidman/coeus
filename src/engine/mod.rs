@@ -9,6 +9,7 @@ mod lane;
 mod notify;
 mod reconcile;
 mod running;
+mod snapshots;
 mod upgrade;
 
 #[cfg(test)]
@@ -23,6 +24,7 @@ use tokio_util::sync::CancellationToken;
 pub use crate::platform::SystemFacts;
 pub use handle::EngineHandle;
 pub use host::Host;
+pub use snapshots::{Receiving, Snapshots};
 
 use crate::{config::DaemonSettings, job::JobStore, nix::FlakeRepo};
 
@@ -42,6 +44,7 @@ impl Engine {
         let host = Arc::new(host);
         let store = JobStore::open(&settings.state_dir)?;
         let repo = FlakeRepo::new(settings.flake.clone());
+        let snapshots = Snapshots::new(&settings.state_dir);
 
         let upgrade = upgrade::UpgradeWatch::new(config);
         let (actor, view) = actor::Actor::load(host.clone(), settings, upgrade, restart).await?;
@@ -49,6 +52,8 @@ impl Engine {
         let (commands, receiver) = mpsc::channel(64);
         tokio::spawn(actor.run(receiver, shutdown));
 
-        Ok(EngineHandle::new(commands, view, store, host, repo))
+        Ok(EngineHandle::new(
+            commands, view, store, host, repo, snapshots,
+        ))
     }
 }

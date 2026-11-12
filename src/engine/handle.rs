@@ -3,7 +3,7 @@ use std::sync::Arc;
 use eyre::{Result, eyre};
 use tokio::sync::{mpsc, oneshot, watch};
 
-use super::{Host, actor::Command};
+use super::{Host, Snapshots, actor::Command};
 use crate::{
     common::model::{
         Admission, CancelReport, Generation, HostInfo, JobSelector, JobSummary, MachineView, Order,
@@ -20,6 +20,7 @@ pub struct EngineHandle<H: Host> {
     store: JobStore,
     host: Arc<H>,
     repo: FlakeRepo,
+    snapshots: Snapshots,
 }
 
 impl<H: Host> Clone for EngineHandle<H> {
@@ -30,6 +31,7 @@ impl<H: Host> Clone for EngineHandle<H> {
             store: self.store.clone(),
             host: self.host.clone(),
             repo: self.repo.clone(),
+            snapshots: self.snapshots.clone(),
         }
     }
 }
@@ -41,6 +43,7 @@ impl<H: Host> EngineHandle<H> {
         store: JobStore,
         host: Arc<H>,
         repo: FlakeRepo,
+        snapshots: Snapshots,
     ) -> Self {
         Self {
             commands,
@@ -48,6 +51,7 @@ impl<H: Host> EngineHandle<H> {
             store,
             host,
             repo,
+            snapshots,
         }
     }
 
@@ -106,6 +110,11 @@ impl<H: Host> EngineHandle<H> {
 
     pub async fn resolve(&self, git_ref: &str) -> Result<Pinned> {
         self.repo.resolve(git_ref).await
+    }
+
+    /// where uploaded working trees go
+    pub const fn snapshots(&self) -> &Snapshots {
+        &self.snapshots
     }
 
     pub async fn reboot(&self) -> Result<()> {
