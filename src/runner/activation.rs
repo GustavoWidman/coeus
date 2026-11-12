@@ -36,9 +36,10 @@ pub struct Activation {
 
 impl Activation {
     /// the activation that puts the machine back where it is now, taken
-    /// before `action` changes it. a boot loader `action` installs is
-    /// installed again going back, so its default is no longer the system
-    /// rejected
+    /// before `action` changes it, going back the way `action` went: a boot
+    /// only makes the earlier generation the default again. a boot loader
+    /// `action` installs is installed again going back, so its default is
+    /// no longer the system rejected
     pub fn undo(
         platform: Platform,
         action: Action,
@@ -49,7 +50,7 @@ impl Activation {
             let generation = system.generation()?;
             return Some(Self {
                 platform,
-                action: Action::Switch,
+                action,
                 toplevel: system.generation_system(generation).ok()?,
                 generation: Some(generation),
                 install_bootloader,
@@ -100,6 +101,23 @@ impl Activation {
         match self.generation {
             Some(generation) => format!("generation {generation} ({})", self.toplevel.name()),
             None => self.toplevel.name().to_owned(),
+        }
+    }
+}
+
+/// the steps that put the machine back where it was, and where that is,
+/// for people
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Undo {
+    pub to: String,
+    pub steps: Vec<Step>,
+}
+
+impl Undo {
+    pub fn of(activation: &Activation) -> Self {
+        Self {
+            to: activation.describe(),
+            steps: activation.steps(),
         }
     }
 }
