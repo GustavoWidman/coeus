@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use eyre::{Result, WrapErr};
+use eyre::{Result, WrapErr, eyre};
 use serde::{Serialize, de::DeserializeOwned};
 
 use super::{JobLog, JobSpec, StopRequest};
@@ -27,6 +27,15 @@ pub struct JobDir {
 impl JobDir {
     pub(super) fn new(id: JobId, path: PathBuf) -> Self {
         Self { id, path }
+    }
+
+    /// the job directory at `path`, which is named by the job's number
+    pub fn open(path: &Path) -> Result<Self> {
+        let id = path
+            .file_name()
+            .and_then(|name| name.to_str()?.parse().ok())
+            .ok_or_else(|| eyre!("not a job directory: {}", path.display()))?;
+        Ok(Self::new(JobId(id), path.to_owned()))
     }
 
     pub const fn id(&self) -> JobId {
