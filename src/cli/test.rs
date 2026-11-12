@@ -117,6 +117,39 @@ fn a_failure_budget_lets_the_rollout_continue() {
 }
 
 #[test]
+fn rollback_skips_generations_that_hold_the_running_system() {
+    use crate::{
+        cli::commands::rollback::previous,
+        common::model::{Generation, Timestamp},
+    };
+
+    let generation = |number, name: &str, current| Generation {
+        number,
+        toplevel: format!("/nix/store/{}-{name}", "a".repeat(32))
+            .parse()
+            .unwrap(),
+        created_at: Timestamp(0),
+        current,
+        booted: false,
+    };
+    let host: Hostname = "altar".parse().unwrap();
+
+    let generations = [
+        generation(19, "darwin-system-a", true),
+        generation(18, "darwin-system-a", false),
+        generation(17, "darwin-system-b", false),
+        generation(16, "darwin-system-a", false),
+    ];
+    assert_eq!(previous(&host, &generations).unwrap().number, 17);
+
+    let generations = [
+        generation(2, "darwin-system-a", true),
+        generation(1, "darwin-system-a", false),
+    ];
+    assert!(previous(&host, &generations).is_err());
+}
+
+#[test]
 fn deploy_pins_a_commit_and_names_its_branch() {
     use clap::Parser;
 

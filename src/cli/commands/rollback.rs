@@ -90,7 +90,8 @@ impl RollbackArgs {
     }
 }
 
-/// the newest generation older than the running one
+/// the newest generation older than the running one that holds another
+/// system: switching to one that holds the same system changes nothing
 pub fn previous<'a>(host: &Hostname, generations: &'a [Generation]) -> Result<&'a Generation> {
     let current = generations
         .iter()
@@ -99,7 +100,14 @@ pub fn previous<'a>(host: &Hostname, generations: &'a [Generation]) -> Result<&'
 
     generations
         .iter()
-        .filter(|generation| generation.number < current.number)
+        .filter(|generation| {
+            generation.number < current.number && generation.toplevel != current.toplevel
+        })
         .max_by_key(|generation| generation.number)
-        .ok_or_else(|| eyre!("{host} has no generation before {}", current.number))
+        .ok_or_else(|| {
+            eyre!(
+                "{host} has no generation before {} with another system",
+                current.number
+            )
+        })
 }

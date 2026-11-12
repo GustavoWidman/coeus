@@ -5,7 +5,7 @@ mod doctor;
 mod generations;
 mod history;
 mod reboot;
-mod rollback;
+pub(super) mod rollback;
 mod setup;
 mod status;
 mod top;
