@@ -1,7 +1,4 @@
-use std::{
-    ops::Not,
-    time::{Duration, Instant},
-};
+use std::{ops::Not, time::Duration};
 
 use log::warn;
 
@@ -20,7 +17,9 @@ use crate::{
 pub(super) struct Follower {
     repo: FlakeRepo,
     settings: FollowSettings,
-    checked: Option<Instant>,
+    /// wall-clock time, which jumps ahead across sleep, so a machine that
+    /// wakes up looks right away
+    next_check: Timestamp,
     latest: Option<Pinned>,
 }
 
@@ -39,18 +38,17 @@ impl Follower {
         Self {
             repo,
             settings,
-            checked: Some(Instant::now() - Self::SETTLE),
+            next_check: Timestamp::now().after(Self::SETTLE),
             latest: None,
         }
     }
 
     pub fn due(&self) -> bool {
-        self.checked
-            .is_none_or(|checked| checked.elapsed() >= self.settings.interval)
+        Timestamp::now() >= self.next_check
     }
 
     pub async fn check(&mut self) {
-        self.checked = Some(Instant::now());
+        self.next_check = Timestamp::now().after(self.settings.interval);
         match self.repo.resolve(&self.settings.git_ref).await {
             Ok(pinned) => self.latest = Some(pinned),
             Err(error) => warn!("cannot follow {}: {error}", self.settings.git_ref),
@@ -74,6 +72,12 @@ impl Follower {
                     && deployed.is_some_and(|deployed| !runs(latest, deployed.source))
             }),
         }
+    }
+
+    /// what the ref pointed at when last checked, for tests
+    #[cfg(test)]
+    pub fn saw(&mut self, latest: Pinned) {
+        self.latest = Some(latest);
     }
 
     fn holds(&self, latest: &Pinned, deployed: Option<&Deployed<'_>>) -> bool {
