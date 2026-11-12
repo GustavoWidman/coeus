@@ -1,3 +1,6 @@
+mod enrollment;
+mod question;
+
 use serde_json::json;
 
 use super::{Answers, Input, RepoPath, wire};
@@ -73,7 +76,7 @@ fn a_question_the_schema_does_not_describe_is_refused() {
     }
 }
 
-fn enrollment() -> serde_json::Value {
+pub(super) fn enrollment() -> serde_json::Value {
     json!({
         "files": { "hosts/nova/flake.nix": "{ }\n", "hosts/nova/host.pub": format!("{NOVA}\n") },
         "secrets": {
@@ -179,3 +182,4 @@ fn repository_paths_stay_inside_the_repository() {
             .is_secret()
     );
 }
+
