@@ -67,7 +67,10 @@ impl Host for FakeHost {
                 .unwrap();
             release.notified().await;
 
-            let outcome = dir.stop_request().unwrap().map_or(Outcome::Succeeded, |stop| stop.outcome());
+            let outcome = dir
+                .stop_request()
+                .unwrap()
+                .map_or(Outcome::Succeeded, |stop| stop.outcome());
             writer.finish(outcome).unwrap();
         });
         let _ = ready.await;
@@ -120,9 +123,15 @@ impl Harness {
 
         let shutdown = CancellationToken::new();
         let config = state.path().join("coeusd.toml");
-        let engine = Engine::start(host, settings, &config, CancellationToken::new(), shutdown.clone())
-            .await
-            .unwrap();
+        let engine = Engine::start(
+            host,
+            settings,
+            &config,
+            CancellationToken::new(),
+            shutdown.clone(),
+        )
+        .await
+        .unwrap();
 
         Self {
             engine,
@@ -179,9 +188,16 @@ async fn runs_an_order_to_completion() {
     assert_eq!(admission.placement, Placement::Started);
 
     let view = harness
-        .until(|view| view.running.as_ref().is_some_and(|job| job.summary.state.phase() == Some(Phase::Building)))
+        .until(|view| {
+            view.running
+                .as_ref()
+                .is_some_and(|job| job.summary.state.phase() == Some(Phase::Building))
+        })
         .await;
-    assert_eq!(view.running.unwrap().summary.toplevel.unwrap().as_str(), TOPLEVEL);
+    assert_eq!(
+        view.running.unwrap().summary.toplevel.unwrap().as_str(),
+        TOPLEVEL
+    );
 
     harness.release.notify_one();
     let view = harness.until(|view| finished(view, 1).is_some()).await;
@@ -205,12 +221,21 @@ async fn the_newest_order_replaces_the_waiting_one_and_duplicates_are_recognized
         }
     );
     assert_eq!(
-        harness.engine.deploy(order(3)).await.unwrap().unwrap().placement,
+        harness
+            .engine
+            .deploy(order(3))
+            .await
+            .unwrap()
+            .unwrap()
+            .placement,
         Placement::Duplicate
     );
 
     let view = harness.until(|view| finished(view, 2).is_some()).await;
-    assert_eq!(finished(&view, 2), Some(Outcome::Superseded { by: JobId(3) }));
+    assert_eq!(
+        finished(&view, 2),
+        Some(Outcome::Superseded { by: JobId(3) })
+    );
 
     harness.release.notify_one();
     harness.until(|view| finished(view, 1).is_some()).await;
@@ -227,7 +252,11 @@ async fn cancels_waiting_and_running_jobs() {
     harness.engine.deploy(order(2)).await.unwrap().unwrap();
 
     assert_eq!(
-        harness.engine.cancel(JobSelector::Id(JobId(2))).await.unwrap(),
+        harness
+            .engine
+            .cancel(JobSelector::Id(JobId(2)))
+            .await
+            .unwrap(),
         CancelReport::Withdrawn(JobId(2))
     );
     assert_eq!(
@@ -270,7 +299,9 @@ async fn picks_up_the_jobs_left_on_disk() {
 
     let state = first._state;
     let second = Harness::start(state).await;
-    let view = second.until(|view| finished(view, 1).is_some() && view.running.is_some()).await;
+    let view = second
+        .until(|view| finished(view, 1).is_some() && view.running.is_some())
+        .await;
     assert_eq!(finished(&view, 1), Some(Outcome::Succeeded));
     assert_eq!(view.running.unwrap().summary.id, JobId(2));
 

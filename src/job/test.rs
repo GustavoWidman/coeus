@@ -2,8 +2,8 @@ use std::io::Write;
 
 use super::*;
 use crate::common::model::{
-    Action, JobEvent, JobId, JobState, NixOptions, Order, OrderId, Origin, Outcome, Phase, Platform,
-    Source, Timestamp,
+    Action, JobEvent, JobId, JobState, NixOptions, Order, OrderId, Origin, Outcome, Phase,
+    Platform, Source, Timestamp,
 };
 
 fn spec(id: u64) -> JobSpec {
@@ -54,9 +54,15 @@ fn a_log_has_one_writer_at_a_time() {
     let (_state, store) = store();
     let log = store.create(&spec(1)).unwrap().log();
 
-    let writer = log.writer().unwrap().expect("the first writer gets the log");
+    let writer = log
+        .writer()
+        .unwrap()
+        .expect("the first writer gets the log");
     assert!(log.is_held().unwrap());
-    assert!(log.writer().unwrap().is_none(), "a second writer must be refused");
+    assert!(
+        log.writer().unwrap().is_none(),
+        "a second writer must be refused"
+    );
 
     drop(writer);
     assert!(!log.is_held().unwrap());
@@ -70,7 +76,9 @@ async fn wraps_plain_output_and_keeps_nix_lines() {
     let mut writer = log.writer().unwrap().unwrap();
 
     writer.output(r#"@nix {"action":"stop","id":1}"#).unwrap();
-    writer.output("stopping the following units: \"coeusd\"\n").unwrap();
+    writer
+        .output("stopping the following units: \"coeusd\"\n")
+        .unwrap();
     writer.output(&"x".repeat(JobLog::MAX_LINE * 2)).unwrap();
     writer.flush().unwrap();
 
@@ -110,7 +118,10 @@ async fn readers_resume_and_never_take_a_partial_line() {
         reader.next(usize::MAX).await.unwrap(),
         Some(LogItem::Event(event)) if event.event == JobEvent::Phase(Phase::Building)
     ));
-    assert!(matches!(reader.next(usize::MAX).await.unwrap(), Some(LogItem::Nix(_))));
+    assert!(matches!(
+        reader.next(usize::MAX).await.unwrap(),
+        Some(LogItem::Nix(_))
+    ));
     assert_eq!(reader.next(usize::MAX).await.unwrap(), None);
 
     let resume = reader.offset();
@@ -119,7 +130,9 @@ async fn readers_resume_and_never_take_a_partial_line() {
     let mut resumed = log.reader(resume).await.unwrap();
     assert_eq!(
         resumed.next(usize::MAX).await.unwrap(),
-        Some(LogItem::Nix(br#"@nix {"action":"stop","id":2}"#.iter().copied().chain([b'\n']).collect()))
+        Some(LogItem::Nix(
+            br#"@nix {"action":"stop","id":2}"#.iter().copied().chain([b'\n']).collect()
+        ))
     );
 }
 
@@ -181,7 +194,8 @@ fn stop_requests_round_trip() {
     let dir = store.create(&spec(1)).unwrap();
     assert_eq!(dir.stop_request().unwrap(), None);
 
-    dir.request_stop(StopRequest::Superseded { by: JobId(2) }).unwrap();
+    dir.request_stop(StopRequest::Superseded { by: JobId(2) })
+        .unwrap();
     assert_eq!(
         dir.stop_request().unwrap().map(StopRequest::outcome),
         Some(Outcome::Superseded { by: JobId(2) })

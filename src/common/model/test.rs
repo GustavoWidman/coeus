@@ -108,7 +108,10 @@ fn a_job_view_folds_its_events() {
     }
     assert_eq!(view.summary.state, JobState::Finished(Outcome::Succeeded));
     assert_eq!(view.summary.toplevel.as_ref().unwrap().as_str(), TOPLEVEL);
-    assert_eq!(view.summary.duration(), Some(std::time::Duration::from_secs(7)));
+    assert_eq!(
+        view.summary.duration(),
+        Some(std::time::Duration::from_secs(7))
+    );
 }
 
 #[test]
@@ -119,8 +122,14 @@ fn job_events_keep_a_stable_json_shape() {
     };
 
     let json = serde_json::to_string(&stamped).unwrap();
-    assert_eq!(json, r#"{"at":1794443502123,"event":{"phase":"Activating"}}"#);
-    assert_eq!(serde_json::from_str::<Stamped<JobEvent>>(&json).unwrap(), stamped);
+    assert_eq!(
+        json,
+        r#"{"at":1794443502123,"event":{"phase":"Activating"}}"#
+    );
+    assert_eq!(
+        serde_json::from_str::<Stamped<JobEvent>>(&json).unwrap(),
+        stamped
+    );
 }
 
 #[test]

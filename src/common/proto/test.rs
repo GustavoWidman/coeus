@@ -11,7 +11,10 @@ fn packet_round_trips_with_stable_kind() {
     assert_eq!(packet.kind(), 0x0105);
 
     let encoded = postcard::to_stdvec(&packet).unwrap();
-    assert_eq!(encoded, vec![0x85, 0x02, 0x05, 0x04, b'm', b'a', b'i', b'n']);
+    assert_eq!(
+        encoded,
+        vec![0x85, 0x02, 0x05, 0x04, b'm', b'a', b'i', b'n']
+    );
 
     let Packet::ResolveRequest(request) = postcard::from_bytes(&encoded).unwrap() else {
         panic!("decoded the wrong packet variant");

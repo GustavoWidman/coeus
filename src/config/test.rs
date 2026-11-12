@@ -31,7 +31,10 @@ fn the_client_example_parses_into_an_inventory() {
     let unknown: Hostname = "phone".parse().unwrap();
 
     assert_eq!(settings.hosts.len(), 3);
-    assert_eq!(settings.hosts[&"lab".parse().unwrap()].tags, ["nixos", "dev-server", "canary"]);
+    assert_eq!(
+        settings.hosts[&"lab".parse().unwrap()].tags,
+        ["nixos", "dev-server", "canary"]
+    );
     assert_eq!(settings.endpoint(&oracle).port, DEFAULT_PORT);
     assert_eq!(settings.endpoint(&unknown).host, "phone");
 }

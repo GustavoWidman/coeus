@@ -71,7 +71,8 @@ impl LogReader {
                 let Some(next) = self.line_end(taken).await? else {
                     break;
                 };
-                if self.buffer[taken..].starts_with(JobLog::COEUS.as_bytes()) || next + 1 > max_nix {
+                if self.buffer[taken..].starts_with(JobLog::COEUS.as_bytes()) || next + 1 > max_nix
+                {
                     break;
                 }
                 taken = next + 1;

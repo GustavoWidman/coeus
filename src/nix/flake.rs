@@ -48,7 +48,10 @@ impl FlakeRepo {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let reason = stderr.lines().find(|line| line.contains("error")).unwrap_or(&stderr);
+            let reason = stderr
+                .lines()
+                .find(|line| line.contains("error"))
+                .unwrap_or(&stderr);
             return Err(eyre!("cannot resolve {git_ref}: {}", reason.trim()));
         }
 

@@ -1,5 +1,7 @@
 use clap::Parser;
-use coeus::{cli::main::MainCLIArgs, client::CoeusClient, config::ClientSettings, utils::log::Logger};
+use coeus::{
+    cli::main::MainCLIArgs, client::CoeusClient, config::ClientSettings, utils::log::Logger,
+};
 use colored::Colorize;
 use eyre::Result;
 use log::info;

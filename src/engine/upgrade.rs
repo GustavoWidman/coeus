@@ -21,7 +21,8 @@ impl UpgradeWatch {
 
     pub fn stale(&self) -> bool {
         let installed = std::fs::canonicalize(Self::INSTALLED).ok();
-        let binary = matches!((&installed, &self.exe), (Some(installed), Some(exe)) if installed != exe);
+        let binary =
+            matches!((&installed, &self.exe), (Some(installed), Some(exe)) if installed != exe);
         let config = std::fs::read(&self.config).ok() != self.config_bytes;
         binary || config
     }

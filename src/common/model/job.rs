@@ -77,7 +77,9 @@ pub enum Outcome {
     Failed(Failure),
     Cancelled,
     /// a newer order replaced this one before it activated
-    Superseded { by: JobId },
+    Superseded {
+        by: JobId,
+    },
     /// the runner died while activating and the machine did not converge
     Interrupted,
     /// activated, failed its health checks, and went back to the previous system

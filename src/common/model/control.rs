@@ -14,7 +14,10 @@ pub enum Placement {
     /// the machine was idle, the job runs now
     Started,
     /// waits for the running job, replacing whatever waited before it
-    Queued { behind: JobId, replaced: Option<JobId> },
+    Queued {
+        behind: JobId,
+        replaced: Option<JobId>,
+    },
     /// replaced the running job, which had not started activating
     Preempted { replaced: JobId },
     /// the same order arrived before; this is the job it created then

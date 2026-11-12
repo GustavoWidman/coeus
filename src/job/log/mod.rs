@@ -49,7 +49,10 @@ impl JobLog {
     /// creates the log empty if it does not exist, so readers can open it
     /// before the writer arrives
     pub fn touch(&self) -> Result<()> {
-        OpenOptions::new().create(true).append(true).open(&self.path)?;
+        OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
         Ok(())
     }
 

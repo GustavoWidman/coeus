@@ -26,8 +26,8 @@ use crate::{
             Order, Pinned, Rejection,
         },
         proto::{
-            AttachRequest, CancelRequest, DeployRequest, GenerationsRequest, HistoryRequest, Packet,
-            RebootRequest, ResolveRequest, WatchRequest,
+            AttachRequest, CancelRequest, DeployRequest, GenerationsRequest, HistoryRequest,
+            Packet, RebootRequest, ResolveRequest, WatchRequest,
         },
         stream::EncryptedStream,
     },
@@ -42,7 +42,11 @@ pub struct CoeusClient {
 }
 
 impl CoeusClient {
-    pub async fn connect(settings: &ClientSettings, endpoint: &Endpoint, key: &Key) -> Result<Self> {
+    pub async fn connect(
+        settings: &ClientSettings,
+        endpoint: &Endpoint,
+        key: &Key,
+    ) -> Result<Self> {
         let attempt = async {
             let address = lookup_host((endpoint.host.as_str(), endpoint.port))
                 .await?
@@ -139,13 +143,18 @@ impl CoeusClient {
     async fn ask(&mut self, request: impl Into<Packet>) -> Result<Packet> {
         self.stream.send(request).await?;
         match self.stream.recv().await? {
-            Some(Packet::Error(error)) => bail!("{}: {}", self.host.hostname, error.message),
+            Some(Packet::Error(error)) => {
+                return Err(eyre!("{}: {}", self.host.hostname, error.message));
+            }
             Some(packet) => Ok(packet),
-            None => bail!("{} closed the connection", self.host.hostname),
+            None => return Err(eyre!("{} closed the connection", self.host.hostname)),
         }
     }
 }
 
 fn unexpected<T>(packet: Packet) -> Result<T> {
-    bail!("the daemon answered with an unexpected packet {:#06x}", packet.kind())
+    Err(eyre!(
+        "the daemon answered with an unexpected packet {:#06x}",
+        packet.kind()
+    ))
 }
