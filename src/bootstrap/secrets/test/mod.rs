@@ -3,6 +3,7 @@
 mod generate;
 mod header;
 mod identity;
+mod seal;
 
 use std::{io::Write, path::Path};
 
