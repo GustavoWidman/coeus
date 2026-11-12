@@ -284,6 +284,7 @@ dependencies = [
  "futures-util",
  "humantime-serde",
  "log",
+ "memchr",
  "postcard",
  "rand",
  "rustix",
