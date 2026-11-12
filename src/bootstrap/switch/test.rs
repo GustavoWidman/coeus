@@ -2,7 +2,7 @@ use crate::{
     bootstrap::switch::{
         AdoptLine, Feed,
         ship::{Archived, Lock},
-        stock::{built_path, drain},
+        stock::{Waiting, built_path, drain},
     },
     common::model::{
         Action, JobEvent, JobId, JobState, JobSummary, OrderId, Origin, Outcome, Phase, Progress,
@@ -271,4 +271,25 @@ fn waits_double_up_to_their_ceiling_and_start_over_after_a_success() {
     assert_eq!(waits, [5, 10, 20, 30, 30]);
     backoff.reset();
     assert_eq!(backoff.next(), Duration::from_secs(5));
+}
+
+#[test]
+fn waiting_for_full_disk_access_outlasts_a_dropped_connection_only() {
+    use std::{os::unix::process::ExitStatusExt, process::ExitStatus};
+
+    use crate::adopt::NEEDS_FULL_DISK_ACCESS;
+
+    let exited = |code: i32| ExitStatus::from_raw(code << 8);
+    let fresh = Feed::default();
+
+    let refused = exited(NEEDS_FULL_DISK_ACCESS);
+    assert_eq!(Waiting::after(refused, false, &fresh), Waiting::ForGrant);
+    assert_eq!(Waiting::after(exited(255), true, &fresh), Waiting::ForSsh);
+    assert_eq!(Waiting::after(exited(255), false, &fresh), Waiting::Over);
+    assert_eq!(Waiting::after(exited(0), true, &fresh), Waiting::Over);
+
+    // once the job streams, a drop is the switch's, for the rejoin
+    let mut streaming = Feed::default();
+    streaming.line(AdoptLine::Job(Box::new(job())));
+    assert_eq!(Waiting::after(exited(255), true, &streaming), Waiting::Over);
 }
