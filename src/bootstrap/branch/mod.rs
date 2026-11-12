@@ -21,12 +21,15 @@
 pub mod body;
 mod forge;
 
+#[cfg(test)]
+mod test;
+
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
 };
 
-pub use forge::{PullRequest, PullState};
+pub use forge::{GhError, PullRequest, PullState};
 
 use crate::{
     bootstrap::{contract::RepoPath, state::StateDir},
