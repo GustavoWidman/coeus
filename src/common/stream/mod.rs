@@ -1,3 +1,4 @@
+mod hello;
 mod listener;
 mod nonce;
 mod packet;
@@ -7,6 +8,7 @@ mod write;
 #[cfg(test)]
 mod test;
 
+use colored::{ColoredString, Colorize};
 use eyre::{Result, eyre};
 pub use listener::EncryptedListener;
 pub use listener::PendingConnection;
@@ -33,7 +35,9 @@ impl EncryptedStream {
 
     pub async fn connect(address: SocketAddr, psk: &[u8; 32]) -> Result<Self> {
         let stream = TcpStream::connect(address).await?;
-        Self::handshake(stream, psk, true).await
+        let mut stream = Self::handshake(stream, psk, true).await?;
+        stream.greet().await?;
+        Ok(stream)
     }
 
     pub async fn accept(address: SocketAddr, psk: &[u8; 32]) -> Result<(Self, SocketAddr)> {
@@ -47,6 +51,11 @@ impl EncryptedStream {
 
     pub fn local_addr(&self) -> io::Result<SocketAddr> {
         Ok(self.reader.local_addr)
+    }
+
+    /// the peer's address, styled for log lines
+    pub fn peer(&self) -> ColoredString {
+        self.reader.peer_addr.to_string().magenta()
     }
 
     pub fn split(&mut self) -> (&mut EncryptedReadHalf, &mut EncryptedWriteHalf) {

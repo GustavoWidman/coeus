@@ -1,17 +1,12 @@
 use std::net::SocketAddr;
 
-use colored::Colorize;
-use eyre::{Result, eyre};
-use log::error;
+use eyre::Result;
 use tokio::{
     io,
     net::{TcpListener, TcpStream},
 };
 
-use crate::common::{
-    proto::{HelloResponse, PROTOCOL_VERSION, Packet},
-    stream::EncryptedStream,
-};
+use crate::common::stream::EncryptedStream;
 
 pub struct EncryptedListener {
     listener: TcpListener,
@@ -55,66 +50,10 @@ pub struct PendingConnection {
 }
 
 impl PendingConnection {
+    /// runs the NOISE handshake and the hello on an accepted connection
     pub async fn authenticate(self) -> Result<EncryptedStream> {
         let mut stream = EncryptedStream::handshake(self.stream, &self.psk, false).await?;
-
-        // trade client and server hellos
-        let packet = stream.recv().await.inspect_err(|e| {
-            error!(
-                "error receiving packet from {}:\n{}",
-                stream
-                    .peer_addr()
-                    .map(|addr| addr.to_string().magenta().to_string())
-                    .unwrap_or_else(|_| "unknown".to_string()),
-                e
-            );
-        })?;
-
-        match packet {
-            Some(Packet::HelloRequest(_)) => {
-                stream
-                    .send(Packet::HelloResponse(Box::new(HelloResponse {
-                        protocol_version: PROTOCOL_VERSION,
-                        version: env!("CARGO_PKG_VERSION").into(),
-                    })))
-                    .await?;
-            }
-            _ => {
-                return Err(eyre!("client sent unexpected packet during handshake"));
-            }
-        }
-
-        // await client compatibility statement
-        let packet = stream.recv().await.inspect_err(|e| {
-            error!(
-                "error receiving packet from {}:\n{}",
-                stream
-                    .peer_addr()
-                    .map(|addr| addr.to_string().magenta().to_string())
-                    .unwrap_or_else(|_| "unknown".to_string()),
-                e
-            );
-        })?;
-
-        match packet {
-            Some(Packet::HelloFinished(inner)) => {
-                if !inner.compatible {
-                    error!(
-                        "client {} is incompatible with this server",
-                        stream
-                            .peer_addr()
-                            .map(|addr| addr.to_string().magenta().to_string())
-                            .unwrap_or_else(|_| "unknown".to_string())
-                    );
-
-                    return Err(eyre!("client is incompatible with this server"));
-                }
-            }
-            _ => {
-                return Err(eyre!("client sent unexpected packet during handshake"));
-            }
-        }
-
+        stream.welcome().await?;
         Ok(stream)
     }
 }
