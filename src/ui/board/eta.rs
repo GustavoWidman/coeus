@@ -10,7 +10,9 @@ pub fn eta(view: &MachineView, job: &JobView, now: Timestamp) -> Option<Duration
     let elapsed = started.until(now);
 
     match typical(view, job) {
-        Some(typical) => typical.checked_sub(elapsed).filter(|left| !left.is_zero()),
+        Some(typical) => typical
+            .checked_sub(elapsed)
+            .filter(|left| left.as_secs() > 0),
         None => extrapolate(job, now),
     }
 }
