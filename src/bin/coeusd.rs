@@ -12,6 +12,7 @@ use coeus::{
     utils::log::Logger,
 };
 use colored::Colorize;
+use env_logger::Target;
 use eyre::{Result, WrapErr};
 use log::{error, info};
 use tokio_util::sync::CancellationToken;
@@ -19,7 +20,12 @@ use tokio_util::sync::CancellationToken;
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = DaemonCLIArgs::parse();
-    Logger::init(args.verbosity);
+    // adopt's stdout is the stream `coeus bootstrap` reads
+    let target = match &args.command {
+        Some(DaemonCommand::Adopt(_)) => Target::Stderr,
+        _ => Target::Stdout,
+    };
+    Logger::init_to(args.verbosity, target);
 
     match &args.command {
         Some(DaemonCommand::Run { dir }) => runner::run(dir).await,

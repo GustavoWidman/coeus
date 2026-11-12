@@ -9,44 +9,177 @@
 //! startup (follow it, start a runner again, or close it by what the
 //! machine runs).
 
-// the adopt unit fills this module in
-#![allow(dead_code, unused_variables)]
-
+mod admit;
 mod follow;
 mod settings;
 
+#[cfg(test)]
+mod test;
+
+use std::{fs, os::unix::fs::DirBuilderExt, path::PathBuf};
+
+use eyre::{Result, WrapErr, eyre};
+use log::{info, warn};
+
+use self::admit::{Admitted, Revival};
 use crate::{
     cli::daemon::AdoptArgs,
-    common::model::{JobId, OrderId},
-    job::JobSpec,
+    common::model::{
+        Action, Attempt, Failure, HostInfo, Hostname, JobId, NarHash, NixOptions, Order, OrderId,
+        Origin, Outcome, Phase, Source, StorePath,
+    },
+    config::DaemonSettings,
+    engine::Snapshots,
+    job::{JobDir, JobSpec, JobStore},
+    platform::{Launcher, SystemRoot},
 };
 
 /// what adopt exits with when a coeusd already serves here: the CLI orders
 /// through it instead
 pub const DAEMON_HERE: i32 = 3;
 
+/// who an adopted job's history names as having ordered it, from the host
+/// the label names
+const ORDERED_BY: &str = "bootstrap";
+
 /// the process's exit code
-pub async fn run(args: &AdoptArgs) -> eyre::Result<i32> {
-    // TODO:
-    // if args.status { print Attempt::of(store's summaries, nar_hash) as JSON; return 0 }
-    // if settings::listening(port).await { return Ok(DAEMON_HERE) }   // one owner of the job store
-    // let settings = Settings::of(source, hostname).await?;
-    // Snapshots::new(sources).place(source, nar_hash)?;
-    // order must be one of bootstrap_order(nar_hash, 0..ATTEMPTS), else refuse
-    // match the store's job for `order`:
-    //     none → JobStore::create(spec(…)) (atomic), start its runner through
-    //            the shared Launcher
-    //     unfinished with no live runner → reconcile it like coeusd's startup
-    //     otherwise → leave it
-    // if let Some(from) = args.follow { follow::stream(&dir, from).await? }
-    todo!()
+pub async fn run(args: &AdoptArgs) -> Result<i32> {
+    if args.status {
+        let state_dir = args.state_dir.clone().unwrap_or_else(default_state_dir);
+        let store = JobStore::open(&state_dir)?;
+        let attempt = Attempt::of(&admit::summaries(&store).await?, &args.nar_hash);
+        println!("{}", serde_json::to_string(&attempt)?);
+        return Ok(0);
+    }
+
+    let request = Request::parse(args)?;
+    let settings = settings::of(&request.source, &request.hostname).await?;
+    let port = settings.listen.port();
+    if settings::listening(port).await {
+        eprintln!("coeusd already serves on port {port}: order through it");
+        return Ok(DAEMON_HERE);
+    }
+
+    let dir = request.admit(&settings).await?;
+    let mut stdout = tokio::io::stdout();
+    match request.follow {
+        Some(from) => {
+            follow::stream(&dir, from, &mut stdout).await?;
+        }
+        None => {
+            let summary = dir.view().await?.summary;
+            println!("@job {}", serde_json::to_string(&summary)?);
+        }
+    }
+    Ok(0)
 }
 
-/// the job coeusd would have written for this order
-fn spec(args: &AdoptArgs, order: OrderId, settings: &settings::Settings, id: JobId) -> JobSpec {
-    // TODO: Order { id: order, source: Source::Snapshot { nar_hash, label },
-    // action: Switch, options: default, origin: User { the sudo user, label's
-    // admin }, now: false }; target and guard from settings;
-    // install_bootloader from args
-    todo!()
+/// adopt's flags, all present
+struct Request {
+    source: StorePath,
+    nar_hash: NarHash,
+    label: String,
+    hostname: Hostname,
+    order: OrderId,
+    install_bootloader: bool,
+    follow: Option<u64>,
+}
+
+impl Request {
+    fn parse(args: &AdoptArgs) -> Result<Self> {
+        let missing = |flag: &str| eyre!("--{flag} is required");
+        Ok(Self {
+            source: args.source.clone().ok_or_else(|| missing("source"))?,
+            nar_hash: args.nar_hash.clone(),
+            label: args.label.clone().ok_or_else(|| missing("label"))?,
+            hostname: args.hostname.clone().ok_or_else(|| missing("hostname"))?,
+            order: args.order.ok_or_else(|| missing("order"))?,
+            install_bootloader: args.install_bootloader,
+            follow: args.follow,
+        })
+    }
+
+    /// places the snapshot, finds or admits the order's job and sees that
+    /// a runner carries it out
+    async fn admit(&self, settings: &DaemonSettings) -> Result<JobDir> {
+        let state_dir = &settings.state_dir;
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(state_dir)
+            .wrap_err_with(|| format!("failed to create {}", state_dir.display()))?;
+
+        Snapshots::new(state_dir)
+            .place(&self.source, &self.nar_hash)
+            .await?;
+
+        let host = HostInfo::detect(Some(self.hostname.clone()))?;
+        let exe = std::env::current_exe()?
+            .canonicalize()
+            .wrap_err("failed to locate the coeusd binary")?;
+        let launcher = Launcher::new(host.platform, &settings.launcher, state_dir, &exe)?;
+        let store = JobStore::open(state_dir)?;
+
+        // one adopt at a time decides what the order's job is
+        let lock = fs::File::create(state_dir.join("adopt.lock"))?;
+        lock.lock()?;
+
+        let spec = |id| self.spec(id, &host, settings);
+        let current = SystemRoot::default().current();
+        let dir = match admit::admit(&store, &self.nar_hash, self.order, spec).await? {
+            Admitted::Created(dir) => {
+                info!("admitted job {} for order {}", dir.id(), self.order);
+                dir
+            }
+            Admitted::Found(dir) => match admit::revive(&dir, current.as_ref()).await? {
+                Revival::Spawn => {
+                    info!("job {} has no runner, starting another", dir.id());
+                    dir
+                }
+                Revival::Closed(outcome) => {
+                    warn!("closed job {} left unfinished: {outcome}", dir.id());
+                    return Ok(dir);
+                }
+                Revival::Finished | Revival::Running => return Ok(dir),
+            },
+        };
+
+        if let Err(error) = launcher.run_job(&exe, &dir).await {
+            let message = format!("cannot start a runner: {error:#}");
+            dir.close(Outcome::Failed(Failure::new(Phase::Preparing, message)))?;
+        }
+        Ok(dir)
+    }
+
+    /// the job coeusd would have written for this order
+    fn spec(&self, id: JobId, host: &HostInfo, settings: &DaemonSettings) -> JobSpec {
+        let admin = self
+            .label
+            .split_once(':')
+            .map_or(&*self.label, |(admin, _)| admin);
+        let order = Order {
+            id: self.order,
+            source: Source::Snapshot {
+                nar_hash: self.nar_hash.clone(),
+                label: self.label.clone(),
+            },
+            action: Action::Switch,
+            options: NixOptions::default(),
+            origin: Origin::User {
+                user: ORDERED_BY.to_owned(),
+                host: admin.to_owned(),
+            },
+            now: false,
+        };
+
+        JobSpec {
+            install_bootloader: self.install_bootloader,
+            ..JobSpec::admit(id, order, host, settings)
+        }
+    }
+}
+
+/// the state directory `--status` reads when not told another, coeusd's
+fn default_state_dir() -> PathBuf {
+    DaemonSettings::default().state_dir
 }

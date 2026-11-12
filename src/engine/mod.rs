@@ -8,7 +8,7 @@ mod host;
 mod lane;
 mod lookout;
 mod notify;
-mod reconcile;
+pub(crate) mod reconcile;
 mod running;
 mod snapshots;
 mod tries;
