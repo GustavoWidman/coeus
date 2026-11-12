@@ -54,6 +54,7 @@ fn byte_counts_share_the_unit_of_the_total() {
         "1.2/3.4 GiB"
     );
     assert_eq!(format::size_delta(-300 * 1024), "-300.0 KiB");
+    assert_eq!(format::size_delta(0), "0 B");
     assert_eq!(format::size_delta(1024), "+1.0 KiB");
 }
 
