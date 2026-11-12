@@ -1,4 +1,5 @@
 mod fit;
+mod nom;
 mod session;
 mod shutdown;
 

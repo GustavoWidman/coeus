@@ -20,8 +20,8 @@ use tokio::{
 };
 
 use crate::common::proto::HelloResponse;
-use read::EncryptedReadHalf;
-use write::EncryptedWriteHalf;
+pub use read::EncryptedReadHalf;
+pub use write::EncryptedWriteHalf;
 
 pub struct EncryptedStream {
     reader: EncryptedReadHalf,

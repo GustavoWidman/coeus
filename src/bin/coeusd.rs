@@ -37,6 +37,9 @@ async fn main() -> Result<()> {
 }
 
 async fn serve(args: &DaemonCLIArgs) -> Result<()> {
+    // drawn attaches carry coeus's colored lines to the client's terminal
+    colored::control::set_override(true);
+
     let config = daemon_config(&args.config)?;
     let settings = (**config).clone();
     let key = settings.key.load()?;
