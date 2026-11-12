@@ -1,6 +1,7 @@
 //! age files made by the age crate, for keys made on the spot
 
 mod generate;
+mod header;
 
 use std::{io::Write, path::Path};
 
