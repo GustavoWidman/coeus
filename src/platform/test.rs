@@ -78,6 +78,48 @@ fn lists_generations_newest_first() {
     assert!(root.generation_system(3).is_err());
 }
 
+/// generations 10 and 12 hold the same system, as after deploying a commit
+/// again; the profile points at `profile`
+fn repeated(root: &Path, profile: u32) {
+    let profiles = root.join("nix/var/nix/profiles");
+    std::fs::create_dir_all(&profiles).unwrap();
+    std::fs::create_dir_all(root.join("run")).unwrap();
+
+    for (number, name) in [(10, "a"), (11, "b"), (12, "a")] {
+        symlink(
+            system(&format!("darwin-system-{name}")),
+            profiles.join(format!("system-{number}-link")),
+        )
+        .unwrap();
+    }
+    symlink(format!("system-{profile}-link"), profiles.join("system")).unwrap();
+    symlink(system("darwin-system-a"), root.join("run/current-system")).unwrap();
+}
+
+fn current(root: &Path) -> Vec<u32> {
+    SystemRoot::at(root)
+        .generations()
+        .unwrap()
+        .iter()
+        .filter(|generation| generation.current)
+        .map(|generation| generation.number)
+        .collect()
+}
+
+#[test]
+fn only_one_generation_runs_when_several_hold_the_running_system() {
+    let root = tempfile::tempdir().unwrap();
+    repeated(root.path(), 12);
+    assert_eq!(current(root.path()), [12]);
+}
+
+#[test]
+fn the_profile_names_the_running_generation_after_switching_back() {
+    let root = tempfile::tempdir().unwrap();
+    repeated(root.path(), 10);
+    assert_eq!(current(root.path()), [10]);
+}
+
 #[test]
 fn a_new_kernel_requires_a_reboot_on_nixos() {
     let root = tempfile::tempdir().unwrap();
