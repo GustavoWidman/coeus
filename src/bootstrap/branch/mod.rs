@@ -371,6 +371,10 @@ impl Branch {
         // file's path appended
         let editor = format!("cp {}", shell_quote(&todo.to_string_lossy()));
         let args = [
+            // the rekey commit is dropped by leaving it out of the list,
+            // which a person's `error` setting would stop the rebase on
+            "-c",
+            "rebase.missingCommitsCheck=ignore",
             "rebase",
             "--interactive",
             "--empty=drop",
