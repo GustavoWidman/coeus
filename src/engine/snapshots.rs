@@ -3,11 +3,11 @@ use std::{
     process::Stdio,
 };
 
-use eyre::{Result, bail, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use log::warn;
 use tokio::{fs::File, io::AsyncWriteExt, process::Command};
 
-use crate::common::model::NarHash;
+use crate::common::model::{NarHash, StorePath};
 
 /// working trees uploaded by clients, unpacked under the state directory by
 /// NAR hash, where a job's runner builds them as `path:` flakes
@@ -21,7 +21,6 @@ pub struct Receiving {
     file: File,
     nar: PathBuf,
     hash: NarHash,
-    target: PathBuf,
     expected: u64,
     received: u64,
 }
@@ -58,12 +57,75 @@ impl Snapshots {
 
         Ok(Receiving {
             file: File::create(&nar).await?,
-            target: self.path(&hash),
             nar,
             hash,
             expected: size,
             received: 0,
         })
+    }
+
+    /// a source already in the nix store, such as one `nix flake archive`
+    /// copied in, unpacked under the sources directory the way an upload
+    /// is: to a temporary name, hash-checked, renamed. nix refuses a `path:`
+    /// flake that is a symlink, so it is a copy rather than a link to the
+    /// store. one already there is kept.
+    pub async fn place(&self, source: &StorePath, hash: &NarHash) -> Result<()> {
+        if self.has(hash) {
+            return Ok(());
+        }
+
+        tokio::fs::create_dir_all(&self.root).await?;
+        let unpacked = self.root.join(format!(".{}.tree", hash.file_name()));
+        let _ = tokio::fs::remove_dir_all(&unpacked).await;
+
+        let mut dump = Command::new("nix-store")
+            .arg("--dump")
+            .arg(source.as_str())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .wrap_err("failed to run nix-store")?;
+        let nar: Stdio = dump
+            .stdout
+            .take()
+            .ok_or_else(|| eyre!("nix-store --dump has no output"))?
+            .try_into()?;
+
+        let restored = restore(&unpacked, nar).await;
+        let dumped = dump.wait_with_output().await?;
+        if !dumped.status.success() {
+            let _ = tokio::fs::remove_dir_all(&unpacked).await;
+            bail!(
+                "cannot read {source}: {}",
+                String::from_utf8_lossy(&dumped.stderr).trim()
+            );
+        }
+        restored?;
+
+        self.settle(&unpacked, hash).await
+    }
+
+    /// checks an unpacked tree hashes to `hash` and puts it in place
+    async fn settle(&self, unpacked: &Path, hash: &NarHash) -> Result<()> {
+        let hashed = Command::new("nix")
+            .args(["--extra-experimental-features", "nix-command"])
+            .args(["hash", "path", "--type", "sha256", "--sri"])
+            .arg(unpacked)
+            .output()
+            .await?;
+        let actual = String::from_utf8(hashed.stdout)?;
+
+        if actual.trim() != hash.as_str() {
+            let _ = tokio::fs::remove_dir_all(unpacked).await;
+            return Err(eyre!(
+                "the snapshot hashes to {}, not {hash}",
+                actual.trim()
+            ));
+        }
+
+        tokio::fs::rename(unpacked, self.path(hash)).await?;
+        self.prune()
     }
 
     /// keeps the newest snapshots only
@@ -103,40 +165,32 @@ impl Receiving {
         let unpacked = self.nar.with_extension("tree");
         let _ = tokio::fs::remove_dir_all(&unpacked).await;
 
-        let restored = Command::new("nix-store")
-            .arg("--restore")
-            .arg(&unpacked)
-            .stdin(std::fs::File::open(&self.nar)?)
-            .stderr(Stdio::piped())
-            .output()
-            .await?;
+        let nar = std::fs::File::open(&self.nar)?;
+        let restored = restore(&unpacked, nar.into()).await;
         let _ = tokio::fs::remove_file(&self.nar).await;
+        restored?;
 
-        if !restored.status.success() {
-            bail!(
-                "not a valid NAR: {}",
-                String::from_utf8_lossy(&restored.stderr).trim()
-            );
-        }
-
-        let hashed = Command::new("nix")
-            .args(["--extra-experimental-features", "nix-command"])
-            .args(["hash", "path", "--type", "sha256", "--sri"])
-            .arg(&unpacked)
-            .output()
-            .await?;
-        let actual = String::from_utf8(hashed.stdout)?;
-
-        if actual.trim() != self.hash.as_str() {
-            let _ = tokio::fs::remove_dir_all(&unpacked).await;
-            return Err(eyre!(
-                "the snapshot hashes to {}, not {}",
-                actual.trim(),
-                self.hash
-            ));
-        }
-
-        tokio::fs::rename(&unpacked, &self.target).await?;
-        snapshots.prune()
+        snapshots.settle(&unpacked, &self.hash).await
     }
+}
+
+/// unpacks the NAR read from `nar` at `path`
+async fn restore(path: &Path, nar: Stdio) -> Result<()> {
+    let restored = Command::new("nix-store")
+        .arg("--restore")
+        .arg(path)
+        .stdin(nar)
+        .stderr(Stdio::piped())
+        .output()
+        .await
+        .wrap_err("failed to run nix-store")?;
+
+    if !restored.status.success() {
+        let _ = tokio::fs::remove_dir_all(path).await;
+        bail!(
+            "not a valid NAR: {}",
+            String::from_utf8_lossy(&restored.stderr).trim()
+        );
+    }
+    Ok(())
 }
