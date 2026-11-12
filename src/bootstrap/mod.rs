@@ -9,20 +9,20 @@
 //! only on the difference, and looks again. a run stopped anywhere is picked
 //! up by running it again.
 
-// the units of the bootstrap fill these modules in; until then most of the
-// tree is signatures with unused parameters
-#![allow(dead_code, unused_variables)]
-
 pub mod branch;
 pub mod contract;
+mod enroll;
 pub mod fleet;
 pub mod key;
+mod publish;
+mod rekey;
 pub mod remote;
 pub mod run;
 pub mod secrets;
 pub mod state;
 pub mod step;
 pub mod switch;
+pub mod world;
 
 #[cfg(test)]
 mod test;
@@ -30,7 +30,7 @@ mod test;
 use std::{collections::BTreeMap, path::PathBuf};
 
 pub use key::SshKey;
-pub use run::run;
+pub(crate) use run::run;
 pub use step::{Blocker, Evidence, Finale, Step};
 
 use crate::{common::model::Hostname, config::ClientSettings};
