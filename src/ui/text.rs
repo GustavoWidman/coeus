@@ -18,6 +18,26 @@ pub fn width(text: &str) -> usize {
     columns
 }
 
+/// plain `text` broken at spaces into lines of at most `max` columns; a word
+/// wider than `max` gets a line of its own
+pub fn wrap(text: &str, max: usize) -> Vec<String> {
+    let mut lines = Vec::new();
+    let mut line = String::new();
+    for word in text.split(' ').filter(|word| !word.is_empty()) {
+        if !line.is_empty() && width(&line) + 1 + width(word) > max {
+            lines.push(std::mem::take(&mut line));
+        }
+        if !line.is_empty() {
+            line.push(' ');
+        }
+        line.push_str(word);
+    }
+    if !line.is_empty() || lines.is_empty() {
+        lines.push(line);
+    }
+    lines
+}
+
 /// `text` cut to at most `max` columns, ending in `…` when cut. colors
 /// survive the cut: escape sequences are kept and a reset closes the line.
 pub fn fit(text: &str, max: usize) -> Cow<'_, str> {

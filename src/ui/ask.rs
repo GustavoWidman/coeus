@@ -6,7 +6,7 @@ use eyre::{Context, eyre};
 use regex_lite::Regex;
 use zeroize::Zeroizing;
 
-use super::text::{fit, pad};
+use super::text::{fit, pad, wrap};
 use crate::bootstrap::contract::{Choice, Question, QuestionKind};
 
 /// not `Debug`: a secret's input must never reach a log
@@ -155,12 +155,22 @@ impl Prompt {
             Some((context, asked)) => (context.lines().collect(), asked),
             None => (Vec::new(), self.question.as_str()),
         };
-        let mut lines: Vec<String> = context.into_iter().map(str::to_owned).collect();
+        let mut lines: Vec<String> = context
+            .into_iter()
+            .flat_map(|line| wrap(line, width))
+            .collect();
         let pointer = "›".cyan().bold();
+        let heading = |lines: &mut Vec<String>| {
+            lines.extend(
+                wrap(asked, width)
+                    .iter()
+                    .map(|line| line.bold().to_string()),
+            )
+        };
 
         match &self.kind {
             PromptKind::Choice { choices, at } => {
-                lines.push(asked.bold().to_string());
+                heading(&mut lines);
                 let label_width = choices.iter().map(|c| c.label.len()).max().unwrap_or(0);
                 for (index, choice) in choices.iter().enumerate() {
                     let (mark, label) = match index == *at {
@@ -181,10 +191,24 @@ impl Prompt {
                     true => "[Y/n]",
                     false => "[y/N]",
                 };
-                lines.push(format!("{pointer} {asked} {}", options.dimmed()));
+                // the options close the question's last line, wherever it wraps
+                let wrapped = wrap(&format!("{asked} {options}"), width.saturating_sub(2));
+                for (index, line) in wrapped.iter().enumerate() {
+                    let mark = match index {
+                        0 => pointer.to_string(),
+                        _ => " ".to_owned(),
+                    };
+                    let line = match line.strip_suffix(options) {
+                        Some(text) if index + 1 == wrapped.len() => {
+                            format!("{text}{}", options.dimmed())
+                        }
+                        _ => line.clone(),
+                    };
+                    lines.push(format!("{mark} {line}"));
+                }
             }
             PromptKind::Text { input, default, .. } => {
-                lines.push(asked.bold().to_string());
+                heading(&mut lines);
                 let shown = match (input.is_empty(), default) {
                     (true, Some(default)) => format!("{CURSOR}{}", default.dimmed()),
                     _ => format!("{input}{CURSOR}"),
@@ -196,7 +220,7 @@ impl Prompt {
                 first,
                 twice,
             } => {
-                lines.push(asked.bold().to_string());
+                heading(&mut lines);
                 let dots = |text: &str| "•".repeat(text.chars().count());
                 match (twice, first) {
                     (false, _) => lines.push(format!("{pointer} {}{CURSOR}", dots(input))),

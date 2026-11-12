@@ -218,8 +218,9 @@ impl Target {
             }
             None => {
                 let question = format!(
-                    "{destination} presents ed25519 {fingerprint}; on its console, \
-                     `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` prints the same. \
+                    "{destination} presents a host key coeus has never seen\n\
+                     ed25519 {fingerprint}\n\
+                     its console prints the same for `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`\n\
                      trust it and enroll it as {}'s key?",
                     self.host
                 );
