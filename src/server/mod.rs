@@ -1,6 +1,8 @@
+mod fit;
+mod session;
 mod shutdown;
 
-use std::{sync::Arc, time::Duration};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use colored::Colorize;
 use eyre::{Context, Result};
@@ -9,30 +11,37 @@ use tokio::{task::JoinSet, time::timeout};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::{
-        model::HostInfo,
-        proto::{Error, Packet},
-        stream::{EncryptedListener, EncryptedStream, PendingConnection},
-    },
-    config::DaemonConfig,
+    common::stream::{EncryptedListener, PendingConnection},
+    config::Key,
+    engine::{EngineHandle, Host},
 };
 
 pub const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(10);
 
-pub struct CoeusServer {
+pub struct CoeusServer<H: Host> {
     listener: EncryptedListener,
-    config: DaemonConfig,
+    engine: EngineHandle<H>,
 }
 
-impl CoeusServer {
-    pub async fn new(config: DaemonConfig) -> Result<Self> {
-        let key = config.key.load()?;
-        let host = HostInfo::detect(config.hostname.clone())?;
-        let listener = EncryptedListener::bind(config.listen, key.as_bytes(), host).await?;
-        Ok(Self { listener, config })
+impl<H: Host> CoeusServer<H> {
+    pub async fn bind(address: SocketAddr, key: &Key, engine: EngineHandle<H>) -> Result<Self> {
+        let listener =
+            EncryptedListener::bind(address, key.as_bytes(), engine.host().clone()).await?;
+        info!(
+            "coeus server listening on {}",
+            listener.local_addr()?.to_string().magenta()
+        );
+
+        Ok(Self { listener, engine })
     }
 
-    pub async fn run(self) -> Result<()> {
+    pub fn local_addr(&self) -> std::io::Result<SocketAddr> {
+        self.listener.local_addr()
+    }
+
+    /// serves until a termination signal arrives or `restart` is cancelled
+    /// (the engine wants to exit into a newer coeusd), then drains
+    pub async fn run(self, restart: CancellationToken) -> Result<()> {
         let mut signals = shutdown::Signals::register()?;
         let shutdown = CancellationToken::new();
 
@@ -40,22 +49,21 @@ impl CoeusServer {
         tokio::pin!(server);
 
         tokio::select! {
-            result = &mut server => result, // server crash
-            signal_result = signals.wait() => {
-                // graceful shutdown
+            result = &mut server => result,
+            signal = signals.wait() => {
                 shutdown.cancel();
-                let server_result = server.await;
-                signal_result.and(server_result)
+                let served = server.await;
+                signal.and(served)
+            },
+            _ = restart.cancelled() => {
+                info!("exiting so the service manager starts the new coeusd");
+                shutdown.cancel();
+                server.await
             },
         }
     }
 
     async fn serve(self, shutdown: CancellationToken) -> Result<()> {
-        info!(
-            "coeus server listening on {}",
-            self.config.listen.to_string().magenta()
-        );
-
         let server = Arc::new(self);
         let mut connections = JoinSet::new();
 
@@ -66,102 +74,36 @@ impl CoeusServer {
                 Some(_) = connections.join_next(), if !connections.is_empty() => {},
                 // Tokio TCP accept is cancellation-safe. Noise belongs to the spawned
                 // task, not a sibling select branch; reaping another task cannot close it.
-                accepted = server.listener.listen() => {
-                    // if connections.len() < connection::MAX_CONNECTIONS => {
-                    match accepted {
-                        Ok(pending) => {
-                            let server = server.clone();
-                            connections.spawn(async move {
-                                if let Err(error) = server.handle_connection(pending).await {
-                                    debug!("connection ended: {error}");
-                                }
-                            });
-                        }
-                        Err(error) => error!("TCP accept failed: {error}"),
+                accepted = server.listener.listen() => match accepted {
+                    Ok(pending) => {
+                        let server = server.clone();
+                        connections.spawn(async move {
+                            if let Err(error) = server.handle_connection(pending).await {
+                                debug!("connection ended: {error}");
+                            }
+                        });
                     }
-                }
+                    Err(error) => error!("TCP accept failed: {error}"),
+                },
             }
         }
+
         connections.abort_all();
         while connections.join_next().await.is_some() {}
-        // server.jobs.shutdown().await;
         Ok(())
     }
 
-    pub async fn handle_connection(&self, pending: PendingConnection) -> Result<()> {
-        let mut stream = timeout(HANDSHAKE_DEADLINE, pending.authenticate())
+    async fn handle_connection(&self, pending: PendingConnection) -> Result<()> {
+        let stream = timeout(HANDSHAKE_DEADLINE, pending.authenticate())
             .await
             .wrap_err("Noise handshake deadline reached")??;
 
-        loop {
-            let packet = stream.recv().await.inspect_err(|e| {
-                error!(
-                    "error receiving packet from {}:\n{}",
-                    stream
-                        .peer_addr()
-                        .map(|addr| addr.to_string().magenta().to_string())
-                        .unwrap_or_else(|_| "unknown".to_string()),
-                    e
-                );
-            })?;
-
-            match packet {
-                Some(packet) => {
-                    // TODO: handle packets asynchronously
-                    self.handle_packet(&mut stream, packet)
-                        .await
-                        .inspect_err(|e| {
-                            error!(
-                                "error handling packet from {}:\n{}",
-                                stream
-                                    .peer_addr()
-                                    .map(|addr| addr.to_string().magenta().to_string())
-                                    .unwrap_or_else(|_| "unknown".to_string()),
-                                e
-                            );
-                        })?;
-                }
-                None => {
-                    debug!(
-                        "connection from {} closed",
-                        stream
-                            .peer_addr()
-                            .map(|addr| addr.to_string().magenta().to_string())
-                            .unwrap_or_else(|_| "unknown".to_string())
-                    );
-
-                    return Ok(());
-                }
-            }
-        }
-    }
-
-    pub async fn handle_packet(&self, owner: &mut EncryptedStream, packet: Packet) -> Result<()> {
-        debug!(
-            "handling packet from {}:\n{:?}",
-            owner
-                .peer_addr()
-                .map(|addr| addr.to_string().magenta().to_string())
-                .unwrap_or_else(|_| "unknown".to_string()),
-            packet
-        );
-
-        match packet {
-            Packet::DeployRequest(request) => {
-                debug!("received deploy request: {:?}", request);
-                owner
-                    .send(Error {
-                        message: "this daemon cannot deploy yet".into(),
-                    })
-                    .await?;
-            }
-            _ => {
-                debug!("received unknown packet: {:?}", packet);
-                // handle other packets here
-            }
-        }
-
-        // handle the packet here
-        Ok(())
+        debug!("{} connected", stream.peer());
+        session::Session::new(stream, self.engine.clone())
+            .run()
+            .await
     }
 }
+
+#[cfg(test)]
+mod test;
