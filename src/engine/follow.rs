@@ -1,26 +1,25 @@
-use std::{ops::Not, time::Duration};
+use std::ops::Not;
 
-use log::warn;
+use eyre::{Result, bail};
+use tokio::sync::watch;
 
+use super::lookout::Lookout;
 use crate::{
-    common::model::{Follow, Pinned, Source, Timestamp},
+    common::model::{Follow, Pinned, Source, Timestamp, valid_ref},
     config::FollowSettings,
     nix::FlakeRepo,
 };
 
 /// keeps a machine on a git ref without anyone ordering it: a machine that
-/// slept through a rollout catches up when it wakes.
+/// was off or asleep through a rollout catches up when it comes back.
 ///
 /// it catches up when the ref points at a commit newer than the machine's last
 /// deployment, so a hand-ordered deploy of something else holds until the
 /// fleet moves on.
 pub(super) struct Follower {
-    repo: FlakeRepo,
-    settings: FollowSettings,
-    /// wall-clock time, which jumps ahead across sleep, so a machine that
-    /// wakes up looks right away
-    next_check: Timestamp,
-    latest: Option<Pinned>,
+    git_ref: String,
+    /// what the ref pointed at when last looked up
+    latest: watch::Receiver<Option<Pinned>>,
 }
 
 /// the machine's last successful deployment
@@ -32,61 +31,53 @@ pub(super) struct Deployed<'a> {
 }
 
 impl Follower {
-    /// waits this long after startup before the first check, so a daemon
-    /// restarting into a new version does not race the job that installed it
-    const SETTLE: Duration = Duration::from_secs(30);
-
-    pub fn new(repo: FlakeRepo, settings: FollowSettings) -> Self {
-        Self {
-            repo,
-            settings,
-            next_check: Timestamp::now().after(Self::SETTLE),
-            latest: None,
+    /// follows `settings.git_ref`, looking it up on a task of its own
+    pub fn spawn(repo: FlakeRepo, settings: FollowSettings) -> Result<Self> {
+        if !valid_ref(&settings.git_ref) {
+            bail!("cannot follow {:?}: not a branch or tag name", settings.git_ref);
         }
+
+        Ok(Self {
+            git_ref: settings.git_ref.clone(),
+            latest: Lookout::spawn(repo, settings),
+        })
     }
 
-    pub fn due(&self) -> bool {
-        Timestamp::now() >= self.next_check
-    }
-
-    pub async fn check(&mut self) {
-        self.next_check = Timestamp::now().after(self.settings.interval);
-        match self.repo.resolve(&self.settings.git_ref).await {
-            Ok(pinned) => self.latest = Some(pinned),
-            Err(error) => warn!("cannot follow {}: {error}", self.settings.git_ref),
+    /// a follower that saw `latest` and looks no further, for tests
+    #[cfg(test)]
+    pub fn seeing(git_ref: &str, latest: Option<Pinned>) -> Self {
+        Self {
+            git_ref: git_ref.to_owned(),
+            latest: watch::channel(latest).1,
         }
     }
 
     /// the source to deploy to catch up, if the machine is behind
     pub fn behind(&self, deployed: Option<&Deployed<'_>>) -> Option<Source> {
-        let latest = self.latest.as_ref()?;
-        self.holds(latest, deployed)
+        let latest = self.latest.borrow();
+        let latest = latest.as_ref()?;
+        holds(latest, deployed)
             .not()
             .then(|| latest.clone().into())
     }
 
     pub fn state(&self, deployed: Option<&Deployed<'_>>) -> Follow {
+        let latest = self.latest.borrow().clone();
         Follow {
-            git_ref: self.settings.git_ref.clone(),
-            latest: self.latest.clone(),
-            paused: self.latest.as_ref().is_some_and(|latest| {
-                self.holds(latest, deployed)
+            git_ref: self.git_ref.clone(),
+            paused: latest.as_ref().is_some_and(|latest| {
+                holds(latest, deployed)
                     && deployed.is_some_and(|deployed| !runs(latest, deployed.source))
             }),
+            latest,
         }
     }
+}
 
-    /// what the ref pointed at when last checked, for tests
-    #[cfg(test)]
-    pub fn saw(&mut self, latest: Pinned) {
-        self.latest = Some(latest);
-    }
-
-    fn holds(&self, latest: &Pinned, deployed: Option<&Deployed<'_>>) -> bool {
-        deployed.is_some_and(|deployed| {
-            runs(latest, deployed.source) || latest.committed_at <= deployed.at
-        })
-    }
+fn holds(latest: &Pinned, deployed: Option<&Deployed<'_>>) -> bool {
+    deployed.is_some_and(|deployed| {
+        runs(latest, deployed.source) || latest.committed_at <= deployed.at
+    })
 }
 
 fn runs(latest: &Pinned, source: Option<&Source>) -> bool {

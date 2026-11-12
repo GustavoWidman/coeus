@@ -113,11 +113,11 @@ impl<H: Host> Actor<H> {
             }
         }
 
-        let repo = FlakeRepo::new(settings.flake.clone());
-        let follower = settings
-            .follow
-            .clone()
-            .map(|follow| Follower::new(repo, follow));
+        let follower = settings.follow.clone().and_then(|follow| {
+            Follower::spawn(FlakeRepo::new(settings.flake.clone()), follow)
+                .inspect_err(|error| error!("{error}"))
+                .ok()
+        });
         let notifier = settings.notify.clone().map(Notifier::new);
         let next_id = store.next_id()?;
 
@@ -591,15 +591,10 @@ impl<H: Host> Actor<H> {
 
     /// orders a deployment of the followed ref when the machine fell behind
     async fn catch_up(&mut self) {
-        let Some(follower) = &mut self.follower else {
-            return;
-        };
-
-        if self.lane != Lane::Idle || !follower.due() {
+        if self.lane != Lane::Idle || self.daemon == DaemonState::Restarting {
             return;
         }
 
-        follower.check().await;
         let deployed = deployed(&self.recent, &self.facts);
         let Some(source) = self
             .follower

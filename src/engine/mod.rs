@@ -6,6 +6,7 @@ mod follow;
 mod handle;
 mod host;
 mod lane;
+mod lookout;
 mod notify;
 mod reconcile;
 mod running;
