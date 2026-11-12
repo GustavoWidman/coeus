@@ -1,8 +1,10 @@
+use std::sync::Arc;
+
 use tokio::sync::mpsc;
 
 use super::rollout::{Rollout, Step};
 use crate::{
-    client::Fleet,
+    client::{Fleet, Snapshot},
     common::model::{Admission, Hostname, Order, Rejection},
     ui::{Board, board::Ordering},
 };
@@ -10,18 +12,18 @@ use crate::{
 /// sends one order to the fleet wave by wave, as the rollout allows
 pub struct Dispatch {
     fleet: Fleet,
-    order: Order,
+    shipment: Shipment,
     rollout: Rollout,
     sender: mpsc::UnboundedSender<(Hostname, Ordering)>,
     pub placed: mpsc::UnboundedReceiver<(Hostname, Ordering)>,
 }
 
 impl Dispatch {
-    pub fn new(fleet: Fleet, order: Order, rollout: Rollout) -> Self {
+    pub fn new(fleet: Fleet, shipment: Shipment, rollout: Rollout) -> Self {
         let (sender, placed) = mpsc::unbounded_channel();
         Self {
             fleet,
-            order,
+            shipment,
             rollout,
             sender,
             placed,
@@ -43,10 +45,13 @@ impl Dispatch {
             Step::Order { hosts, .. } => {
                 for host in hosts {
                     board.order(&host, Ordering::Sending);
-                    let (fleet, order, sender) =
-                        (self.fleet.clone(), self.order.clone(), self.sender.clone());
+                    let (fleet, shipment, sender) = (
+                        self.fleet.clone(),
+                        self.shipment.clone(),
+                        self.sender.clone(),
+                    );
                     tokio::spawn(async move {
-                        let answer = place(&fleet, &host, order).await;
+                        let answer = shipment.place(&fleet, &host).await;
                         let _ = sender.send((host, ordering(answer)));
                     });
                 }
@@ -64,15 +69,34 @@ impl Dispatch {
 /// a machine's answer to an order: taken, refused, or never heard
 pub type Answer = Result<Result<Admission, Rejection>, String>;
 
-pub async fn place(fleet: &Fleet, host: &Hostname, order: Order) -> Answer {
-    let mut client = fleet
-        .connect(host)
-        .await
-        .map_err(|error| error.to_string())?;
-    client
-        .deploy(order)
-        .await
-        .map_err(|error| error.to_string())
+/// an order, and the working tree it names when it deploys one
+#[derive(Clone)]
+pub struct Shipment {
+    pub order: Order,
+    pub snapshot: Option<Arc<Snapshot>>,
+}
+
+impl Shipment {
+    pub const fn order(order: Order) -> Self {
+        Self {
+            order,
+            snapshot: None,
+        }
+    }
+
+    /// uploads the working tree, if any, then orders
+    pub async fn place(&self, fleet: &Fleet, host: &Hostname) -> Answer {
+        let delivered = async {
+            let mut client = fleet.connect(host).await?;
+            if let Some(snapshot) = &self.snapshot {
+                client.upload(snapshot).await?;
+            }
+            client.deploy(self.order.clone()).await
+        };
+        delivered
+            .await
+            .map_err(|error: eyre::Report| error.to_string())
+    }
 }
 
 pub fn ordering(answer: Answer) -> Ordering {
