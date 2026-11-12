@@ -85,6 +85,14 @@ impl Fleet {
 
     /// a commit on origin's `main`, as another person merging something
     pub fn commit_on_main(&self, entries: &[(&str, &str)]) {
+        self.commit_on("main", entries);
+    }
+
+    /// a commit on origin's `branch`, made in the checkout on that branch
+    pub fn commit_on(&self, branch: &str, entries: &[(&str, &str)]) {
+        if git(&self.checkout, &["branch", "--show-current"]) != branch {
+            git(&self.checkout, &["checkout", "--quiet", branch]);
+        }
         for (name, text) in entries {
             let file = self.checkout.join(name);
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();
@@ -93,9 +101,12 @@ impl Fleet {
         git(&self.checkout, &["add", "--all"]);
         git(
             &self.checkout,
-            &["commit", "--quiet", "-m", "chore: move main"],
+            &["commit", "--quiet", "-m", &format!("chore: move {branch}")],
         );
-        git(&self.checkout, &["push", "--quiet", "origin", "HEAD:main"]);
+        git(
+            &self.checkout,
+            &["push", "--quiet", "origin", &format!("HEAD:{branch}")],
+        );
     }
 
     pub fn state(&self, admin: &str) -> StateDir {
@@ -104,7 +115,7 @@ impl Fleet {
 
     /// the branch as `admin` opens it, its clone committing as the test
     pub async fn open(&self, admin: &str) -> Branch {
-        let branch = Branch::open(&self.state(admin), &self.checkout, &host())
+        let branch = Branch::open(&self.state(admin), &self.checkout, &host(), None)
             .await
             .unwrap();
         let clone = branch.clone_dir();

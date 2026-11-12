@@ -1,4 +1,5 @@
-use super::{Fleet, enroll, git};
+use super::{Fleet, enroll, git, host};
+use crate::bootstrap::branch::Branch;
 
 #[tokio::test]
 async fn a_first_open_cuts_the_branch_from_the_default_branch() {
@@ -116,4 +117,24 @@ async fn a_local_branch_behind_what_origin_shows_is_moved_to_it() {
     let reopened = fleet.open("altar").await;
 
     assert_eq!(reopened.head().await.unwrap(), other.head().await.unwrap());
+}
+
+#[tokio::test]
+async fn a_named_base_cuts_the_branch_from_it_and_rebases_onto_it() {
+    let fleet = Fleet::new();
+    git(&fleet.checkout, &["checkout", "--quiet", "-b", "contract"]);
+    fleet.commit_on("contract", &[(".coeus/bootstrap.nix", "{ }\n")]);
+    let state = fleet.state("altar");
+
+    let branch = Branch::open(&state, &fleet.checkout, &host(), Some("contract"))
+        .await
+        .unwrap();
+    assert_eq!(branch.base(), "contract");
+    assert!(branch.clone_dir().join(".coeus/bootstrap.nix").exists());
+
+    fleet.commit_on("contract", &[("later.md", "\n")]);
+    assert_eq!(branch.behind().await.unwrap(), 1);
+
+    let missing = Branch::open(&state, &fleet.checkout, &host(), Some("nowhere")).await;
+    assert!(missing.is_err());
 }
