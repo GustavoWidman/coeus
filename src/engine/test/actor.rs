@@ -1,160 +1,12 @@
-use std::{sync::Mutex, time::Duration};
-
-use eyre::Result;
-use tokio::sync::Notify;
-use tokio_util::sync::CancellationToken;
+use std::time::Duration;
 
 use crate::{
     common::model::{
-        Action, CancelReport, FdaStatus, Generation, HostInfo, JobEvent, JobId, JobSelector,
-        JobState, MachineView, NixOptions, Order, OrderId, Origin, Outcome, Phase, Placement,
-        Platform, Source,
+        Action, CancelReport, JobId, JobSelector, JobState, MachineView, NixOptions, Order,
+        OrderId, Origin, Outcome, Phase, Placement, Source,
     },
-    config::{DaemonSettings, GuardSettings},
-    engine::{Engine, EngineHandle, Host, SystemFacts},
-    job::JobDir,
+    testing::{Harness, TOPLEVEL},
 };
-
-const TOPLEVEL: &str = "/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-nixos-system-lab-26.11";
-
-/// a machine whose runners are tasks in this process that build instantly
-/// and finish when the test releases them
-struct FakeHost {
-    info: HostInfo,
-    release: std::sync::Arc<Notify>,
-    spawned: Mutex<Vec<JobId>>,
-}
-
-impl Host for FakeHost {
-    fn info(&self) -> &HostInfo {
-        &self.info
-    }
-
-    fn supports(&self, action: Action) -> bool {
-        action != Action::Boot
-    }
-
-    async fn facts(&self) -> Result<SystemFacts> {
-        Ok(SystemFacts::default())
-    }
-
-    async fn generations(&self) -> Result<Vec<Generation>> {
-        Ok(Vec::new())
-    }
-
-    async fn spawn_runner(&self, dir: &JobDir) -> Result<()> {
-        self.spawned.lock().unwrap().push(dir.id());
-        let dir = dir.clone();
-        let release = self.release.clone();
-
-        let (taken, ready) = tokio::sync::oneshot::channel();
-        tokio::spawn(async move {
-            let mut writer = dir.log().writer().unwrap().unwrap();
-            let _ = taken.send(());
-            writer
-                .event(JobEvent::Started {
-                    attempt: 1,
-                    pid: 0,
-                    version: "test".into(),
-                })
-                .unwrap();
-            writer.event(JobEvent::Phase(Phase::Building)).unwrap();
-            writer
-                .event(JobEvent::Evaluated {
-                    drv: TOPLEVEL.parse().unwrap(),
-                    toplevel: TOPLEVEL.parse().unwrap(),
-                })
-                .unwrap();
-            release.notified().await;
-
-            let outcome = dir
-                .stop_request()
-                .unwrap()
-                .map_or(Outcome::Succeeded, |stop| stop.outcome());
-            writer.finish(outcome).unwrap();
-        });
-        let _ = ready.await;
-        Ok(())
-    }
-
-    async fn release_runner(&self, _: JobId) -> Result<()> {
-        Ok(())
-    }
-
-    async fn probe_fda(&self) -> FdaStatus {
-        FdaStatus::NotApplicable
-    }
-
-    async fn reboot(&self) -> Result<()> {
-        Ok(())
-    }
-}
-
-struct Harness {
-    engine: EngineHandle<FakeHost>,
-    release: std::sync::Arc<Notify>,
-    _state: tempfile::TempDir,
-    shutdown: CancellationToken,
-}
-
-impl Harness {
-    async fn start(state: tempfile::TempDir) -> Self {
-        let release = std::sync::Arc::new(Notify::new());
-        let host = FakeHost {
-            info: HostInfo {
-                hostname: "lab".parse().unwrap(),
-                platform: Platform::NixOs,
-                system: "x86_64-linux".into(),
-                version: "test".into(),
-            },
-            release: release.clone(),
-            spawned: Mutex::default(),
-        };
-
-        let settings = DaemonSettings {
-            flake: "git+https://example.com/nix".into(),
-            state_dir: state.path().to_owned(),
-            guard: GuardSettings {
-                enable: false,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let shutdown = CancellationToken::new();
-        let config = state.path().join("coeusd.toml");
-        let engine = Engine::start(
-            host,
-            settings,
-            &config,
-            CancellationToken::new(),
-            shutdown.clone(),
-        )
-        .await
-        .unwrap();
-
-        Self {
-            engine,
-            release,
-            _state: state,
-            shutdown,
-        }
-    }
-
-    async fn until(&self, done: impl Fn(&MachineView) -> bool) -> MachineView {
-        let mut view = self.engine.watch();
-        tokio::time::timeout(Duration::from_secs(5), async {
-            loop {
-                if done(&view.borrow_and_update()) {
-                    return view.borrow().clone();
-                }
-                view.changed().await.unwrap();
-            }
-        })
-        .await
-        .expect("the engine never reached the expected state")
-    }
-}
 
 fn order(id: u64) -> Order {
     Order {
@@ -297,8 +149,7 @@ async fn picks_up_the_jobs_left_on_disk() {
     first.release.notify_one();
     tokio::time::sleep(Duration::from_millis(200)).await;
 
-    let state = first._state;
-    let second = Harness::start(state).await;
+    let second = Harness::start_with(first.state, first.release.clone()).await;
     let view = second
         .until(|view| finished(view, 1).is_some() && view.running.is_some())
         .await;
