@@ -10,6 +10,7 @@ pub mod nix;
 pub mod platform;
 pub mod runner;
 pub mod server;
+pub mod ui;
 pub mod utils;
 
 #[cfg(test)]
