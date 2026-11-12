@@ -33,8 +33,6 @@ pub enum Call {
         source: StorePath,
         attribute: String,
     },
-    /// `<coeus>/bin/coeusd --version`
-    CoeusVersion { coeus: StorePath },
     /// `<coeus>/bin/coeusd adopt …`, as root
     Adopt(AdoptCall),
     /// `<coeus>/bin/coeusd adopt --status --nar-hash …`, as root
@@ -155,7 +153,6 @@ impl Call {
                 "--no-write-lock-file",
                 &format!("path:{source}#{attribute}"),
             ]),
-            Self::CoeusVersion { coeus } => words([&coeusd(coeus), "--version"]),
             Self::Adopt(adopt) => with_nix(adopt.argv()),
             Self::AdoptStatus { coeus, nar_hash } => with_nix([
                 &coeusd(coeus),
@@ -170,10 +167,7 @@ impl Call {
 
     /// whether it must run as root
     pub fn privileged(&self) -> bool {
-        !matches!(
-            self,
-            Self::Probe { .. } | Self::CoeusVersion { .. } | Self::Tailscale
-        )
+        !matches!(self, Self::Probe { .. } | Self::Tailscale)
     }
 
     /// what the call reads on stdin, beyond a sudo password
