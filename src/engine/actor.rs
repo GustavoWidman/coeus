@@ -640,11 +640,17 @@ impl<H: Host> Actor<H> {
 }
 
 /// the newest job that left the machine running what it runs now, or the
-/// last switch when someone switched it outside coeus
-fn deployed<'a>(recent: &'a VecDeque<JobSummary>, facts: &SystemFacts) -> Option<Deployed<'a>> {
+/// last switch when someone switched it outside coeus. a boot counts once
+/// the machine rebooted into its system.
+pub(super) fn deployed<'a>(
+    recent: &'a VecDeque<JobSummary>,
+    facts: &SystemFacts,
+) -> Option<Deployed<'a>> {
     let by_coeus = recent
         .iter()
-        .filter(|job| job.action.activates() && job.toplevel.is_some())
+        .filter(|job| {
+            (job.action.activates() || job.action == Action::Boot) && job.toplevel.is_some()
+        })
         .find(|job| {
             job.toplevel == facts.current
                 && matches!(

@@ -1,10 +1,11 @@
-use std::time::Duration;
+use std::{collections::VecDeque, time::Duration};
 
 use crate::{
     common::model::{
-        Action, CancelReport, JobId, JobSelector, JobState, MachineView, NixOptions, Order,
-        OrderId, Origin, Outcome, Phase, Placement, Source,
+        Action, CancelReport, JobId, JobSelector, JobState, JobSummary, MachineView, NixOptions,
+        Order, OrderId, Origin, Outcome, Phase, Placement, Source, StorePath, Timestamp,
     },
+    engine::{SystemFacts, actor::deployed},
     testing::{Harness, TOPLEVEL},
 };
 
@@ -234,4 +235,38 @@ async fn refuses_refs_that_are_not_branch_or_tag_names() {
         Err(crate::common::model::Rejection::InvalidRef(_))
     ));
     harness.shutdown.cancel();
+}
+
+#[test]
+fn a_boot_the_machine_rebooted_into_is_its_deployment() {
+    let toplevel: StorePath = TOPLEVEL.parse().unwrap();
+    let boot = JobSummary {
+        id: JobId(2),
+        order: OrderId(9),
+        source: order(1).source,
+        action: Action::Boot,
+        origin: Origin::Follow,
+        state: JobState::Finished(Outcome::Succeeded),
+        ordered_at: Timestamp(1_000),
+        started_at: Some(Timestamp(1_000)),
+        finished_at: Some(Timestamp(2_000)),
+        toplevel: Some(toplevel.clone()),
+        attempt: 1,
+    };
+    let recent = VecDeque::from([boot.clone()]);
+    let facts = |current: Option<StorePath>| SystemFacts {
+        current,
+        switched_at: Some(Timestamp(1_500)),
+        ..SystemFacts::default()
+    };
+
+    let rebooted = deployed(&recent, &facts(Some(toplevel))).unwrap();
+    assert_eq!(rebooted.source, Some(&boot.source));
+    assert_eq!(rebooted.at, Timestamp(2_000));
+
+    // not rebooted yet: the machine runs what it ran, switched outside coeus
+    let stock = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-nixos-system-nixos-25.11";
+    let pending = deployed(&recent, &facts(Some(stock.parse().unwrap()))).unwrap();
+    assert_eq!(pending.source, None);
+    assert_eq!(pending.at, Timestamp(1_500));
 }
