@@ -8,7 +8,7 @@ use std::{
 
 use eyre::{Result, WrapErr, bail, eyre};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader},
     process::Command,
 };
 
@@ -432,16 +432,26 @@ async fn run_adopt(
         text
     });
 
-    let mut lines = BufReader::new(child.stdout.take().expect("stdout is piped")).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        feed.line(AdoptLine::parse(&line));
-        show(console, feed, None);
-        if feed.finished().is_some() {
-            break;
-        }
-    }
+    let stdout = child.stdout.take().expect("stdout is piped");
+    drain(stdout, feed, |feed| show(console, feed, None)).await;
     let status = child.wait().await?;
     Ok((status, said.await.unwrap_or_default()))
+}
+
+/// every line adopt prints, folded into `feed`, until it stops: adopt goes
+/// on to the job's finishing event even when its first line says the job
+/// finished, and output left unread fills the pipe and ssh's window, so
+/// adopt would never exit
+pub(super) async fn drain(
+    stdout: impl AsyncRead + Unpin,
+    feed: &mut Feed,
+    mut shown: impl FnMut(&Feed),
+) {
+    let mut lines = BufReader::new(stdout).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        feed.line(AdoptLine::parse(&line));
+        shown(feed);
+    }
 }
 
 /// macOS lets a launchd job write where nix-darwin's first activation
