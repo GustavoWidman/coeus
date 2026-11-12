@@ -10,6 +10,7 @@ pub mod journal;
 pub mod say;
 pub mod status;
 pub mod text;
+pub mod top;
 
 mod plain;
 mod screen;

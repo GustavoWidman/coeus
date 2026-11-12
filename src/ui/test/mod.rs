@@ -4,6 +4,7 @@ mod plain;
 mod status;
 mod summary;
 mod text;
+mod top;
 
 use crate::{
     client::FleetEvent,
