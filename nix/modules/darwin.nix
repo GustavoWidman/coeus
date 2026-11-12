@@ -7,8 +7,9 @@ in
     type = lib.types.str;
     default = "/Library/Application Support/coeus/coeus-launcher";
     description = ''
-      The Apple-signed program coeus' deployment runners start under. Grant it
-      Full Disk Access once so nix-darwin's activation passes its checks.
+      The program coeus' deployment runners start under. coeusd installs it
+      once and never replaces it; granting it Full Disk Access lets
+      nix-darwin's activation create and delete users.
     '';
   };
 
@@ -16,9 +17,14 @@ in
     services.coeus.settings.launcher = cfg.launcher;
 
     launchd.daemons.coeusd = {
-      command = "/run/current-system/sw/bin/coeusd --config /etc/coeus/coeusd.toml";
-
       serviceConfig = {
+        # activation repoints /run/current-system after loading daemons, so
+        # the first start after an install waits for the binary to appear
+        ProgramArguments = [
+          "/bin/sh"
+          "-c"
+          "/bin/wait4path /run/current-system/sw/bin/coeusd && exec /run/current-system/sw/bin/coeusd --config /etc/coeus/coeusd.toml"
+        ];
         KeepAlive = true;
         RunAtLoad = true;
         ProcessType = "Standard";
