@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use eyre::{Result, WrapErr, eyre};
 use serde::Deserialize;
 use tokio::process::Command;
@@ -89,19 +91,26 @@ fn fell_back(stderr: &str) -> bool {
 
 /// the line of nix's output that says why it failed: git's own `fatal:`
 /// when nix fetched through git, else the last `error:` with any text
-fn reason(stderr: &str) -> &str {
-    let lines = || stderr.lines().map(str::trim);
+fn reason(stderr: &str) -> Cow<'_, str> {
+    let mut lines = stderr.lines().map(str::trim);
 
-    lines()
-        .find_map(|line| line.strip_prefix("fatal:"))
-        .or_else(|| {
-            lines()
-                .filter_map(|line| line.strip_prefix("error:"))
-                .map(str::trim)
-                .rfind(|cause| !cause.is_empty())
-        })
+    if let Some(fatal) = lines.find_map(|line| line.strip_prefix("fatal:")) {
+        let fatal = fatal.trim();
+        // git breaks the cause onto the next line, as in
+        // `unable to connect to host:`
+        return match (fatal.ends_with(':'), lines.next()) {
+            (true, Some(cause)) if !cause.is_empty() => format!("{fatal} {cause}").into(),
+            _ => fatal.into(),
+        };
+    }
+
+    stderr
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("error:"))
         .map(str::trim)
+        .rfind(|cause| !cause.is_empty())
         .unwrap_or("nix failed")
+        .into()
 }
 
 #[cfg(test)]
@@ -131,6 +140,12 @@ mod test {
 
         let tarball = "warning: unable to download 'https://api.github.com/repos/o/nix/commits/deployed': Couldn't resolve host name (6); using cached version\n";
         assert!(super::fell_back(tarball));
+
+        let refused = "fatal: unable to connect to 10.0.2.2:\n10.0.2.2[0: 10.0.2.2]: errno=Connection refused\n\nerror: Failed to fetch git repository 'git://10.0.2.2:9518/tree'\n";
+        assert_eq!(
+            super::reason(refused),
+            "unable to connect to 10.0.2.2: 10.0.2.2[0: 10.0.2.2]: errno=Connection refused"
+        );
 
         assert!(!super::fell_back(""));
         assert!(!super::fell_back(
