@@ -30,7 +30,9 @@ fn other_lines_are_output() {
 #[test]
 fn reads_a_build_start() {
     let raw = r#"@nix {"action":"start","fields":["/nix/store/9rfvhi1nqszqmny102jqxp2vmb6n0mk7-hello-2.12.drv","",1,1],"id":17,"level":3,"parent":13,"text":"building 'hello'","type":105}"#;
-    let Event::Start(start) = event(raw) else { panic!() };
+    let Event::Start(start) = event(raw) else {
+        panic!()
+    };
 
     assert_eq!(start.id, ActivityId(17));
     assert_eq!(start.parent, Some(ActivityId(13)));
@@ -46,7 +48,9 @@ fn reads_a_build_start() {
 #[test]
 fn keeps_unknown_activities_and_ignores_unknown_keys() {
     let raw = r#"@nix {"action":"start","id":5,"level":6,"name":"SubstitutionGoal","parent":0,"payload":{"nix.store.path":"/nix/store/x"},"sid":"01a1","text":"","type":10113}"#;
-    let Event::Start(start) = event(raw) else { panic!() };
+    let Event::Start(start) = event(raw) else {
+        panic!()
+    };
 
     assert_eq!(start.activity, Activity::Other(10113));
     assert_eq!(start.parent, None);
@@ -73,13 +77,17 @@ fn decodes_results_by_kind() {
     assert_eq!(progress.expected(), None);
 
     let expected = report(r#"@nix {"action":"result","fields":[101,1323579],"id":2,"type":106}"#);
-    assert_eq!(expected.expected(), Some((Activity::FileTransfer, 1_323_579)));
+    assert_eq!(
+        expected.expected(),
+        Some((Activity::FileTransfer, 1_323_579))
+    );
 
     let log = report(r#"@nix {"action":"result","fields":["say \"hi\""],"id":7,"type":101}"#);
     assert_eq!(log.log_line().as_deref(), Some("say \"hi\""));
     assert_eq!(log.progress(), None);
 
-    let determinate = report(r#"@nix {"action":"result","id":8,"payload":{"bodySize":562},"type":10111}"#);
+    let determinate =
+        report(r#"@nix {"action":"result","id":8,"payload":{"bodySize":562},"type":10111}"#);
     assert_eq!(determinate.kind, ResultKind::Other(10111));
     assert_eq!(determinate.progress(), None);
 }

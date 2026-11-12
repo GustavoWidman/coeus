@@ -78,15 +78,14 @@ impl Report<'_> {
     /// `[done, expected, running, failed]`, in the unit of the activity
     pub fn progress(&self) -> Option<Counts> {
         match self.kind {
-            ResultKind::Progress => self
-                .fields
-                .parse::<(u64, u64, u64, u64)>()
-                .map(|(done, expected, running, failed)| Counts {
+            ResultKind::Progress => self.fields.parse::<(u64, u64, u64, u64)>().map(
+                |(done, expected, running, failed)| Counts {
                     done,
                     expected,
                     running,
                     failed,
-                }),
+                },
+            ),
             _ => None,
         }
     }
