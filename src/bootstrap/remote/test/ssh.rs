@@ -100,3 +100,16 @@ fn nix_goes_through_the_master_with_the_pin() {
     }
     assert!(options.ends_with("-p 22330"), "{options}");
 }
+
+#[test]
+fn a_remote_program_with_arguments_survives_the_store_url() {
+    let home = tempfile::tempdir().unwrap();
+    let state = StateDir::under(home.path(), &"nova".parse().unwrap());
+    let ssh = Ssh::login(&state, "nixos@192.168.1.40");
+    let (url, _) = ssh.nix_store("sudo -n /run/current-system/sw/bin/nix-daemon");
+
+    assert_eq!(
+        url,
+        "ssh-ng://nixos@192.168.1.40?max-connections=1&remote-program=sudo%20-n%20/run/current-system/sw/bin/nix-daemon"
+    );
+}

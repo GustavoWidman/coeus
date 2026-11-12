@@ -22,7 +22,7 @@ use crate::{
     adopt::{DAEMON_HERE, NEEDS_FULL_DISK_ACCESS},
     bootstrap::{
         Blocker, Bootstrap, Step,
-        remote::{AdoptCall, Call, Platform, Ssh, Stock},
+        remote::{AdoptCall, Call, Platform, Privilege, Ssh, Stock},
     },
     cli::Console,
     client::Snapshot,
@@ -139,7 +139,8 @@ pub async fn ship(stock: &Stock, plan: &Plan<'_>, console: &Console) -> Result<S
         Err(error) => return Err(error).wrap_err("could not read the clone's flake.lock"),
     };
 
-    let (store, ssh_options) = stock.ssh.nix_store(nix_daemon(stock.probed.facts.platform));
+    let program = remote_program(stock.probed.facts.platform, &stock.privilege);
+    let (store, ssh_options) = stock.ssh.nix_store(&program);
     let what = match paths.len() - 1 {
         0 => "the clone".to_owned(),
         1 => "the clone and the input only this machine reaches".to_owned(),
@@ -183,10 +184,16 @@ pub async fn ship(stock: &Stock, plan: &Plan<'_>, console: &Console) -> Result<S
         }
     }
     if !child.wait().await?.success() {
-        bail!(
-            "could not ship the clone to {host}: {}",
-            fold.last_error().unwrap_or("nix copy failed")
-        );
+        let why = fold.last_error().unwrap_or("nix copy failed");
+        // sudo that asks a password cannot run nix's daemon, so a login
+        // that is not root ships as itself, which only a trusted user may
+        if matches!(stock.privilege, Privilege::SudoPassword(_)) && why.contains("signature") {
+            return Err(Blocker::RootRefused {
+                user: stock.probed.facts.login_user.clone(),
+            }
+            .into());
+        }
+        bail!("could not ship the clone to {host}: {why}");
     }
     Ok(archived.path)
 }
@@ -414,11 +421,17 @@ fn build_lines(fold: &LogFold) -> Vec<Live> {
     }
 }
 
-/// where nix-daemon is on the machine, for nix's ssh store
-fn nix_daemon(platform: Platform) -> &'static str {
-    match platform {
+/// what nix's ssh store runs on the machine: nix-daemon by its path, as
+/// root, so the unsigned inputs are taken. a login that is not root and
+/// may sudo without a password runs it through sudo.
+pub(super) fn remote_program(platform: Platform, privilege: &Privilege) -> String {
+    let daemon = match platform {
         Platform::Nixos => "/run/current-system/sw/bin/nix-daemon",
         Platform::Darwin => "/nix/var/nix/profiles/default/bin/nix-daemon",
+    };
+    match privilege {
+        Privilege::Sudo => format!("sudo -n {daemon}"),
+        Privilege::Root | Privilege::SudoPassword(_) => daemon.to_owned(),
     }
 }
 

@@ -159,15 +159,17 @@ impl Ssh {
     }
 
     /// `ssh-ng://<destination>` and the `NIX_SSHOPTS` that send nix through
-    /// the same master and pin. `nix_daemon` is the daemon's path on the
-    /// machine, which a non-interactive login on a Mac has not on `PATH`.
-    pub fn nix_store(&self, nix_daemon: &str) -> (String, String) {
+    /// the same master and pin. `remote_program` runs the daemon on the
+    /// machine, by its path, which a non-interactive login on a Mac has not
+    /// on `PATH`, and through sudo for a login that is not root.
+    pub fn nix_store(&self, remote_program: &str) -> (String, String) {
         let target = Destination::parse(&self.target());
         // one connection, so nix multiplexes over this master instead of
         // opening one of its own, which could not ask a password
         let url = format!(
-            "ssh-ng://{}?max-connections=1&remote-program={nix_daemon}",
-            target.authority
+            "ssh-ng://{}?max-connections=1&remote-program={}",
+            target.authority,
+            remote_program.replace(' ', "%20")
         );
         let mut options = self.options(true);
         if let Some(port) = target.port {

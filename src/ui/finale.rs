@@ -193,6 +193,14 @@ fn blocked(state: &StateDir, at: Step, blocker: &Blocker) -> Vec<String> {
             )),
             indent("update the flake input that provides coeus on the branch".to_owned()),
         ],
+        Blocker::RootRefused { user } => vec![
+            say::warn(format!(
+                "root on {host} refuses coeus's session key, and its nix takes nothing unsigned from {user}"
+            )),
+            indent(format!(
+                "let root log in with a key (PermitRootLogin prohibit-password), make {user} a trusted nix user, or let it sudo without a password"
+            )),
+        ],
         Blocker::OffTailnet => vec![
             say::warn(format!("{host} is up but not on the tailnet")),
             indent(format!("sign in to Tailscale on {host}")),
