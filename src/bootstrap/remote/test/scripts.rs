@@ -10,19 +10,23 @@ const KEY: &str =
 const OTHER: &str =
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN9FLpE3q6S85tUkrfN6U7VMxHTkk6ikkPnNkS9uU7qx altar";
 
-/// `call`'s argv with every path under `/etc` and root's home moved into
-/// `scratch`, run by the local `sh`
+/// [scratched] `call`, run here
 fn run(call: &Call, scratch: &Path) -> std::process::Output {
+    let argv = scratched(call, scratch);
+    Command::new(&argv[0]).args(&argv[1..]).output().unwrap()
+}
+
+/// `call`'s argv with every path under `/etc` and root's home moved into
+/// `scratch`
+fn scratched(call: &Call, scratch: &Path) -> Vec<String> {
     let scratch = scratch.display().to_string();
-    let argv: Vec<String> = call
-        .argv()
+    call.argv()
         .into_iter()
         .map(|word| {
             word.replace("~root", &scratch)
                 .replace("/etc/", &format!("{scratch}/etc/"))
         })
-        .collect();
-    Command::new(&argv[0]).args(&argv[1..]).output().unwrap()
+        .collect()
 }
 
 fn authorized_keys(scratch: &Path) -> String {
@@ -54,6 +58,30 @@ fn the_session_key_is_added_once_and_removed_alone() {
         assert!(run(&remove, scratch.path()).status.success());
     }
     assert_eq!(authorized_keys(scratch.path()), format!("{OTHER}\n"));
+}
+
+#[test]
+fn removing_the_session_key_keeps_the_file_when_the_copy_cannot_be_written() {
+    let scratch = tempfile::tempdir().unwrap();
+    let file = scratch.path().join(".ssh/authorized_keys");
+    fs::create_dir_all(scratch.path().join(".ssh")).unwrap();
+    let before = format!("{OTHER}\n{KEY} coeus-bootstrap@nova\n");
+    fs::write(&file, &before).unwrap();
+
+    // no byte may be written, as on a full disk: the copy's write fails
+    let remove = Call::RemoveSessionKey {
+        key: SshKey::parse(KEY).unwrap(),
+    };
+    let mut command = Command::new("sh");
+    command.args(["-c", r#"trap "" XFSZ; ulimit -f 0; exec "$@""#, "sh"]);
+    let output = command
+        .args(scratched(&remove, scratch.path()))
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success(), "{output:?}");
+    assert_eq!(authorized_keys(scratch.path()), before);
+    assert!(!scratch.path().join(".ssh/authorized_keys.coeus").exists());
 }
 
 #[test]

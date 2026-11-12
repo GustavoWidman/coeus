@@ -78,13 +78,22 @@ if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then echo >> "$file"; fi
 printf '%s\n' "$1" >> "$file"
 "#;
 
-/// `$1` the key; every other line stays as it was
+/// `$1` the key; every other line stays as it was. grep exits 1 when no
+/// other line is left; any other failure, or no copy written, leaves the
+/// file as it was rather than replace it with a truncated copy
 const REMOVE_SESSION_KEY: &str = r#"set -eu
 file=~root/.ssh/authorized_keys
 [ -f "$file" ] || exit 0
 grep -qF "$1" "$file" || exit 0
 umask 077
-grep -vF "$1" "$file" > "$file.coeus" || true
+rm -f "$file.coeus"
+kept=0
+grep -vF "$1" "$file" > "$file.coeus" || kept=$?
+if [ "$kept" -gt 1 ] || [ ! -f "$file.coeus" ]; then
+  rm -f "$file.coeus"
+  echo "could not rewrite $file without the session key" >&2
+  exit 1
+fi
 mv "$file.coeus" "$file"
 "#;
 
