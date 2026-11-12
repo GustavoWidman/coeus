@@ -2,6 +2,7 @@ use eyre::{Result, WrapErr, eyre};
 use serde::Deserialize;
 use tokio::process::Command;
 
+use super::strip_ansi;
 use crate::common::model::{CommitSha, Pinned, Timestamp};
 
 /// a flake repository as a daemon's configuration names it, e.g.
@@ -47,8 +48,9 @@ impl FlakeRepo {
             .await
             .wrap_err("failed to run nix")?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = strip_ansi(&stderr);
+        if !output.status.success() || fell_back(&stderr) {
             return Err(eyre!("cannot resolve {git_ref}: {}", reason(&stderr)));
         }
 
@@ -66,6 +68,23 @@ impl FlakeRepo {
             false => '?',
         }
     }
+}
+
+/// whether nix could not reach the repository and went on with what it
+/// fetched before. it only warns and exits as if the fetch worked, so a ref
+/// would seem to point where it did when last fetched.
+fn fell_back(stderr: &str) -> bool {
+    const WARNINGS: [&str; 2] = [
+        // the git fetcher
+        "continuing with the most recent version",
+        // the tarball fetchers, `github:` among them
+        "; using cached version",
+    ];
+
+    stderr
+        .lines()
+        .filter(|line| line.trim_start().starts_with("warning:"))
+        .any(|line| WARNINGS.iter().any(|warning| line.contains(warning)))
 }
 
 /// the line of nix's output that says why it failed: git's own `fatal:`
@@ -98,5 +117,24 @@ mod test {
         let nix = "error:\n       … while evaluating\n\n       error: attribute 'altar' missing\n";
         assert_eq!(super::reason(nix), "attribute 'altar' missing");
         assert_eq!(super::reason(""), "nix failed");
+    }
+
+    #[test]
+    fn a_fetch_that_fell_back_to_the_cache_is_a_failure() {
+        let git = "\u{1b}[31;1merror:\u{1b}[0m executing \u{1b}[35;1m\"git\"\u{1b}[0m: \u{1b}[35;1mConnection refused\u{1b}[0m\nerror: Failed to fetch git repository 'git://10.0.2.2:9518/tree'\nwarning: could not update local clone of Git repository 'git://10.0.2.2:9518/tree'; continuing with the most recent version\n";
+        let git = super::strip_ansi(git);
+        assert!(super::fell_back(&git));
+        assert_eq!(
+            super::reason(&git),
+            "Failed to fetch git repository 'git://10.0.2.2:9518/tree'"
+        );
+
+        let tarball = "warning: unable to download 'https://api.github.com/repos/o/nix/commits/deployed': Couldn't resolve host name (6); using cached version\n";
+        assert!(super::fell_back(tarball));
+
+        assert!(!super::fell_back(""));
+        assert!(!super::fell_back(
+            "warning: Git tree '/home/me/nix' is dirty\n"
+        ));
     }
 }
