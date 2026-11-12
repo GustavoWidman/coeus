@@ -34,6 +34,8 @@ pub struct Process {
 impl Process {
     /// how often output that is still flowing reaches the log's readers
     const FLUSH: Duration = Duration::from_millis(100);
+    /// how long output may keep flowing after the process exited
+    const LINGER: Duration = Duration::from_secs(2);
 
     pub fn spawn(mut command: Command) -> Result<Self> {
         let program = command
@@ -64,6 +66,8 @@ impl Process {
         let mut err = Lines::new(err);
         let mut captured = Vec::new();
         let mut flush = time::interval(Self::FLUSH);
+        let mut status = None;
+        let mut linger = None;
 
         while out.open || err.open {
             tokio::select! {
@@ -80,11 +84,24 @@ impl Process {
                     (Some(line), Stdout::Log) => feed.line(&line)?,
                     (None, _) => {}
                 },
-                _ = flush.tick() => feed.tick()?,
+                exit = self.child.wait(), if status.is_none() => {
+                    status = Some(exit?);
+                    linger = Some(time::Instant::now() + Self::LINGER);
+                }
+                _ = flush.tick() => {
+                    feed.tick()?;
+                    // something the process started may hold its pipes open
+                    if linger.is_some_and(|until| time::Instant::now() >= until) {
+                        break;
+                    }
+                }
             }
         }
 
-        let status = self.child.wait().await?;
+        let status = match status {
+            Some(status) => status,
+            None => self.child.wait().await?,
+        };
         self.group = None;
         feed.settle()?;
 
