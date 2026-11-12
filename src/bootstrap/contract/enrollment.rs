@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeMap, fmt};
 
-use eyre::{Report, bail};
+use eyre::{Report, bail, eyre};
 
 use super::wire::{self, FirstSwitch, Messages};
 
@@ -22,11 +22,76 @@ impl TryFrom<wire::Enrollment> for Enrollment {
     type Error = Report;
 
     fn try_from(enrollment: wire::Enrollment) -> eyre::Result<Self> {
-        // TODO: every path a RepoPath; every secret path ending in `.age`
-        // and every file path not; no path both a file and a secret; each
-        // secret's kind into a Generator, refusing a field its kind does not
-        // use; a random secret of 0 bytes refused
-        todo!()
+        let wire::Enrollment {
+            files,
+            secrets,
+            first_switch,
+            messages,
+            notes,
+        } = enrollment;
+
+        let files = files
+            .into_iter()
+            .map(|(path, text)| {
+                let path = RepoPath::try_from(path)?;
+                if path.is_secret() {
+                    bail!("the enrollment writes {path} as a file; a .age file is a secret");
+                }
+                Ok((path, text))
+            })
+            .collect::<eyre::Result<BTreeMap<_, _>>>()?;
+
+        let secrets = secrets
+            .into_iter()
+            .map(|(path, secret)| {
+                let path = RepoPath::try_from(path)?;
+                if !path.is_secret() {
+                    bail!("the enrollment makes {path} a secret; a secret is a .age file");
+                }
+                if files.contains_key(&path) {
+                    bail!("the enrollment writes {path} both as a file and as a secret");
+                }
+                let generator = Generator::try_from(secret)
+                    .map_err(|error| error.wrap_err(format!("the secret {path}")))?;
+                Ok((path, generator))
+            })
+            .collect::<eyre::Result<BTreeMap<_, _>>>()?;
+
+        Ok(Self {
+            files,
+            secrets,
+            first_switch,
+            messages,
+            notes,
+        })
+    }
+}
+
+impl TryFrom<wire::Secret> for Generator {
+    type Error = Report;
+
+    fn try_from(secret: wire::Secret) -> eyre::Result<Self> {
+        let wire::Secret {
+            kind,
+            prompt,
+            comment,
+            bytes,
+        } = secret;
+        let unused = |field: &str| eyre!("a {} secret has no {field}", kind.as_str());
+        match kind {
+            wire::SecretKind::Password | wire::SecretKind::Text if comment.is_some() => {
+                Err(unused("comment"))
+            }
+            wire::SecretKind::SshEd25519 | wire::SecretKind::Random if prompt.is_some() => {
+                Err(unused("prompt"))
+            }
+            wire::SecretKind::Random if comment.is_some() => Err(unused("comment")),
+            wire::SecretKind::Password => Ok(Self::Password { prompt }),
+            wire::SecretKind::Text => Ok(Self::Text { prompt }),
+            wire::SecretKind::SshEd25519 => Ok(Self::SshEd25519 { comment }),
+            wire::SecretKind::Random if bytes == 0 => Err(eyre!("a random secret of 0 bytes")),
+            wire::SecretKind::Random => Ok(Self::Random { bytes }),
+        }
     }
 }
 

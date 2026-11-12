@@ -37,6 +37,16 @@ pub enum QuestionKind {
     Text,
 }
 
+impl QuestionKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Choice => "choice",
+            Self::Confirm => "confirm",
+            Self::Text => "text",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Choice {
@@ -95,6 +105,17 @@ pub enum SecretKind {
     SshEd25519,
     Random,
     Text,
+}
+
+impl SecretKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Password => "password",
+            Self::SshEd25519 => "ssh-ed25519",
+            Self::Random => "random",
+            Self::Text => "text",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
