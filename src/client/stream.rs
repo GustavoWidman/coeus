@@ -2,7 +2,7 @@ use eyre::{Result, eyre};
 
 use crate::common::{
     model::{AttachFrame, JobId, JobSummary, MachineView, Outcome},
-    proto::Packet,
+    proto::{AttachResize, Packet, TerminalSize},
     stream::EncryptedStream,
 };
 
@@ -41,6 +41,8 @@ pub enum AttachmentEvent {
         /// where a reconnect resumes
         end: u64,
     },
+    /// terminal output of the machine's nom, for a drawn attach
+    Screen(Vec<u8>),
     Ended {
         job: JobId,
         outcome: Outcome,
@@ -60,6 +62,7 @@ impl Attachment {
                 frames: batch.frames,
                 end: batch.end,
             },
+            Some(Packet::AttachScreen(screen)) => AttachmentEvent::Screen(screen.bytes),
             Some(Packet::AttachEnded(ended)) => AttachmentEvent::Ended {
                 job: ended.job,
                 outcome: ended.outcome,
@@ -73,5 +76,10 @@ impl Attachment {
             }
             None => return Ok(None),
         }))
+    }
+
+    /// redraws a drawn attach at the terminal's new size
+    pub async fn resize(&mut self, size: TerminalSize) -> Result<()> {
+        self.stream.send(AttachResize { size }).await
     }
 }

@@ -31,7 +31,8 @@ use crate::{
         },
         proto::{
             AttachRequest, CancelRequest, DeployRequest, GenerationsRequest, HistoryRequest,
-            Packet, RebootRequest, ResolveRequest, UploadBegin, UploadChunk, WatchRequest,
+            Packet, RebootRequest, ResolveRequest, TerminalSize, UploadBegin, UploadChunk,
+            WatchRequest,
         },
         stream::EncryptedStream,
     },
@@ -171,9 +172,21 @@ impl CoeusClient {
         Ok(stream::Views::new(self.stream))
     }
 
-    /// a job's log from `from`, live until the job finishes
-    pub async fn attach(mut self, job: JobSelector, from: u64) -> Result<Attachment> {
-        self.stream.send(AttachRequest { job, from }).await?;
+    /// a job's log from `from`, live until the job finishes; with a
+    /// `terminal`, drawn by the machine's nom at that size when it can
+    pub async fn attach(
+        mut self,
+        job: JobSelector,
+        from: u64,
+        terminal: Option<TerminalSize>,
+    ) -> Result<Attachment> {
+        self.stream
+            .send(AttachRequest {
+                job,
+                from,
+                terminal,
+            })
+            .await?;
         Ok(Attachment::new(self.stream))
     }
 
