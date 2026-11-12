@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use log::LevelFilter;
 
 #[derive(Parser, Debug)]
@@ -18,4 +18,19 @@ pub struct DaemonCLIArgs {
         default_value = "/etc/coeus/coeusd.toml"
     )]
     pub config: PathBuf,
+
+    #[command(subcommand)]
+    pub command: Option<DaemonCommand>,
+}
+
+/// what coeusd starts itself as, through the service manager
+#[derive(Subcommand, Debug)]
+pub enum DaemonCommand {
+    /// Carries out the job in a job directory
+    #[command(hide = true)]
+    Run { dir: PathBuf },
+
+    /// Writes whether this process has Full Disk Access to a file
+    #[command(hide = true)]
+    Probe { verdict: PathBuf },
 }

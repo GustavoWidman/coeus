@@ -2,8 +2,13 @@ use std::os::unix::fs::DirBuilderExt;
 
 use clap::Parser;
 use coeus::{
-    cli::daemon::DaemonCLIArgs, config::daemon_config, engine::Engine, platform::Machine,
-    server::CoeusServer, utils::log::Logger,
+    cli::daemon::{DaemonCLIArgs, DaemonCommand},
+    config::daemon_config,
+    engine::Engine,
+    platform::Machine,
+    runner,
+    server::CoeusServer,
+    utils::log::Logger,
 };
 use colored::Colorize;
 use eyre::{Result, WrapErr};
@@ -15,17 +20,18 @@ async fn main() -> Result<()> {
     let args = DaemonCLIArgs::parse();
     Logger::init(args.verbosity);
 
-    info!(
-        "starting coeusd {}",
-        format!("v{}", env!("CARGO_PKG_VERSION")).magenta()
-    );
+    match &args.command {
+        Some(DaemonCommand::Run { dir }) => runner::run(dir).await,
+        Some(DaemonCommand::Probe { verdict }) => runner::probe(verdict).await,
+        None => {
+            info!(
+                "starting coeusd {}",
+                format!("v{}", env!("CARGO_PKG_VERSION")).magenta()
+            );
 
-    if let Err(error) = serve(&args).await {
-        error!("coeusd stopped: {error:#}");
-        return Err(error);
+            serve(&args).await.inspect_err(|error| error!("coeusd stopped: {error:#}"))
+        }
     }
-
-    Ok(())
 }
 
 async fn serve(args: &DaemonCLIArgs) -> Result<()> {
