@@ -98,10 +98,7 @@ impl Board {
     }
 
     fn footer(&self) -> String {
-        let mut tally = Tally::default();
-        for row in &self.rows {
-            tally.count(row);
-        }
+        let tally = Tally::of(&self.rows);
 
         let hint = match self.heading {
             Heading::Order { .. } => "ctrl-c detaches, deployments keep running",
@@ -115,8 +112,9 @@ impl Board {
     }
 }
 
+/// how many machines run, wait, are done, failed or are out of reach
 #[derive(Default)]
-struct Tally {
+pub struct Tally {
     running: usize,
     waiting: usize,
     done: usize,
@@ -125,6 +123,14 @@ struct Tally {
 }
 
 impl Tally {
+    pub fn of<'a>(rows: impl IntoIterator<Item = &'a Row>) -> Self {
+        let mut tally = Self::default();
+        for row in rows {
+            tally.count(row);
+        }
+        tally
+    }
+
     fn count(&mut self, row: &Row) {
         match (row.status(), row.verdict()) {
             (Status::Running(_), _) => self.running += 1,
@@ -140,7 +146,8 @@ impl Tally {
         }
     }
 
-    fn line(&self) -> String {
+    /// `1 running · 3 done`, empty when nothing is to count
+    pub fn line(&self) -> String {
         [
             (self.running, "running".cyan()),
             (self.waiting, "waiting".white()),
@@ -163,7 +170,7 @@ impl Row {
 
         format!(
             "{} {}  {}  {}",
-            self.glyph(status, frame),
+            self.glyph(status, frame.now),
             pad(&Theme::host(self.host.as_str()).to_string(), host_width),
             pad(&label.to_string(), Frame::LABEL),
             detail
@@ -172,13 +179,14 @@ impl Row {
         .to_owned()
     }
 
-    fn glyph(&self, status: Status<'_>, frame: Frame) -> ColoredString {
+    /// a spinner while running, the outcome once finished
+    pub fn glyph(&self, status: Status<'_>, now: Timestamp) -> ColoredString {
         if self.is_reconnecting() {
             return "↻".yellow().bold();
         }
 
         match status {
-            Status::Running(_) => Theme::spinner(frame.now),
+            Status::Running(_) => Theme::spinner(now),
             Status::Finished(_, outcome) => Theme::outcome_glyph(outcome),
             Status::Unreachable(_) => "⊘".red().bold(),
             Status::Rejected(_) => "⊘".yellow().bold(),
