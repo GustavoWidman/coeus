@@ -42,6 +42,7 @@ impl FlakeRepo {
             .args(["--extra-experimental-features", "nix-command flakes"])
             .arg(self.at_ref(git_ref))
             .env("NIX_REMOTE", "daemon")
+            .kill_on_drop(true)
             .output()
             .await
             .wrap_err("failed to run nix")?;
