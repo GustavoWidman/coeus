@@ -48,11 +48,7 @@ impl FlakeRepo {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let reason = stderr
-                .lines()
-                .find(|line| line.contains("error"))
-                .unwrap_or(&stderr);
-            return Err(eyre!("cannot resolve {git_ref}: {}", reason.trim()));
+            return Err(eyre!("cannot resolve {git_ref}: {}", reason(&stderr)));
         }
 
         let metadata: Metadata = serde_json::from_slice(&output.stdout)?;
@@ -68,5 +64,38 @@ impl FlakeRepo {
             true => '&',
             false => '?',
         }
+    }
+}
+
+/// the line of nix's output that says why it failed: git's own `fatal:`
+/// when nix fetched through git, else the last `error:` with any text
+fn reason(stderr: &str) -> &str {
+    let lines = || stderr.lines().map(str::trim);
+
+    lines()
+        .find_map(|line| line.strip_prefix("fatal:"))
+        .or_else(|| {
+            lines()
+                .filter_map(|line| line.strip_prefix("error:"))
+                .map(str::trim)
+                .rfind(|cause| !cause.is_empty())
+        })
+        .map(str::trim)
+        .unwrap_or("nix failed")
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn names_git_or_the_last_error_as_the_reason() {
+        let missing = "fatal: couldn't find remote ref refs/heads/deployed\nerror:\n       … while fetching\n\n       error: Failed to fetch git repository 'x'\n";
+        assert_eq!(
+            super::reason(missing),
+            "couldn't find remote ref refs/heads/deployed"
+        );
+
+        let nix = "error:\n       … while evaluating\n\n       error: attribute 'altar' missing\n";
+        assert_eq!(super::reason(nix), "attribute 'altar' missing");
+        assert_eq!(super::reason(""), "nix failed");
     }
 }
