@@ -1,0 +1,44 @@
+# coeusd's settings. on NixOS and nix-darwin the coeus module writes this file
+# to /etc/coeus/coeusd.toml from `services.coeus.daemon`.
+[settings]
+# the fleet's pre-shared key: `key = "<64 hex digits>"` inline, or a file
+# such as an agenix secret. `coeus keygen` makes one.
+key_file = "/run/agenix/coeus-key"
+
+# the flake repository holding every machine's configuration
+flake = "git+https://github.com/GustavoWidman/nix"
+
+# where coeusd accepts connections
+listen = "[::]:45729"
+
+# this machine's name in the flake (default: the system hostname)
+# hostname = "altar"
+
+# job directories and uploaded working trees
+state_dir = "/var/lib/coeus"
+
+# an ssh key for private `git+ssh` flake inputs
+# ssh_key_file = "/run/agenix/coeus-deploy-key"
+
+# finished jobs to keep
+history = 100
+
+# the Apple-signed program macOS runners start under; grant it Full Disk
+# Access once (System Settings > Privacy & Security > Full Disk Access)
+launcher = "/usr/bin/time"
+
+# catch up with a git ref on its own, e.g. after waking up from sleep
+[settings.follow]
+ref = "deployed"
+interval = "15m"
+
+# after activating, require the machine to stay reachable or roll back
+[settings.guard]
+enable = true
+timeout = "2m"
+tailscale = true
+
+# announce finished jobs, e.g. on an ntfy topic
+# [settings.notify]
+# url = "https://ntfy.sh/my-fleet"
+# on = "failure"

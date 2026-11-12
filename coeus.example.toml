@@ -1,0 +1,21 @@
+# the coeus CLI's settings, read from --config, $COEUS_CONFIG,
+# ~/.config/coeus/coeus.toml or /etc/coeus/coeus.toml. on NixOS and
+# nix-darwin the coeus module writes the last one with the fleet inventory.
+[settings]
+# the fleet's pre-shared key; $COEUS_KEY works too
+key_file = "/run/agenix/coeus-key"
+
+connect_timeout = "5s"
+
+# the machines `@all` and `@<tag>` select. any other name is reached as a
+# tailnet hostname on port 45729.
+[settings.hosts.altar]
+tags = ["darwin", "dev-server"]
+
+[settings.hosts.lab]
+tags = ["nixos", "dev-server", "canary"]
+
+[settings.hosts.oracle-1]
+address = "oracle-1"
+port = 45729
+tags = ["nixos", "server"]

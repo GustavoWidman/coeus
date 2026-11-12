@@ -1,9 +1,12 @@
-pub mod client;
-pub mod server;
+mod client;
+mod daemon;
+mod key;
 
-pub use client::{ClientConfig, client_config};
-pub use server::{ServerConfig, server_config};
+pub use client::*;
+pub use daemon::*;
+pub use key::*;
 
-const fn default_config_path() -> u16 {
-    45729
-}
+pub const DEFAULT_PORT: u16 = 45729;
+
+#[cfg(test)]
+mod test;
