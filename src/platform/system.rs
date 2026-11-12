@@ -108,9 +108,6 @@ impl SystemRoot {
 
     /// every generation of the system profile, newest first
     pub fn generations(&self) -> Result<Vec<Generation>> {
-        let current = self.current();
-        let booted = self.booted();
-
         let mut generations: Vec<Generation> = fs::read_dir(&self.profiles)?
             .filter_map(|entry| {
                 let entry = entry.ok()?;
@@ -122,14 +119,23 @@ impl SystemRoot {
                 Some(Generation {
                     number,
                     created_at: Timestamp(i64::try_from(millis).ok()?),
-                    current: current.as_ref() == Some(&toplevel),
-                    booted: booted.as_ref() == Some(&toplevel),
+                    current: false,
+                    booted: false,
                     toplevel,
                 })
             })
             .collect();
 
         generations.sort_unstable_by_key(|generation| std::cmp::Reverse(generation.number));
+
+        let profile = self.generation();
+        let current = running(&generations, profile, self.current().as_ref());
+        let booted = running(&generations, profile, self.booted().as_ref());
+        for generation in &mut generations {
+            generation.current = current == Some(generation.number);
+            generation.booted = booted == Some(generation.number);
+        }
+
         Ok(generations)
     }
 
@@ -142,6 +148,27 @@ impl SystemRoot {
                 fs::read_link(booted.join(file)).ok() != fs::read_link(current.join(file)).ok()
             })
     }
+}
+
+/// which of `generations`, newest first, runs `system`. deploying a commit
+/// again makes a new generation of the same system, so several can hold it:
+/// the profile's own generation is the one when it does, or else the newest.
+fn running(
+    generations: &[Generation],
+    profile: Option<u32>,
+    system: Option<&StorePath>,
+) -> Option<u32> {
+    let system = system?;
+    let mut holding = generations
+        .iter()
+        .filter(|generation| generation.toplevel == *system)
+        .map(|generation| generation.number);
+    let newest = holding.next()?;
+
+    Some(match profile {
+        Some(profile) if profile == newest || holding.any(|number| number == profile) => profile,
+        _ => newest,
+    })
 }
 
 /// `system-10-link` is generation 10
