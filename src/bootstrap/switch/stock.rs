@@ -14,6 +14,7 @@ use tokio::{
 
 use super::{
     AdoptLine, Feed, Release,
+    backoff::Backoff,
     ship::{Archived, Lock},
     show,
 };
@@ -333,15 +334,24 @@ pub async fn adopt(
         follow: Some(from),
     });
     let mut asked = None;
+    let mut waits = Backoff::new(Duration::from_secs(5), Duration::from_secs(30));
     let (status, said) = loop {
         let (status, said) = run_adopt(stock, &call, feed, console).await?;
-        if status.code() != Some(NEEDS_FULL_DISK_ACCESS) {
-            break (status, said);
+        match Waiting::after(status, asked.is_some(), feed) {
+            Waiting::Over => break (status, said),
+            Waiting::ForGrant => {
+                let first = asked.is_none();
+                let since = *asked.get_or_insert_with(Timestamp::now);
+                ask_for_full_disk_access(stock, plan.host, &said, since, first, console).await;
+            }
+            Waiting::ForSsh => {}
         }
-        let first = asked.is_none();
-        let since = *asked.get_or_insert_with(Timestamp::now);
-        ask_for_full_disk_access(stock, plan.host, &said, since, first, console).await;
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        tokio::select! {
+            () = tokio::time::sleep(waits.next()) => {}
+            () = console.cancelled.cancelled() => {
+                bail!("detached while waiting for Full Disk Access on {}", plan.host);
+            }
+        }
     };
 
     if let Some(job) = feed.finished() {
@@ -360,6 +370,27 @@ pub async fn adopt(
             plan.host,
             said.lines().last().unwrap_or("it said nothing")
         )),
+    }
+}
+
+/// what one adopt says about waiting for a person to grant Full Disk Access
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Waiting {
+    /// adopt admitted or followed the job, or failed otherwise
+    Over,
+    /// the launcher still lacks the grant
+    ForGrant,
+    /// ssh dropped while waiting, which says nothing about the grant
+    ForSsh,
+}
+
+impl Waiting {
+    pub(super) fn after(status: std::process::ExitStatus, waiting: bool, feed: &Feed) -> Self {
+        match status.code() {
+            Some(NEEDS_FULL_DISK_ACCESS) => Self::ForGrant,
+            _ if waiting && feed.view.is_none() && Ssh::lost(status) => Self::ForSsh,
+            _ => Self::Over,
+        }
     }
 }
 
