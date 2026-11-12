@@ -221,8 +221,8 @@ impl Deployment {
     }
 }
 
-/// `[✓] altar took the order as job #12, running now`
-fn placement(host: &Hostname, answer: &Answer) -> String {
+/// `[✓] altar runs the order as job #12`
+pub fn placement(host: &Hostname, answer: &Answer) -> String {
     let host_name = Theme::host(host.as_str());
     match answer {
         Ok(Ok(Admission { job, placement })) => {
