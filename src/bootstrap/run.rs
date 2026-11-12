@@ -20,7 +20,7 @@ use super::{
 };
 use crate::{
     cli::{Console, Unanswerable, local_hostname},
-    common::model::{Platform, Timestamp},
+    common::model::{Action, Platform, Timestamp},
     ui::{
         checklist::{Mark, Row},
         format,
@@ -301,8 +301,9 @@ fn evidence(enrolled: &Enrolled, rekeyed: &Rekeyed) -> body::Evidence {
     }
 }
 
-/// `job #1 · nixos-system-nova-26.05 · 7m12s`; the same on every run, so
-/// the pull request's section does not change for nothing
+/// `job #1 · nixos-system-nova-26.05 · 7m12s`, ending `rebooted into it`
+/// when NixOS refused to switch live; the same on every run, so the pull
+/// request's section does not change for nothing
 fn switch_detail(switched: &Switched) -> String {
     let job = &switched.job;
     let mut parts = vec![format!("job {}", job.id)];
@@ -311,6 +312,9 @@ fn switch_detail(switched: &Switched) -> String {
     }
     if let Some(took) = job.duration() {
         parts.push(format::duration(took));
+    }
+    if job.action == Action::Boot {
+        parts.push("rebooted into it".to_owned());
     }
     parts.join(" · ")
 }

@@ -142,12 +142,22 @@ async fn a_switch_nixos_refuses_is_booted_and_rebooted_into() {
         Mark::Skipped,
         "it booted what it runs"
     );
+    let row = ran.rows.row(Step::Switch).unwrap();
+    assert!(row.detail.ends_with("· rebooted into it"), "{}", row.detail);
     assert!(
         ran.rows.notes.iter().any(|note| note
             .starts_with("NixOS asks for a reboot into this system instead of a live switch")
             && note.contains("Pre-switch check 'switchInhibitors' failed")),
         "{:?}",
         ran.rows.notes
+    );
+    let Finale::Done(evidence) = &ran.finale else {
+        unreachable!()
+    };
+    assert!(
+        evidence.pull_request.body.contains("rebooted into it"),
+        "{}",
+        evidence.pull_request.body
     );
     fleet.assert_booted_into_the_fleet();
 
