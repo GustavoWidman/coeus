@@ -46,11 +46,17 @@ fn a_runner_that_died_before_activating_runs_again() {
 
 #[test]
 fn a_dead_activation_succeeded_only_if_the_machine_runs_its_system() {
-    let converged = Plan::reconcile(vec![running(1, Phase::Activating, false)], Some(&path(BUILT)));
+    let converged = Plan::reconcile(
+        vec![running(1, Phase::Activating, false)],
+        Some(&path(BUILT)),
+    );
     assert_eq!(converged.close, [(JobId(1), Outcome::Succeeded)]);
     assert_eq!(converged.running, None);
 
-    let diverged = Plan::reconcile(vec![running(1, Phase::Verifying, false)], Some(&path(OTHER)));
+    let diverged = Plan::reconcile(
+        vec![running(1, Phase::Verifying, false)],
+        Some(&path(OTHER)),
+    );
     assert_eq!(diverged.close, [(JobId(1), Outcome::Interrupted)]);
 }
 
@@ -60,7 +66,10 @@ fn a_stop_request_closes_a_dead_runner_as_requested() {
     job.stop = Some(StopRequest::Superseded { by: JobId(2) });
 
     let plan = Plan::reconcile(vec![job, queued(2)], None);
-    assert_eq!(plan.close, [(JobId(1), Outcome::Superseded { by: JobId(2) })]);
+    assert_eq!(
+        plan.close,
+        [(JobId(1), Outcome::Superseded { by: JobId(2) })]
+    );
     assert_eq!(plan.running, Some((JobId(2), Resume::Spawn)));
 }
 
@@ -73,5 +82,8 @@ fn only_the_newest_queued_job_survives() {
 
     assert_eq!(plan.running, Some((JobId(1), Resume::Follow)));
     assert_eq!(plan.next, Some(JobId(3)));
-    assert_eq!(plan.close, [(JobId(2), Outcome::Superseded { by: JobId(3) })]);
+    assert_eq!(
+        plan.close,
+        [(JobId(2), Outcome::Superseded { by: JobId(3) })]
+    );
 }

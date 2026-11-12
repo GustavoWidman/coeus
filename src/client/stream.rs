@@ -1,4 +1,4 @@
-use eyre::{Result, bail};
+use eyre::{Result, eyre};
 
 use crate::common::{
     model::{AttachFrame, JobId, JobSummary, MachineView, Outcome},
@@ -20,8 +20,8 @@ impl Views {
     pub async fn next(&mut self) -> Result<Option<MachineView>> {
         match self.stream.recv().await? {
             Some(Packet::MachineUpdate(update)) => Ok(Some(update.view)),
-            Some(Packet::Error(error)) => bail!("{}", error.message),
-            Some(other) => bail!("unexpected packet {:#06x} in a watch", other.kind()),
+            Some(Packet::Error(error)) => Err(eyre!("{}", error.message)),
+            Some(other) => Err(eyre!("unexpected packet {:#06x} in a watch", other.kind())),
             None => Ok(None),
         }
     }
@@ -41,7 +41,10 @@ pub enum AttachmentEvent {
         /// where a reconnect resumes
         end: u64,
     },
-    Ended { job: JobId, outcome: Outcome },
+    Ended {
+        job: JobId,
+        outcome: Outcome,
+    },
 }
 
 impl Attachment {
@@ -61,8 +64,13 @@ impl Attachment {
                 job: ended.job,
                 outcome: ended.outcome,
             },
-            Some(Packet::Error(error)) => bail!("{}", error.message),
-            Some(other) => bail!("unexpected packet {:#06x} in an attach", other.kind()),
+            Some(Packet::Error(error)) => return Err(eyre!("{}", error.message)),
+            Some(other) => {
+                return Err(eyre!(
+                    "unexpected packet {:#06x} in an attach",
+                    other.kind()
+                ));
+            }
             None => return Ok(None),
         }))
     }

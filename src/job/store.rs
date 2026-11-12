@@ -48,7 +48,11 @@ impl JobStore {
 
     /// removes the oldest finished jobs beyond `keep`
     pub fn prune(&self, keep: usize, finished: impl Fn(JobId) -> bool) -> Result<()> {
-        let finished: Vec<JobId> = self.list()?.into_iter().filter(|id| finished(*id)).collect();
+        let finished: Vec<JobId> = self
+            .list()?
+            .into_iter()
+            .filter(|id| finished(*id))
+            .collect();
 
         for id in finished.iter().take(finished.len().saturating_sub(keep)) {
             if let Err(error) = fs::remove_dir_all(self.dir(*id).path()) {

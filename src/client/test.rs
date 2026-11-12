@@ -33,9 +33,15 @@ fn select(expressions: &[&str]) -> eyre::Result<Vec<String>> {
 
 #[test]
 fn selects_names_groups_and_exclusions() {
-    assert_eq!(select(&["@all"]).unwrap(), ["altar", "lab", "oracle-1", "oracle-2"]);
+    assert_eq!(
+        select(&["@all"]).unwrap(),
+        ["altar", "lab", "oracle-1", "oracle-2"]
+    );
     assert_eq!(select(&["@server"]).unwrap(), ["oracle-1", "oracle-2"]);
-    assert_eq!(select(&["@nixos", "!oracle-2"]).unwrap(), ["lab", "oracle-1"]);
+    assert_eq!(
+        select(&["@nixos", "!oracle-2"]).unwrap(),
+        ["lab", "oracle-1"]
+    );
     assert_eq!(select(&["!@nixos"]).unwrap(), ["altar"]);
     assert_eq!(select(&["lab", "altar", "lab"]).unwrap(), ["lab", "altar"]);
 }

@@ -45,7 +45,8 @@ impl Follower {
     }
 
     pub fn due(&self) -> bool {
-        self.checked.is_none_or(|checked| checked.elapsed() >= self.settings.interval)
+        self.checked
+            .is_none_or(|checked| checked.elapsed() >= self.settings.interval)
     }
 
     pub async fn check(&mut self) {
@@ -59,7 +60,9 @@ impl Follower {
     /// the source to deploy to catch up, if the machine is behind
     pub fn behind(&self, deployed: Option<&Deployed<'_>>) -> Option<Source> {
         let latest = self.latest.as_ref()?;
-        self.holds(latest, deployed).not().then(|| latest.clone().into())
+        self.holds(latest, deployed)
+            .not()
+            .then(|| latest.clone().into())
     }
 
     pub fn state(&self, deployed: Option<&Deployed<'_>>) -> Follow {

@@ -75,7 +75,9 @@ impl Origin {
         match self {
             Self::GitHub {
                 repository, run_id, ..
-            } => Some(format!("https://github.com/{repository}/actions/runs/{run_id}")),
+            } => Some(format!(
+                "https://github.com/{repository}/actions/runs/{run_id}"
+            )),
             _ => None,
         }
     }

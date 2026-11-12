@@ -25,7 +25,11 @@ impl FromStr for JobId {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let digits = value.strip_prefix('#').unwrap_or(value);
-        Ok(Self(digits.parse().map_err(|_| eyre!("invalid job id: {value}"))?))
+        Ok(Self(
+            digits
+                .parse()
+                .map_err(|_| eyre!("invalid job id: {value}"))?,
+        ))
     }
 }
 
@@ -122,7 +126,8 @@ impl FromStr for CommitSha {
         let mut sha = [0u8; 20];
         for (byte, pair) in sha.iter_mut().zip(pairs) {
             let pair = std::str::from_utf8(pair)?;
-            *byte = u8::from_str_radix(pair, 16).map_err(|_| eyre!("invalid commit hash: {value}"))?;
+            *byte =
+                u8::from_str_radix(pair, 16).map_err(|_| eyre!("invalid commit hash: {value}"))?;
         }
 
         Ok(Self(sha))

@@ -38,7 +38,10 @@ fn now_preempts_only_before_activation() {
     lane.admit(JobId(1), false, None);
     let admitted = lane.admit(JobId(2), true, Some(Phase::Building));
     assert_eq!(admitted.preempt, Some(JobId(1)));
-    assert_eq!(admitted.placement, Placement::Preempted { replaced: JobId(1) });
+    assert_eq!(
+        admitted.placement,
+        Placement::Preempted { replaced: JobId(1) }
+    );
 
     let mut lane = Lane::Idle;
     lane.admit(JobId(1), false, None);
@@ -53,7 +56,11 @@ fn finishing_runs_the_waiting_job_and_withdrawing_drops_it() {
     lane.admit(JobId(1), false, None);
     lane.admit(JobId(2), false, Some(Phase::Building));
 
-    assert_eq!(lane.finish(JobId(9)), None, "only the running job can finish");
+    assert_eq!(
+        lane.finish(JobId(9)),
+        None,
+        "only the running job can finish"
+    );
     assert_eq!(lane.finish(JobId(1)), Some(JobId(2)));
     assert_eq!(lane.running(), Some(JobId(2)));
 

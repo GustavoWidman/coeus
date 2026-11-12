@@ -9,8 +9,12 @@ pub fn detect_origin() -> Origin {
         return Origin::GitHub {
             repository: var("GITHUB_REPOSITORY").unwrap_or_default(),
             workflow: var("GITHUB_WORKFLOW").unwrap_or_default(),
-            run_id: var("GITHUB_RUN_ID").and_then(|id| id.parse().ok()).unwrap_or_default(),
-            attempt: var("GITHUB_RUN_ATTEMPT").and_then(|id| id.parse().ok()).unwrap_or(1),
+            run_id: var("GITHUB_RUN_ID")
+                .and_then(|id| id.parse().ok())
+                .unwrap_or_default(),
+            attempt: var("GITHUB_RUN_ATTEMPT")
+                .and_then(|id| id.parse().ok())
+                .unwrap_or(1),
         };
     }
 
@@ -23,7 +27,9 @@ pub fn detect_origin() -> Origin {
         .to_owned();
 
     Origin::User {
-        user: var("USER").or_else(|| var("LOGNAME")).unwrap_or_else(|| "unknown".into()),
+        user: var("USER")
+            .or_else(|| var("LOGNAME"))
+            .unwrap_or_else(|| "unknown".into()),
         host,
     }
 }

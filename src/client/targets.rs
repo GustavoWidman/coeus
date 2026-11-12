@@ -12,7 +12,9 @@ pub struct Targets(Vec<Hostname>);
 impl Targets {
     pub fn select(expressions: &[String], settings: &ClientSettings) -> Result<Self> {
         let mut selected: Vec<Hostname> = Vec::new();
-        let only_exclusions = expressions.iter().all(|expression| expression.starts_with('!'));
+        let only_exclusions = expressions
+            .iter()
+            .all(|expression| expression.starts_with('!'));
 
         if only_exclusions {
             selected.extend(settings.hosts.keys().cloned());

@@ -98,7 +98,9 @@ impl KeySource {
         }
 
         match std::env::var(Self::ENV) {
-            Ok(value) => value.parse().wrap_err_with(|| format!("invalid {}", Self::ENV)),
+            Ok(value) => value
+                .parse()
+                .wrap_err_with(|| format!("invalid {}", Self::ENV)),
             Err(_) => Err(eyre!(
                 "no key configured: set `key`, `key_file` or {}",
                 Self::ENV

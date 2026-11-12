@@ -19,7 +19,7 @@ use super::{
 };
 use crate::{
     common::model::{
-        Action, Admission, CancelReport, DaemonState, FdaStatus, Failure, JobId, JobSelector,
+        Action, Admission, CancelReport, DaemonState, Failure, FdaStatus, JobId, JobSelector,
         JobState, JobSummary, MachineView, Order, OrderId, Origin, Outcome, Phase, Placement,
         Rejection, Source, SystemInfo, Timestamp,
     },
@@ -110,7 +110,10 @@ impl<H: Host> Actor<H> {
         }
 
         let repo = FlakeRepo::new(settings.flake.clone());
-        let follower = settings.follow.clone().map(|follow| Follower::new(repo, follow));
+        let follower = settings
+            .follow
+            .clone()
+            .map(|follow| Follower::new(repo, follow));
         let notifier = settings.notify.clone().map(Notifier::new);
         let next_id = store.next_id()?;
 
@@ -227,7 +230,8 @@ impl<H: Host> Actor<H> {
         };
 
         self.orders.push_front((spec.order.id, id));
-        self.orders.truncate(self.settings.history.max(Self::RECENT));
+        self.orders
+            .truncate(self.settings.history.max(Self::RECENT));
 
         let running_phase = self.running.as_ref().and_then(Running::phase);
         let admitted = self.lane.admit(id, now, running_phase);
@@ -283,7 +287,10 @@ impl<H: Host> Actor<H> {
             }
             Source::Generation(number) => {
                 let generations = self.host.generations().await.unwrap_or_default();
-                match generations.iter().any(|generation| generation.number == *number) {
+                match generations
+                    .iter()
+                    .any(|generation| generation.number == *number)
+                {
                     true => Ok(()),
                     false => Err(Rejection::UnknownGeneration(*number)),
                 }
@@ -382,8 +389,12 @@ impl<H: Host> Actor<H> {
 
         if let Err(error) = self.host.spawn_runner(&dir).await {
             error!("failed to start a runner for job {job}: {error}");
-            self.fail(job, Phase::Preparing, format!("cannot start a runner: {error}"))
-                .await;
+            self.fail(
+                job,
+                Phase::Preparing,
+                format!("cannot start a runner: {error}"),
+            )
+            .await;
         }
     }
 
@@ -550,7 +561,10 @@ impl<H: Host> Actor<H> {
 
         follower.check().await;
         let deployed = deployed(&self.recent, &self.facts);
-        let Some(source) = self.follower.as_ref().and_then(|follower| follower.behind(deployed.as_ref()))
+        let Some(source) = self
+            .follower
+            .as_ref()
+            .and_then(|follower| follower.behind(deployed.as_ref()))
         else {
             return;
         };
@@ -572,7 +586,10 @@ impl<H: Host> Actor<H> {
 
     /// exits into a newer coeusd once nothing runs
     fn upgrade_when_idle(&mut self) {
-        if self.lane != Lane::Idle || self.daemon == DaemonState::Restarting || !self.upgrade.stale() {
+        if self.lane != Lane::Idle
+            || self.daemon == DaemonState::Restarting
+            || !self.upgrade.stale()
+        {
             return;
         }
 
@@ -614,7 +631,13 @@ fn deployed<'a>(recent: &'a VecDeque<JobSummary>, facts: &SystemFacts) -> Option
     recent
         .iter()
         .filter(|job| job.action.activates() && job.toplevel.is_some())
-        .find(|job| job.toplevel == facts.current && matches!(job.state, JobState::Finished(Outcome::Succeeded | Outcome::UpToDate)))
+        .find(|job| {
+            job.toplevel == facts.current
+                && matches!(
+                    job.state,
+                    JobState::Finished(Outcome::Succeeded | Outcome::UpToDate)
+                )
+        })
         .map(|job| Deployed {
             source: &job.source,
             at: job.finished_at.unwrap_or(job.ordered_at),

@@ -11,6 +11,11 @@ pub struct DaemonCLIArgs {
     pub verbosity: LevelFilter,
 
     /// Path to the configuration file
-    #[arg(short, long, value_name = "FILE", default_value = "/etc/coeus/coeusd.toml")]
+    #[arg(
+        short,
+        long,
+        value_name = "FILE",
+        default_value = "/etc/coeus/coeusd.toml"
+    )]
     pub config: PathBuf,
 }

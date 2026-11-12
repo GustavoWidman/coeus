@@ -27,8 +27,14 @@ pub enum Link {
 
 #[derive(Debug)]
 pub enum FleetEvent {
-    Link { host: Hostname, link: Link },
-    View { host: Hostname, view: Box<MachineView> },
+    Link {
+        host: Hostname,
+        link: Link,
+    },
+    View {
+        host: Hostname,
+        view: Box<MachineView>,
+    },
 }
 
 impl Fleet {
@@ -124,7 +130,11 @@ impl Fleet {
                     }
                 }
                 Err(error) => {
-                    if events.send(link(Link::Unreachable(error.to_string()))).await.is_err() {
+                    if events
+                        .send(link(Link::Unreachable(error.to_string())))
+                        .await
+                        .is_err()
+                    {
                         return;
                     }
                 }
