@@ -154,19 +154,16 @@ async fn seal(
 ) -> Result<usize> {
     let clone = enrolled.branch.clone_dir();
     let plan = secrets::plan(clone, rules)?;
-    let unreadable: Vec<String> = plan
+    let unreadable: Vec<(RepoPath, String)> = plan
         .files
         .iter()
         .filter_map(|file| match &file.verdict {
-            Verdict::Unreadable(why) => Some(format!("{} ({why})", file.path)),
+            Verdict::Unreadable(why) => Some((file.path.clone(), why.clone())),
             _ => None,
         })
         .collect();
     if !unreadable.is_empty() {
-        bail!(
-            "coeus cannot read who these are encrypted to: {}",
-            unreadable.join(", ")
-        );
+        return Err(Blocker::Unreadable { files: unreadable }.into());
     }
     let stale = plan.stale().count();
     if stale == 0 {

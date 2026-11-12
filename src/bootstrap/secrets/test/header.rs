@@ -25,7 +25,7 @@ fn a_header_names_each_ssh_recipient_by_its_tag() {
             let expected: Vec<String> = wanted.iter().map(|key| key.age_tag()).collect();
             assert_eq!(tags(&header), expected);
             // age adds one grease stanza to every file it writes
-            assert!(header.stanzas.contains(&Stanza::Other), "{header:?}");
+            assert!(header.stanzas.contains(&Stanza::Grease), "{header:?}");
         }
     }
 }
@@ -138,4 +138,39 @@ fn what_is_not_an_age_header_is_refused() {
         .position(|window| window == b"\n---")
         .unwrap();
     assert!(Header::from_reader(&file[..end]).is_err());
+}
+
+/// `file` with a stanza of `kind` put before its `---` line
+fn with_stanza(file: &[u8], kind: &str) -> Vec<u8> {
+    let end = file
+        .windows(4)
+        .position(|window| window == b"\n---")
+        .unwrap();
+    let mut changed = file[..=end].to_vec();
+    changed.extend_from_slice(format!("-> {kind} c29tZQ\nYm9keQ\n").as_bytes());
+    changed.extend_from_slice(&file[end + 1..]);
+    changed
+}
+
+#[test]
+fn a_recipient_coeus_does_not_know_makes_the_file_unreadable() {
+    let (_, a) = keypair("a");
+    let file = seal(b"secret", &[&a], &[], false);
+    for kind in ["piv-p256", "scrypt", "age-plugin-tpm"] {
+        let header = Header::from_reader(&with_stanza(&file, kind)[..]).unwrap();
+
+        let Verdict::Unreadable(why) = header.verdict(std::slice::from_ref(&a)) else {
+            panic!("{kind}: {header:?}");
+        };
+        assert!(why.contains(kind), "{why}");
+    }
+}
+
+#[test]
+fn grease_is_not_a_recipient() {
+    let (_, a) = keypair("a");
+    let file = with_stanza(&seal(b"secret", &[&a], &[], false), "x7)-grease");
+    let header = Header::from_reader(&file[..]).unwrap();
+
+    assert_eq!(header.verdict(std::slice::from_ref(&a)), Verdict::Current);
 }

@@ -98,6 +98,9 @@ pub enum Blocker {
     /// this machine's identity is not among these secrets' recipients, so it
     /// is not an admin of the fleet
     NotAdmin { files: Vec<RepoPath> },
+    /// secrets whose recipients coeus cannot tell, with why: a rekey would
+    /// lose a recipient it does not know
+    Unreadable { files: Vec<(RepoPath, String)> },
     /// a file the enrollment adds is on the default branch already: the
     /// machine is enrolled there
     Enrolled { files: Vec<RepoPath> },
@@ -130,6 +133,10 @@ impl fmt::Display for Blocker {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NotAdmin { .. } => f.write_str("this machine is not an admin of the fleet"),
+            Self::Unreadable { files } => match files.as_slice() {
+                [(one, _)] => write!(f, "coeus cannot tell who opens {one}"),
+                files => write!(f, "coeus cannot tell who opens {} secrets", files.len()),
+            },
             Self::Enrolled { .. } => f.write_str("the machine is enrolled on the default branch"),
             Self::Uncommitted { .. } => f.write_str("the clone has uncommitted changes"),
             Self::Conflict { .. } => f.write_str("the rebase stopped on a conflict"),

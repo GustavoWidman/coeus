@@ -142,6 +142,22 @@ fn blocks_say_what_a_person_must_do() {
     assert_eq!(lines[6], "    … and 2 more");
 
     let lines = said(&Finale::Blocked {
+        at: Step::Rekey,
+        blocker: Blocker::Unreadable {
+            files: vec![(
+                "secrets/yubi.age".parse().unwrap(),
+                "it is also encrypted to a piv-p256 recipient, which coeus cannot keep".into(),
+            )],
+        },
+    });
+    assert_eq!(
+        lines[0],
+        "[⚠] coeus cannot rekey 1 secret without losing a recipient it does not know"
+    );
+    assert!(lines[1].contains("secrets/yubi.age: it is also encrypted to a piv-p256"));
+    assert!(lines[2].contains("leave them out"), "{lines:?}");
+
+    let lines = said(&Finale::Blocked {
         at: Step::Enroll,
         blocker: Blocker::Unanswered { id: "type".into() },
     });

@@ -7,6 +7,8 @@
 //! -> X25519 <share>
 //! <body>
 //! -> 8d-grease …                    random stanzas age adds; not recipients
+//! -> piv-p256 …                     a plugin's recipient, which coeus can
+//!                                    neither name nor encrypt to
 //! --- <mac>
 //! <payload>
 //! ```
@@ -46,8 +48,11 @@ pub enum Stanza {
     Ssh { tag: String },
     /// X25519 names nobody: only how many there are can be compared
     X25519,
-    /// grease, and stanza types coeus does not know
-    Other,
+    /// `<anything>-grease`, random stanzas age adds: not recipients
+    Grease,
+    /// a recipient coeus does not know, such as a plugin's or a passphrase:
+    /// it cannot tell who it is, nor rekey the file without losing it
+    Unknown { kind: String },
 }
 
 /// how a file stands against its recipients
@@ -84,8 +89,18 @@ impl Header {
     }
 
     /// against the recipients the contract gives. duplicates on either side
-    /// collapse, since `[ host ] ++ admins` may name a key twice
+    /// collapse, since `[ host ] ++ admins` may name a key twice. a file also
+    /// encrypted to a recipient coeus does not know is unreadable: it can be
+    /// neither judged current nor rewritten without that recipient
     pub fn verdict(&self, recipients: &[SshKey]) -> Verdict {
+        if let Some(kind) = self.stanzas.iter().find_map(|stanza| match stanza {
+            Stanza::Unknown { kind } => Some(kind),
+            _ => None,
+        }) {
+            return Verdict::Unreadable(format!(
+                "it is also encrypted to a {kind} recipient, which coeus cannot keep"
+            ));
+        }
         let wanted: BTreeSet<String> = recipients.iter().map(SshKey::age_tag).collect();
         let named = self.tags();
         let x25519 = self
@@ -114,7 +129,7 @@ impl Header {
             .iter()
             .filter_map(|stanza| match stanza {
                 Stanza::Ssh { tag } => Some(tag.clone()),
-                Stanza::X25519 | Stanza::Other => None,
+                Stanza::X25519 | Stanza::Grease | Stanza::Unknown { .. } => None,
             })
             .collect()
     }
@@ -169,7 +184,10 @@ impl Stanza {
                 }
             }
             Some("X25519") => Self::X25519,
-            _ => Self::Other,
+            Some(kind) if kind.ends_with("-grease") => Self::Grease,
+            kind => Self::Unknown {
+                kind: kind.unwrap_or_default().to_owned(),
+            },
         })
     }
 }
