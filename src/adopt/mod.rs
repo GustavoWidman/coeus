@@ -20,6 +20,7 @@ use std::{fs, os::unix::fs::DirBuilderExt, path::PathBuf};
 
 use eyre::{Result, WrapErr, eyre};
 use log::{info, warn};
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 use self::admit::{Admitted, Revival};
 use crate::{
@@ -59,32 +60,10 @@ pub async fn run(args: &AdoptArgs) -> Result<i32> {
 
     let request = Request::parse(args)?;
     let settings = settings::of(&request.source, &request.hostname).await?;
-    if settings::listening(settings.listen).await {
-        let port = settings.listen.port();
-        eprintln!("coeusd already serves on port {port}: order through it");
-        return Ok(DAEMON_HERE);
-    }
-
-    if request.lacks_full_disk_access(&settings).await? {
-        eprintln!(
-            "{} needs Full Disk Access before its first activation",
-            settings.launcher.display()
-        );
-        return Ok(NEEDS_FULL_DISK_ACCESS);
-    }
-
-    let dir = request.admit(&settings).await?;
-    let mut stdout = tokio::io::stdout();
-    match request.follow {
-        Some(from) => {
-            follow::stream(&dir, from, &mut stdout).await?;
-        }
-        None => {
-            let summary = dir.view().await?.summary;
-            println!("@job {}", serde_json::to_string(&summary)?);
-        }
-    }
-    Ok(0)
+    let daemon_here = settings::listening(settings.listen).await;
+    request
+        .carry_out(&settings, daemon_here, &mut tokio::io::stdout())
+        .await
 }
 
 /// adopt's flags, all present
@@ -99,6 +78,52 @@ struct Request {
 }
 
 impl Request {
+    /// reports the order's job, admitting it first unless a coeusd serves
+    /// here. a job admitted before that coeusd came up is its own now, and
+    /// is only followed, so a coeusd that answers nobody over the tailnet
+    /// still lets the switch it carries out be seen to its end.
+    async fn carry_out<W: AsyncWrite + Unpin>(
+        &self,
+        settings: &DaemonSettings,
+        daemon_here: bool,
+        out: &mut W,
+    ) -> Result<i32> {
+        let dir = match daemon_here {
+            true => {
+                let found = JobStore::open(&settings.state_dir)?.find(self.order)?;
+                let Some(dir) = found else {
+                    let port = settings.listen.port();
+                    eprintln!("coeusd already serves on port {port}: order through it");
+                    return Ok(DAEMON_HERE);
+                };
+                dir
+            }
+            false => {
+                if self.lacks_full_disk_access(settings).await? {
+                    eprintln!(
+                        "{} needs Full Disk Access before its first activation",
+                        settings.launcher.display()
+                    );
+                    return Ok(NEEDS_FULL_DISK_ACCESS);
+                }
+                self.admit(settings).await?
+            }
+        };
+
+        match self.follow {
+            Some(from) => {
+                follow::stream(&dir, from, out).await?;
+            }
+            None => {
+                let summary = dir.view().await?.summary;
+                let line = format!("@job {}\n", serde_json::to_string(&summary)?);
+                out.write_all(line.as_bytes()).await?;
+                out.flush().await?;
+            }
+        }
+        Ok(0)
+    }
+
     fn parse(args: &AdoptArgs) -> Result<Self> {
         let missing = |flag: &str| eyre!("--{flag} is required");
         Ok(Self {
