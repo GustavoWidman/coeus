@@ -4,8 +4,9 @@ use clap::{ArgAction, Parser, Subcommand};
 use log::LevelFilter;
 
 use super::commands::{
-    AttachArgs, CancelArgs, CompletionsArgs, DeployArgs, DoctorArgs, GenerationsArgs, HistoryArgs,
-    LogsArgs, RebootArgs, RollbackArgs, StatusArgs, TopArgs, WatchArgs,
+    AttachArgs, BootstrapArgs, CancelArgs, CompletionsArgs, DeployArgs, DoctorArgs,
+    GenerationsArgs, HistoryArgs, LogsArgs, RebootArgs, RollbackArgs, StatusArgs, TopArgs,
+    WatchArgs,
 };
 
 #[derive(Parser, Debug)]
@@ -52,6 +53,8 @@ pub enum Command {
     Generations(GenerationsArgs),
     /// Reboot a machine
     Reboot(RebootArgs),
+    /// Bring a machine that runs NixOS, or a Mac, into the fleet
+    Bootstrap(BootstrapArgs),
     /// Check machines for problems and say how to fix them
     Doctor(DoctorArgs),
     /// Generate a new fleet key
