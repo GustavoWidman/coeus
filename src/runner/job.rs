@@ -334,7 +334,7 @@ impl Runner {
 
     /// ends the log and leaves the summary history reads instead of it
     async fn finish(self, outcome: Outcome) -> Result<()> {
-        info!("job {} finished: {outcome:?}", self.dir.id());
+        info!("job {} finished: {outcome}", self.dir.id());
         self.writer.finish(outcome)?;
 
         let view = self.dir.view().await?;

@@ -62,6 +62,23 @@ fn sources_read_like_refs() {
 }
 
 #[test]
+fn outcomes_read_as_words_with_why_they_failed() {
+    assert_eq!(Outcome::Succeeded.to_string(), "succeeded");
+    assert_eq!(
+        Outcome::Superseded { by: JobId(12) }.to_string(),
+        "superseded by #12"
+    );
+    assert_eq!(
+        Outcome::Failed(Failure::new(Phase::Fetching, "cannot reach github.com")).to_string(),
+        "failed while fetching: cannot reach github.com"
+    );
+    assert_eq!(
+        Outcome::RolledBack(Failure::new(Phase::Verifying, "coeusd unreachable")).to_string(),
+        "rolled back after verifying: coeusd unreachable"
+    );
+}
+
+#[test]
 fn only_phases_before_activation_are_cancellable() {
     assert!(Phase::Building.is_cancellable());
     assert!(!Phase::Activating.is_cancellable());

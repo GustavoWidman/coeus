@@ -103,6 +103,25 @@ impl Outcome {
     }
 }
 
+/// `succeeded`, `superseded by #12`, `failed while fetching: …`
+impl fmt::Display for Outcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Succeeded => f.write_str("succeeded"),
+            Self::UpToDate => f.write_str("up to date"),
+            Self::Failed(failure) => {
+                write!(f, "failed while {}: {}", failure.phase, failure.message)
+            }
+            Self::Cancelled => f.write_str("cancelled"),
+            Self::Superseded { by } => write!(f, "superseded by {by}"),
+            Self::Interrupted => f.write_str("interrupted"),
+            Self::RolledBack(failure) => {
+                write!(f, "rolled back after {}: {}", failure.phase, failure.message)
+            }
+        }
+    }
+}
+
 /// why a job failed, with the end of the output that explains it
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Failure {

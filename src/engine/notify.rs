@@ -25,12 +25,7 @@ impl Notifier {
             return;
         }
 
-        let verdict = match outcome.failure() {
-            Some(failure) => format!("failed {}: {}", failure.phase, failure.message),
-            None if outcome.is_success() => "succeeded".to_owned(),
-            None => format!("{outcome:?}").to_lowercase(),
-        };
-        let title = format!("{host} {} {verdict}", job.id);
+        let title = format!("{host} {} {outcome}", job.id);
         let body = format!("{} {} ordered by {}", job.action, job.source, job.origin);
         let priority = match outcome.is_success() {
             true => "default",
