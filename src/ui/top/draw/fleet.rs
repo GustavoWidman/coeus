@@ -18,9 +18,12 @@ use crate::{
     },
 };
 
-/// columns of the fleet pane, sized once for every machine
+/// columns of the fleet pane, sized once for every machine shown. the gauge
+/// and clock columns only appear while some machine fills them.
 struct Columns {
     host: usize,
+    gauge: bool,
+    clock: bool,
 }
 
 impl Columns {
@@ -35,8 +38,8 @@ pub fn draw(frame: &mut Frame<'_>, area: Rect, top: &Top, now: Timestamp) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let rows: Vec<_> = top.visible().collect();
-    if rows.is_empty() {
+    let entries: Vec<_> = top.visible().map(|row| Entry::of(row, now)).collect();
+    if entries.is_empty() {
         let line = quiet(format!("no machine matches /{}", top.filter));
         frame.render_widget(Paragraph::new(text(&[line], inner.width)), inner);
         return;
@@ -51,20 +54,22 @@ pub fn draw(frame: &mut Frame<'_>, area: Rect, top: &Top, now: Timestamp) {
             .max()
             .unwrap_or(0)
             .min(20),
+        gauge: entries.iter().any(|entry| entry.gauge.is_some()),
+        clock: entries.iter().any(|entry| entry.clock.is_some()),
     };
     let width = usize::from(inner.width);
     let height = usize::from(inner.height);
     let selected = top.selected_index();
     let offset = selected.map_or(0, |at| at.saturating_sub(height.saturating_sub(1)));
 
-    let lines = rows
+    let lines = entries
         .iter()
         .enumerate()
         .skip(offset)
         .take(height)
-        .map(|(at, row)| {
+        .map(|(at, entry)| {
             let chosen = Some(at) == selected;
-            let line = columns.line(&Entry::of(row, now), chosen, now);
+            let line = columns.line(entry, chosen, now);
             let line = ansi::line(&pad(&fit(&line, width), width));
             match chosen {
                 true => line.style(Style::new().bg(Columns::SELECTED)),
@@ -85,35 +90,32 @@ impl Columns {
         let host = Theme::host(&fit(entry.row.host.as_str(), self.host)).to_string();
         let label = fit(&label(entry).to_string(), Self::LABEL).into_owned();
 
-        let gauge = match entry.gauge {
-            Some(fraction) => format!(
-                "{} {}",
-                Theme::bar(fraction, Self::BAR),
-                pad_left(&format::percent(fraction), 4).bold()
-            ),
-            None => String::new(),
-        };
-        let clock = entry.clock.as_deref().unwrap_or_default();
-        let clock = match entry.status {
-            Status::Running(_) => pad_left(clock, Self::CLOCK),
-            _ => pad_left(clock, Self::CLOCK).dimmed().to_string(),
-        };
-        let badges = entry
-            .badges
-            .iter()
-            .map(|badge| badge.label().to_string())
-            .collect::<Vec<_>>()
-            .join("  ");
+        let glyph = entry.row.glyph(entry.status, now);
+        let mut cells = vec![pad(&host, self.host), pad(&label, Self::LABEL)];
 
-        format!(
-            "{mark}{} {}  {}  {}  {clock}  {badges}",
-            entry.row.glyph(entry.status, now),
-            pad(&host, self.host),
-            pad(&label, Self::LABEL),
-            pad(&gauge, Self::BAR + 5),
-        )
-        .trim_end()
-        .to_owned()
+        if self.gauge {
+            let gauge = match entry.gauge {
+                Some(fraction) => format!(
+                    "{} {}",
+                    Theme::bar(fraction, Self::BAR),
+                    pad_left(&format::percent(fraction), 4).bold()
+                ),
+                None => String::new(),
+            };
+            cells.push(pad(&gauge, Self::BAR + 5));
+        }
+        if self.clock {
+            let clock = pad_left(entry.clock.as_deref().unwrap_or_default(), Self::CLOCK);
+            cells.push(match entry.status {
+                Status::Running(_) => clock,
+                _ => clock.dimmed().to_string(),
+            });
+        }
+        cells.extend(entry.badges.iter().map(|badge| badge.label().to_string()));
+
+        format!("{mark}{glyph} {}", cells.join("  "))
+            .trim_end()
+            .to_owned()
     }
 }
 
