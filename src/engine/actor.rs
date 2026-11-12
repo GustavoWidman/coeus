@@ -466,7 +466,7 @@ impl<H: Host> Actor<H> {
 
     async fn resume(&mut self, plan: Plan) -> Result<()> {
         for (job, outcome) in plan.close {
-            info!("closing job {job} left unfinished: {outcome:?}");
+            info!("closing job {job} left unfinished: {outcome}");
             self.close(job, outcome);
         }
 
@@ -550,7 +550,10 @@ impl<H: Host> Actor<H> {
             warn!("failed to record the summary of job {job}: {error}");
         }
 
-        info!("job {job} finished: {:?}", running.outcome());
+        match running.outcome() {
+            Some(outcome) => info!("job {job} finished: {outcome}"),
+            None => info!("job {job} finished"),
+        }
         self.remember(running.view.summary);
         self.after(job).await;
         Ok(())

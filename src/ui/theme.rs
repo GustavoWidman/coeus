@@ -34,13 +34,9 @@ impl Theme {
     /// `succeeded`, `failed`, `superseded by #12`, ...
     pub fn outcome_label(outcome: &Outcome) -> String {
         match outcome {
-            Outcome::Succeeded => "succeeded".into(),
-            Outcome::UpToDate => "up to date".into(),
             Outcome::Failed(_) => "failed".into(),
-            Outcome::Cancelled => "cancelled".into(),
-            Outcome::Superseded { by } => format!("superseded by {by}"),
-            Outcome::Interrupted => "interrupted".into(),
             Outcome::RolledBack(_) => "rolled back".into(),
+            outcome => outcome.to_string(),
         }
     }
 
