@@ -88,19 +88,28 @@ mv "$file.coeus" "$file"
 "#;
 
 /// nix-darwin refuses to replace an `/etc` file it does not know, and asks
-/// for exactly this rename. a copy already aside with the same content is
-/// the same move done before.
+/// for exactly this rename. a copy already aside keeps its name, since it may
+/// be the machine's original (macOS images ship one, and the Nix installer
+/// then writes its own file): a different file goes to the next free
+/// `.before-nix-darwin.<n>`, and one equal to a copy aside is that move done
+/// before. nothing is deleted that is not kept somewhere aside.
 const MOVE_ETC_ASIDE: &str = r#"set -eu
 for file in /etc/bashrc /etc/zshrc /etc/zprofile; do
   [ -e "$file" ] || continue
   case "$(readlink "$file" || true)" in /etc/static/*) continue ;; esac
   aside="$file.before-nix-darwin"
-  if [ -e "$aside" ]; then
-    cmp -s "$file" "$aside" || { echo "$file and $aside both exist and differ" >&2; exit 1; }
-    rm "$file"
-  else
-    mv "$file" "$aside"
-  fi
+  target=$aside
+  n=0
+  while [ -e "$target" ]; do
+    if cmp -s "$file" "$target"; then
+      rm "$file"
+      target=
+      break
+    fi
+    n=$((n + 1))
+    target="$aside.$n"
+  done
+  [ -z "$target" ] || mv "$file" "$target"
   echo "$file"
 done
 "#;
