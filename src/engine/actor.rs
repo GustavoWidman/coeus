@@ -25,7 +25,7 @@ use crate::{
         Rejection, Source, SystemInfo, Timestamp,
     },
     config::DaemonSettings,
-    job::{Guard, JobSpec, JobStore, StopRequest, Target},
+    job::{JobSpec, JobStore, StopRequest},
     nix::FlakeRepo,
 };
 
@@ -241,7 +241,7 @@ impl<H: Host> Actor<H> {
         let id = self.next_id;
         self.next_id = id.next();
 
-        let spec = self.spec(id, order);
+        let spec = JobSpec::admit(id, order, self.host.info(), &self.settings);
         let now = spec.order.now;
         let dir = match self.store.create(&spec) {
             Ok(dir) => dir,
@@ -318,27 +318,6 @@ impl<H: Host> Actor<H> {
                 Err(Rejection::InvalidRef(git_ref.clone()))
             }
             Source::Git { .. } => Ok(()),
-        }
-    }
-
-    fn spec(&self, id: JobId, order: Order) -> JobSpec {
-        JobSpec {
-            id,
-            order,
-            ordered_at: Timestamp::now(),
-            target: Target {
-                hostname: self.host.info().hostname.clone(),
-                platform: self.host.info().platform,
-                flake: self.settings.flake.clone(),
-                sources: self.sources(),
-            },
-            ssh_key_file: self.settings.ssh_key_file.clone(),
-            guard: self.settings.guard.enable.then(|| Guard {
-                timeout: self.settings.guard.timeout,
-                daemon_port: self.settings.listen.port(),
-                tailscale: self.settings.guard.tailscale,
-            }),
-            install_bootloader: false,
         }
     }
 
@@ -439,19 +418,7 @@ impl<H: Host> Actor<H> {
 
     /// records an outcome for a job no runner holds
     fn close(&mut self, job: JobId, outcome: Outcome) {
-        let dir = self.store.dir(job);
-        let result = (|| -> Result<JobSummary> {
-            let Some(writer) = dir.log().writer()? else {
-                eyre::bail!("a runner still holds it");
-            };
-            let finished = writer.finish(outcome)?;
-            let mut view = dir.queued()?;
-            view.apply(&finished);
-            dir.write_summary(&view.summary)?;
-            Ok(view.summary)
-        })();
-
-        match result {
+        match self.store.dir(job).close(outcome) {
             Ok(summary) => self.remember(summary),
             Err(error) => error!("failed to close job {job}: {error}"),
         }

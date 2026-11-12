@@ -5,11 +5,11 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use eyre::{Result, WrapErr, eyre};
+use eyre::{Result, WrapErr, bail, eyre};
 use serde::{Serialize, de::DeserializeOwned};
 
 use super::{JobLog, JobSpec, StopRequest};
-use crate::common::model::{JobId, JobState, JobSummary, JobView};
+use crate::common::model::{JobId, JobState, JobSummary, JobView, Outcome};
 
 /// one job's directory, the only record of the job:
 ///
@@ -61,8 +61,9 @@ impl JobDir {
             .wrap_err_with(|| format!("job {} has no readable spec", self.id))
     }
 
-    pub(super) fn write_spec(&self, spec: &JobSpec) -> Result<()> {
-        write_json(&self.path.join("spec.json"), spec)
+    /// writes the spec of a job whose directory is not yet in place
+    pub(super) fn write_spec(path: &Path, spec: &JobSpec) -> Result<()> {
+        write_json(&path.join("spec.json"), spec)
     }
 
     pub fn stop_request(&self) -> Result<Option<StopRequest>> {
@@ -79,6 +80,19 @@ impl JobDir {
 
     pub fn write_summary(&self, summary: &JobSummary) -> Result<()> {
         write_json(&self.path.join("summary.json"), summary)
+    }
+
+    /// records `outcome` for a job no runner holds, as its last event and
+    /// its summary
+    pub fn close(&self, outcome: Outcome) -> Result<JobSummary> {
+        let Some(writer) = self.log().writer()? else {
+            bail!("a runner still holds job {}", self.id);
+        };
+        let finished = writer.finish(outcome)?;
+        let mut view = self.queued()?;
+        view.apply(&finished);
+        self.write_summary(&view.summary)?;
+        Ok(view.summary)
     }
 
     /// the job as its spec describes it, before any runner touched it

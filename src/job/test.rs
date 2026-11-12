@@ -51,6 +51,49 @@ fn numbers_jobs_in_order_and_prunes_the_oldest_finished() {
 }
 
 #[test]
+fn a_created_job_is_in_place_with_its_spec_and_never_replaced() {
+    let (state, store) = store();
+    let dir = store.create(&spec(1)).unwrap();
+    assert_eq!(dir.spec().unwrap(), spec(1));
+
+    let mut other = spec(1);
+    other.order.id = OrderId(99);
+    assert!(store.create(&other).is_err());
+    assert_eq!(dir.spec().unwrap(), spec(1));
+
+    let names: Vec<String> = std::fs::read_dir(state.path().join("jobs"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    assert_eq!(names, ["000001"], "no staging directory is left behind");
+}
+
+#[test]
+fn finds_a_job_by_its_order() {
+    let (_state, store) = store();
+    for id in 1..=3 {
+        store.create(&spec(id)).unwrap();
+    }
+
+    assert_eq!(store.find(OrderId(2)).unwrap().unwrap().id(), JobId(2));
+    assert!(store.find(OrderId(7)).unwrap().is_none());
+}
+
+#[tokio::test]
+async fn closing_a_job_records_its_outcome_unless_a_runner_holds_it() {
+    let (_state, store) = store();
+    let dir = store.create(&spec(1)).unwrap();
+
+    let writer = dir.log().writer().unwrap().unwrap();
+    assert!(dir.close(Outcome::Interrupted).is_err());
+    drop(writer);
+
+    let summary = dir.close(Outcome::Interrupted).unwrap();
+    assert_eq!(summary.state, JobState::Finished(Outcome::Interrupted));
+    assert_eq!(dir.summary().unwrap(), Some(summary));
+}
+
+#[test]
 fn a_log_has_one_writer_at_a_time() {
     let (_state, store) = store();
     let log = store.create(&spec(1)).unwrap().log();
