@@ -1,16 +1,15 @@
-use std::{
-    io::{ErrorKind, Write},
-    process::Stdio,
-    time::Duration,
-};
+mod sink;
+mod terminal;
+
+use std::time::Duration;
 
 use eyre::Result;
 use tokio::{
-    io::AsyncWriteExt,
-    process::{Child, ChildStdin, Command},
+    signal::unix::{Signal, SignalKind, signal},
     time::{sleep, timeout},
 };
 
+use self::sink::Sink;
 use crate::{
     client::{AttachmentEvent, Fleet},
     common::model::{
@@ -22,8 +21,10 @@ use crate::{
 /// how an attach shows the job's log
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
-    /// nix-output-monitor's live build view, coeus events in between
-    Nom,
+    /// on a terminal, nix-output-monitor's build view with coeus events in
+    /// between, drawn on the machine at this terminal's size; elsewhere, or
+    /// when the machine cannot draw, the transcript
+    Live,
     /// nix's internal-json lines on stdout, for piping
     Raw,
     /// readable lines: events and nix messages
@@ -69,10 +70,18 @@ impl Attach<'_> {
         let mut failures = 0usize;
         let interrupt = tokio::signal::ctrl_c();
         tokio::pin!(interrupt);
+        let mut resizes = match self.mode {
+            Mode::Live => Some(signal(SignalKind::window_change())?),
+            _ => None,
+        };
 
         loop {
+            let terminal = match self.mode {
+                Mode::Live => terminal::size(),
+                _ => None,
+            };
             let attachment = match self.fleet.connect(self.host).await {
-                Ok(client) => client.attach(self.job, from, None).await,
+                Ok(client) => client.attach(self.job, from, terminal).await,
                 Err(error) => Err(error),
             };
             let mut attachment = match attachment {
@@ -96,7 +105,7 @@ impl Attach<'_> {
                 let event = tokio::select! {
                     _ = &mut interrupt => {
                         if let Some(sink) = sink.take() {
-                            sink.close().await?;
+                            sink.close()?;
                         }
                         if let Some(seen) = &seen {
                             eprintln!(
@@ -106,14 +115,25 @@ impl Attach<'_> {
                         }
                         return Ok(seen);
                     }
-                    event = next => event,
+                    _ = resized(&mut resizes) => None,
+                    event = next => Some(event),
+                };
+
+                let Some(event) = event else {
+                    if let (Some(size), true) =
+                        (terminal::size(), sink.as_ref().is_some_and(Sink::draws))
+                    {
+                        // a lost connection shows on the next read
+                        let _ = attachment.resize(size).await;
+                    }
+                    continue;
                 };
 
                 match event {
                     Ok(Some(AttachmentEvent::Started(job))) => {
                         if sink.is_none() {
                             self.header(&job);
-                            sink = Some(Sink::open(self.mode).await?);
+                            sink = Some(Sink::open(self.mode, terminal.is_some()));
                         }
                         self.job = JobSelector::Id(job.id);
                         seen.get_or_insert(Attached {
@@ -125,21 +145,26 @@ impl Attach<'_> {
                     Ok(Some(AttachmentEvent::Frames { frames, end })) => {
                         failures = 0;
                         from = end;
-                        for frame in &frames {
-                            if let (AttachFrame::Event(stamped), Some(seen)) =
-                                (frame, seen.as_mut())
-                            {
-                                seen.track(&stamped.event, stamped.at);
-                            }
-                            if let Some(sink) = sink.as_mut() {
-                                sink.frame(frame).await?;
+                        if let Some(seen) = seen.as_mut() {
+                            for frame in &frames {
+                                if let AttachFrame::Event(stamped) = frame {
+                                    seen.track(&stamped.event, stamped.at);
+                                }
                             }
                         }
+                        if let Some(sink) = sink.as_mut() {
+                            sink.frames(&frames)?;
+                        }
                     }
-                    Ok(Some(AttachmentEvent::Screen(_))) => {}
+                    Ok(Some(AttachmentEvent::Screen(bytes))) => {
+                        failures = 0;
+                        if let Some(sink) = sink.as_mut() {
+                            sink.screen(&bytes)?;
+                        }
+                    }
                     Ok(Some(AttachmentEvent::Ended { outcome, .. })) => {
                         if let Some(sink) = sink.take() {
-                            sink.close().await?;
+                            sink.close()?;
                         }
                         let Some(mut seen) = seen else {
                             return Ok(None);
@@ -150,7 +175,7 @@ impl Attach<'_> {
                     }
                     Ok(None) if self.idle.is_some() => {
                         if let Some(sink) = sink.take() {
-                            sink.close().await?;
+                            sink.close()?;
                         }
                         return Ok(seen);
                     }
@@ -159,8 +184,7 @@ impl Attach<'_> {
                             sink.line(&say::warn(format!(
                                 "lost the connection to {}, reconnecting",
                                 self.host
-                            )))
-                            .await?;
+                            )))?;
                         }
                         break;
                     }
@@ -225,88 +249,12 @@ impl Attached {
     }
 }
 
-/// where an attach writes the log
-enum Sink {
-    Nom { child: Child, stdin: ChildStdin },
-    Raw,
-    Transcript,
-    Silent,
-}
-
-impl Sink {
-    async fn open(mode: Mode) -> Result<Self> {
-        Ok(match mode {
-            Mode::Nom => match Self::nom() {
-                Ok(sink) => sink,
-                Err(error) if error.kind() == ErrorKind::NotFound => {
-                    println!(
-                        "{}",
-                        say::warn("nom is not installed, showing the plain transcript instead")
-                    );
-                    Self::Transcript
-                }
-                Err(error) => return Err(error.into()),
-            },
-            Mode::Raw => Self::Raw,
-            Mode::Transcript => Self::Transcript,
-            Mode::Silent => Self::Silent,
-        })
-    }
-
-    fn nom() -> std::io::Result<Self> {
-        let mut child = Command::new("nom")
-            .arg("--json")
-            .stdin(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()?;
-        let stdin = child.stdin.take().expect("nom's stdin is piped");
-        Ok(Self::Nom { child, stdin })
-    }
-
-    async fn frame(&mut self, frame: &AttachFrame) -> Result<()> {
-        match (self, frame) {
-            (Self::Nom { stdin, .. }, AttachFrame::Nix(bytes)) => stdin.write_all(bytes).await?,
-            (Self::Nom { stdin, .. }, AttachFrame::Event(stamped)) => {
-                if let Some(line) = journal::event(stamped) {
-                    stdin.write_all(format!("{line}\n").as_bytes()).await?;
-                }
-            }
-            (Self::Raw, AttachFrame::Nix(bytes)) => std::io::stdout().lock().write_all(bytes)?,
-            (Self::Raw, AttachFrame::Event(stamped)) => {
-                if let Some(line) = journal::event(stamped) {
-                    eprintln!("{line}");
-                }
-            }
-            (Self::Transcript, frame) => {
-                for line in journal::frame(frame) {
-                    println!("{line}");
-                }
-            }
-            (Self::Silent, _) => {}
+/// the terminal's next resize, never without a terminal to follow
+async fn resized(resizes: &mut Option<Signal>) {
+    match resizes {
+        Some(resizes) => {
+            resizes.recv().await;
         }
-        Ok(())
-    }
-
-    async fn line(&mut self, text: &str) -> Result<()> {
-        match self {
-            Self::Nom { stdin, .. } => stdin.write_all(format!("{text}\n").as_bytes()).await?,
-            Self::Raw => eprintln!("{text}"),
-            Self::Transcript => println!("{text}"),
-            Self::Silent => {}
-        }
-        Ok(())
-    }
-
-    /// lets nom draw its last frame and exit
-    async fn close(self) -> Result<()> {
-        match self {
-            Self::Nom { mut child, stdin } => {
-                drop(stdin);
-                child.wait().await?;
-            }
-            Self::Raw => std::io::stdout().flush()?,
-            Self::Transcript | Self::Silent => {}
-        }
-        Ok(())
+        None => std::future::pending().await,
     }
 }

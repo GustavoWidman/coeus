@@ -20,7 +20,7 @@ pub struct AttachArgs {
     /// else the latest]
     pub job: Option<JobId>,
 
-    /// Write nix's internal-json lines to stdout instead, e.g. for `nom --json`
+    /// Write nix's internal-json lines to stdout instead, for other tools
     #[arg(long)]
     pub raw: bool,
 }
@@ -42,7 +42,7 @@ impl AttachArgs {
     pub async fn run(self, context: &Context) -> Result<Exit> {
         let mode = match (self.raw, context.live) {
             (true, _) => Mode::Raw,
-            (false, true) => Mode::Nom,
+            (false, true) => Mode::Live,
             (false, false) => Mode::Transcript,
         };
         follow(context, &self.host, self.job, mode, None).await
