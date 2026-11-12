@@ -2,7 +2,7 @@ use clap::Args;
 use eyre::Result;
 
 use crate::{
-    cli::{Context, exit::Exit},
+    cli::{Context, context::within, exit::Exit},
     common::model::{Hostname, Timestamp},
     ui::history,
 };
@@ -19,7 +19,7 @@ pub struct GenerationsArgs {
 impl GenerationsArgs {
     pub async fn run(self, context: &Context) -> Result<Exit> {
         let fleet = context.machine(&self.host)?;
-        let generations = fleet.connect(&self.host).await?.generations().await?;
+        let generations = within(fleet.connect(&self.host).await?.generations()).await?;
 
         match self.json {
             true => println!("{}", serde_json::to_string_pretty(&generations)?),

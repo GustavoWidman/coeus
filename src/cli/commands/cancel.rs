@@ -2,7 +2,7 @@ use clap::Args;
 use eyre::{Result, bail};
 
 use crate::{
-    cli::{Context, exit::Exit},
+    cli::{Context, context::within, exit::Exit},
     common::model::{CancelReport, JobId, JobSelector},
     ui::{Theme, board::Verdict, say},
 };
@@ -28,7 +28,7 @@ impl CancelArgs {
         let selector = self.job.map_or(JobSelector::Current, JobSelector::Id);
         let fleet = context.fleet(targets)?;
         let reports = fleet
-            .each(|_, mut client| async move { client.cancel(selector).await })
+            .each(|_, mut client| async move { within(client.cancel(selector)).await })
             .await;
 
         let mut verdicts = Vec::new();

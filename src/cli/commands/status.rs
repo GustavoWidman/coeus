@@ -5,6 +5,7 @@ use serde_json::json;
 use crate::{
     cli::{
         Context,
+        context::within,
         exit::Exit,
         follow::{Follow, View},
     },
@@ -45,7 +46,7 @@ impl StatusArgs {
         }
 
         let views = fleet
-            .each(|_, mut client| async move { client.view().await })
+            .each(|_, mut client| async move { within(client.view()).await })
             .await;
 
         if self.json {
