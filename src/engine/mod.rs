@@ -11,6 +11,7 @@ mod notify;
 mod reconcile;
 mod running;
 mod snapshots;
+mod tries;
 mod upgrade;
 
 #[cfg(test)]

@@ -150,39 +150,3 @@ fn a_machine_switched_outside_coeus_holds_until_the_ref_moves() {
 
     assert!(follower(NEW, 4_000).behind(Some(&deployed)).is_some());
 }
-
-#[test]
-fn a_commit_that_did_not_stick_here_is_not_tried_again() {
-    use std::collections::VecDeque;
-
-    use crate::{
-        common::model::{
-            Action, Failure, JobId, JobState, JobSummary, OrderId, Origin, Outcome, Phase,
-        },
-        engine::actor::failed_here,
-    };
-
-    let job = |rev: &str, outcome: Outcome| JobSummary {
-        id: JobId(1),
-        order: OrderId(1),
-        source: git(rev),
-        action: Action::Switch,
-        origin: Origin::Follow,
-        state: JobState::Finished(outcome),
-        ordered_at: Timestamp(0),
-        started_at: None,
-        finished_at: None,
-        toplevel: None,
-        attempt: 1,
-    };
-
-    let rolled_back = VecDeque::from([job(
-        NEW,
-        Outcome::RolledBack(Failure::new(Phase::Verifying, "unreachable")),
-    )]);
-    assert!(failed_here(&rolled_back, &git(NEW)));
-    assert!(!failed_here(&rolled_back, &git(OLD)));
-
-    let succeeded = VecDeque::from([job(NEW, Outcome::Succeeded)]);
-    assert!(!failed_here(&succeeded, &git(NEW)));
-}
