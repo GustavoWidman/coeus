@@ -107,3 +107,24 @@ fn reads_messages_and_stops() {
         Event::Stop(ActivityId(42))
     );
 }
+
+#[test]
+fn only_nix_s_own_activities_and_results_are_standard() {
+    let standard = |raw| Line::parse(raw).is_standard();
+
+    assert!(standard(
+        r#"@nix {"action":"start","id":1,"level":3,"type":105,"text":"","parent":0,"fields":[]}"#
+    ));
+    assert!(standard(
+        r#"@nix {"action":"result","id":1,"type":105,"fields":[1,4,2,0]}"#
+    ));
+    assert!(standard(r#"@nix {"action":"stop","id":1}"#));
+    assert!(standard("building '/nix/store/x.drv'..."));
+
+    assert!(!standard(
+        r#"@nix {"action":"start","id":231928233984000,"level":4,"name":"BuildInstallables","parent":0,"payload":{},"sid":"01a1","text":"","type":10113}"#
+    ));
+    assert!(!standard(
+        r#"@nix {"action":"result","id":1,"type":10113,"fields":[]}"#
+    ));
+}

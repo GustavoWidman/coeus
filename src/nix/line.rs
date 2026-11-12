@@ -32,6 +32,17 @@ impl<'a> Line<'a> {
             Self::Output(_) => None,
         }
     }
+
+    /// whether upstream nix could have written it: Determinate Nix also
+    /// starts activities and reports results of its own types, which
+    /// readers of nix's own, such as `nom`, reject
+    pub const fn is_standard(&self) -> bool {
+        match self {
+            Self::Nix(Event::Start(start)) => !matches!(start.activity, Activity::Other(_)),
+            Self::Nix(Event::Result(report)) => !matches!(report.kind, ResultKind::Other(_)),
+            _ => true,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
