@@ -104,6 +104,9 @@ pub enum Blocker {
     /// a file the enrollment adds is on the default branch already: the
     /// machine is enrolled there
     Enrolled { files: Vec<RepoPath> },
+    /// the enroll commit holds these files otherwise than the answers make
+    /// them now: it was enrolled with other answers
+    Reanswered { files: Vec<RepoPath> },
     /// changes in the private clone nobody committed
     Uncommitted { clone: PathBuf, files: Vec<String> },
     /// the enrollment no longer applies onto the base it goes to
@@ -138,6 +141,7 @@ impl fmt::Display for Blocker {
                 files => write!(f, "coeus cannot tell who opens {} secrets", files.len()),
             },
             Self::Enrolled { .. } => f.write_str("the machine is enrolled on the default branch"),
+            Self::Reanswered { .. } => f.write_str("it was enrolled with other answers"),
             Self::Uncommitted { .. } => f.write_str("the clone has uncommitted changes"),
             Self::Conflict { .. } => f.write_str("the rebase stopped on a conflict"),
             Self::SwitchFailed { job } => write!(f, "the first switch, job {}, failed", job.id),

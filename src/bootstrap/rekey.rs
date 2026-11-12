@@ -164,7 +164,9 @@ async fn settle(enrolled: &Enrolled) -> Result<Vec<RepoPath>> {
 /// with `agenix -e` keeps the recipients, and is the person's.
 async fn rekeyed(branch: &Branch, secret: &RepoPath, recipients: &[SshKey]) -> Result<bool> {
     let now = Header::read(&branch.path(secret)).map(|header| header.verdict(recipients));
-    let committed = branch.committed(secret).await?;
+    let Some(committed) = branch.committed("HEAD", secret).await? else {
+        return Ok(false);
+    };
     let before = Header::from_reader(&committed[..]).map(|header| header.verdict(recipients));
     Ok(matches!(now, Ok(Verdict::Current)) && matches!(before, Ok(Verdict::Stale { .. })))
 }

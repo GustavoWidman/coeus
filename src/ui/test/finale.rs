@@ -160,6 +160,19 @@ fn blocks_say_what_a_person_must_do() {
 
     let lines = said(&Finale::Blocked {
         at: Step::Enroll,
+        blocker: Blocker::Reanswered {
+            files: vec!["hosts/nova/default.nix".parse().unwrap()],
+        },
+    });
+    assert_eq!(
+        lines[0],
+        "[⚠] nova was enrolled on coeus/bootstrap/nova with other answers, which made these otherwise"
+    );
+    assert_eq!(lines[1], "    hosts/nova/default.nix");
+    assert!(lines[2].contains("`--forget` asks every question again"));
+
+    let lines = said(&Finale::Blocked {
+        at: Step::Enroll,
         blocker: Blocker::Unanswered { id: "type".into() },
     });
     assert!(lines[1].contains("`--answer type=<value>`"), "{lines:?}");

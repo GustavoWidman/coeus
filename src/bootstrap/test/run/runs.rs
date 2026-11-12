@@ -325,3 +325,36 @@ async fn a_pull_request_of_another_commit_is_not_reviewed() {
     );
     assert_eq!(fleet.pulls.lock().unwrap().open[0].1.body, "");
 }
+
+#[tokio::test]
+async fn an_answer_changed_after_the_enrollment_blocks_instead_of_being_ignored() {
+    if !has_nix() {
+        return;
+    }
+    let fleet = Fleet::new().await;
+    fleet.assert_in_the_fleet(&fleet.run(&Kill::default()).await.unwrap());
+    let head = fleet.origin_head();
+
+    let ran = fleet
+        .run_with(&Kill::default(), &[("type", "desktop")], false)
+        .await
+        .unwrap();
+
+    let Finale::Blocked {
+        at: Step::Enroll,
+        blocker: Blocker::Reanswered { files },
+    } = &ran.finale
+    else {
+        panic!("{:?}", ran.finale);
+    };
+    assert_eq!(files, &["hosts/nova/default.nix".parse().unwrap()]);
+    assert_eq!(fleet.origin_head(), head);
+    assert_eq!(fleet.world.lock().unwrap().jobs.len(), 1);
+
+    let again = fleet
+        .run_with(&Kill::default(), &[("type", "server")], false)
+        .await
+        .unwrap();
+    fleet.assert_in_the_fleet(&again);
+    assert_eq!(again.mark(Step::Enroll), Mark::Kept);
+}

@@ -158,6 +158,16 @@ fn blocked(state: &StateDir, at: Step, blocker: &Blocker) -> Vec<String> {
             )));
             lines
         }
+        Blocker::Reanswered { files } => {
+            let mut lines = vec![say::warn(format!(
+                "{host} was enrolled on {branch} with other answers, which made these otherwise"
+            ))];
+            lines.extend(listed(files));
+            lines.push(indent(format!(
+                "answer as it was enrolled (`--forget` asks every question again), or delete {branch} on origin and run with `--forget` to enroll it anew"
+            )));
+            lines
+        }
         Blocker::Uncommitted { clone, files } => {
             let mut lines = vec![say::warn(format!(
                 "{} has changes nobody committed",
