@@ -69,6 +69,9 @@ impl<H: Host> Actor<H> {
     const RECENT: usize = MachineView::RECENT;
     const FACTS: Duration = Duration::from_secs(60);
     const FDA: Duration = Duration::from_secs(600);
+    /// while the grant is missing, look again often, so granting it shows up
+    /// in seconds
+    const FDA_MISSING: Duration = Duration::from_secs(15);
 
     /// loads every job from disk and decides what to do with the unfinished
     /// ones before taking any command
@@ -180,7 +183,11 @@ impl<H: Host> Actor<H> {
                         self.refresh_facts().await;
                     }
 
-                    if fda_at.elapsed() >= Self::FDA {
+                    let fda_every = match self.fda {
+                        FdaStatus::Missing => Self::FDA_MISSING,
+                        _ => Self::FDA,
+                    };
+                    if fda_at.elapsed() >= fda_every {
                         fda_at = Instant::now();
                         self.fda = self.host.probe_fda().await;
                     }
