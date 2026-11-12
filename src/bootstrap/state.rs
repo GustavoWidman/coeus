@@ -2,7 +2,8 @@
 //!
 //! ```text
 //! $XDG_STATE_HOME/coeus/bootstrap/<host>/   (~/.local/state/… without it)
-//!   bootstrap.toml       Saved: how to reach it, the repository, answers
+//!   bootstrap.toml       Saved: how to reach it, the repository, answers,
+//!                        the stock machine's facts
 //!   known_hosts          the one ed25519 host key the person trusted
 //!   session_key[.pub]    the key root's authorized_keys holds until cleanup
 //!   lock                 flock held by the run in progress
@@ -14,15 +15,18 @@
 //! branch, the secrets, the machine and the forge.
 
 use std::{
-    fs::File,
+    fs::{File, OpenOptions, TryLockError},
+    io::{Read, Seek, Write},
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
-use eyre::{Result, eyre};
+use eyre::{Result, WrapErr, eyre};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    bootstrap::contract::Answers,
+    bootstrap::{contract::Answers, remote::Facts},
     common::model::{Hostname, Timestamp},
 };
 
@@ -41,8 +45,15 @@ pub struct Saved {
     /// the person's checkout of the configuration repository, which the
     /// private clone borrows objects and its origin from
     pub repo: Option<PathBuf>,
+    /// the branch of origin the enrollment goes onto; origin's default
+    /// branch when unset
+    pub base: Option<String>,
     /// the contract's questions answered so far, by id
     pub answers: Answers,
+    /// the machine as its stock system showed it before it was enrolled,
+    /// which the switch replaces for good: the contract's input keeps
+    /// saying the same about it once ssh is gone
+    pub facts: Option<Facts>,
     /// display only: no decision reads it
     pub last_run: Option<LastRun>,
 }
@@ -62,7 +73,9 @@ pub struct Ended {
 }
 
 /// held for the life of a run; the kernel drops it with the process
-pub struct Lock(File);
+pub struct Lock {
+    _file: File,
+}
 
 impl StateDir {
     /// under `$XDG_STATE_HOME`, else `~/.local/state`
@@ -85,7 +98,35 @@ impl StateDir {
 
     /// every machine with a bootstrap in progress, for `coeus bootstrap`
     pub fn all() -> Result<Vec<(Hostname, Saved)>> {
-        todo!()
+        Self::all_in(&state_home()?)
+    }
+
+    /// [StateDir::all] under `state_home`, by name
+    pub fn all_in(state_home: &Path) -> Result<Vec<(Hostname, Saved)>> {
+        let root = Self::all_under(state_home);
+        let entries = match std::fs::read_dir(&root) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error).wrap_err_with(|| format!("{}", root.display())),
+        };
+        let mut all = Vec::new();
+        for entry in entries {
+            let entry = entry?;
+            let Some(host) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<Hostname>().ok())
+            else {
+                continue;
+            };
+            if !entry.file_type()?.is_dir() {
+                continue;
+            }
+            let saved = Self::under(state_home, &host).load()?;
+            all.push((host, saved));
+        }
+        all.sort_by(|(a, _), (b, _)| a.cmp(b));
+        Ok(all)
     }
 
     pub fn host(&self) -> &Hostname {
@@ -123,26 +164,104 @@ impl StateDir {
         self.root.join("repo")
     }
 
-    /// fails naming the pid when another run of this machine holds it
-    pub fn lock(&self) -> Result<Lock> {
-        todo!()
+    /// fails naming the pid when another run of this machine holds it. a
+    /// lock just let go may still be held for a moment by a process the
+    /// last run started, so it is asked for again for a little while.
+    pub async fn lock(&self) -> Result<Lock> {
+        const GRACE: Duration = Duration::from_secs(2);
+        const AGAIN: Duration = Duration::from_millis(50);
+        let started = std::time::Instant::now();
+        loop {
+            match self.try_lock()? {
+                Ok(lock) => return Ok(lock),
+                Err(_) if started.elapsed() < GRACE => tokio::time::sleep(AGAIN).await,
+                Err(pid) => {
+                    return Err(eyre!(
+                        "another `coeus bootstrap {}` is running (pid {pid})",
+                        self.host
+                    ));
+                }
+            }
+        }
+    }
+
+    /// whether a run of this machine holds the lock now
+    pub fn locked(&self) -> Result<bool> {
+        Ok(self.root.exists() && self.try_lock()?.is_err())
+    }
+
+    /// the lock, or the pid of the run that holds it
+    fn try_lock(&self) -> Result<Result<Lock, String>> {
+        std::fs::create_dir_all(&self.root)
+            .wrap_err_with(|| format!("could not make {}", self.root.display()))?;
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .mode(0o600)
+            .open(self.lock_file())?;
+        match file.try_lock() {
+            Ok(()) => {}
+            Err(TryLockError::WouldBlock) => {
+                let mut pid = String::new();
+                file.read_to_string(&mut pid)?;
+                return Ok(Err(pid.trim().to_owned()));
+            }
+            Err(TryLockError::Error(error)) => return Err(error.into()),
+        }
+        file.set_len(0)?;
+        file.rewind()?;
+        writeln!(file, "{}", std::process::id())?;
+        Ok(Ok(Lock { _file: file }))
     }
 
     /// the saved inputs, or the defaults on a first run
     pub fn load(&self) -> Result<Saved> {
-        todo!()
+        let path = self.saved();
+        match std::fs::read_to_string(&path) {
+            Ok(text) => toml::from_str(&text).wrap_err_with(|| format!("in {}", path.display())),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Saved::default()),
+            Err(error) => Err(error).wrap_err_with(|| format!("could not read {}", path.display())),
+        }
     }
 
     /// through a temporary sibling, fsync and a rename, 0600
     pub fn save(&self, saved: &Saved) -> Result<()> {
-        todo!()
+        let text = toml::to_string(saved).wrap_err("could not write the saved inputs")?;
+        crate::bootstrap::remote::write_private(&self.saved(), text.as_bytes())
+    }
+
+    /// the session key's two halves gone from here, once root's
+    /// `authorized_keys` no longer holds it; the private half first, since a
+    /// public half alone is no key
+    pub fn drop_session_key(&self) -> Result<()> {
+        let private = self.session_key();
+        let mut public = private.as_os_str().to_owned();
+        public.push(".pub");
+        for path in [private, PathBuf::from(public)] {
+            match std::fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error.into()),
+            }
+        }
+        Ok(())
     }
 
     /// removes this directory: the saved inputs, the pinned key, the session
     /// key and the clone. the branch and the pull request stay, and a later
     /// run picks them up again
     pub async fn forget(self) -> Result<()> {
-        todo!()
+        let root = self.root.clone();
+        tokio::task::spawn_blocking(move || match std::fs::remove_dir_all(&root) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => {
+                Err(error).wrap_err_with(|| format!("could not remove {}", root.display()))
+            }
+        })
+        .await?
     }
 }
 

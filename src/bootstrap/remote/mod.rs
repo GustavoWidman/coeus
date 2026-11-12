@@ -23,6 +23,7 @@ use tokio::sync::OnceCell;
 pub use call::{AdoptCall, Call};
 pub use facts::{BootLoader, Facts, Platform, System};
 pub use nix::{NixState, converge as converge_nix, move_etc_aside};
+pub use private::write as write_private;
 pub use probe::Probed;
 pub use session::SessionKey;
 pub use ssh::Ssh;
