@@ -1,6 +1,7 @@
 mod attach;
 mod cancel;
 mod deploy;
+mod doctor;
 mod generations;
 mod history;
 mod reboot;
@@ -12,6 +13,7 @@ mod watch;
 pub use attach::{AttachArgs, LogsArgs};
 pub use cancel::CancelArgs;
 pub use deploy::DeployArgs;
+pub use doctor::DoctorArgs;
 pub use generations::GenerationsArgs;
 pub use history::HistoryArgs;
 pub use reboot::RebootArgs;
@@ -40,6 +42,7 @@ impl Command {
             Self::Rollback(args) => args.run(&context()?).await,
             Self::Generations(args) => args.run(&context()?).await,
             Self::Reboot(args) => args.run(&context()?).await,
+            Self::Doctor(args) => args.run(&context()?).await,
             Self::Keygen => Ok(keygen()),
             Self::Completions(args) => Ok(args.run()),
         }
