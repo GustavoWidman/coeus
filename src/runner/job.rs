@@ -216,7 +216,8 @@ impl Runner {
     async fn activate(&mut self, toplevel: StorePath) -> Result<Outcome> {
         let (platform, action) = (self.spec.target.platform, self.spec.order.action);
 
-        let undo = Activation::undo(platform, action, &self.system);
+        let install_bootloader = self.spec.install_bootloader;
+        let undo = Activation::undo(platform, action, install_bootloader, &self.system);
         let activation = Activation {
             platform,
             action,
@@ -225,7 +226,7 @@ impl Runner {
                 Source::Generation(number) => Some(number),
                 _ => None,
             },
-            install_bootloader: self.spec.install_bootloader,
+            install_bootloader,
         };
 
         self.enter(Phase::Activating)?;
