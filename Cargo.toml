@@ -12,7 +12,6 @@ name = "coeusd"
 path = "src/bin/coeusd.rs"
 
 [dependencies]
-bon = "3.9.3"
 bytes = "1.12.1"
 coeus-proto-macros = { path = "proto-macros" }
 chrono = { version = "0.4.45", features = ["serde"] }
@@ -45,4 +44,3 @@ git2 = { version = "0.21.0", features = [
     "vendored-libgit2",
     "vendored-openssl"
 ] }
-arc-swap = "1.9.2"

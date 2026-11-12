@@ -1,6 +1,5 @@
 mod command;
 mod constants;
-mod utils;
 
 use colored::Colorize;
 use eyre::Result;
