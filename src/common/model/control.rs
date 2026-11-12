@@ -35,6 +35,8 @@ pub enum Rejection {
     UnknownGeneration(u32),
     /// the daemon is restarting into a newer version
     Restarting,
+    /// the ref is not a plain branch or tag name
+    InvalidRef(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

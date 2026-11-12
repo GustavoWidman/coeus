@@ -49,6 +49,21 @@ impl fmt::Display for Source {
     }
 }
 
+/// whether `git_ref` is a plain branch or tag name, safe to put in a flake
+/// url: letters, digits, `.`, `_`, `-` and `/`, without `..`, `//` or a
+/// leading `-`, `/` or `.`
+pub fn valid_ref(git_ref: &str) -> bool {
+    !git_ref.is_empty()
+        && git_ref.len() <= 255
+        && !git_ref.starts_with(['-', '/', '.'])
+        && !git_ref.ends_with(['/', '.'])
+        && !git_ref.contains("..")
+        && !git_ref.contains("//")
+        && git_ref
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'/'))
+}
+
 /// a ref resolved to the commit it pointed at
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Pinned {

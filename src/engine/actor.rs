@@ -310,6 +310,12 @@ impl<H: Host> Actor<H> {
                     false => Err(Rejection::UnknownGeneration(*number)),
                 }
             }
+            Source::Git {
+                git_ref: Some(git_ref),
+                ..
+            } if !crate::common::model::valid_ref(git_ref) => {
+                Err(Rejection::InvalidRef(git_ref.clone()))
+            }
             Source::Git { .. } => Ok(()),
         }
     }

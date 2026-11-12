@@ -16,6 +16,7 @@ pub fn rejection(rejection: &Rejection) -> String {
         Rejection::Restarting => {
             "the daemon is restarting into a newer version, retry in a moment".into()
         }
+        Rejection::InvalidRef(git_ref) => format!("{git_ref:?} is not a branch or tag name"),
     }
 }
 

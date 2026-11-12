@@ -219,3 +219,19 @@ async fn a_summary_that_cannot_be_written_does_not_wedge_the_machine() {
     );
     harness.shutdown.cancel();
 }
+
+#[tokio::test]
+async fn refuses_refs_that_are_not_branch_or_tag_names() {
+    let harness = Harness::start(tempfile::tempdir().unwrap()).await;
+    let mut sneaky = order(1);
+    sneaky.source = Source::Git {
+        rev: "caf4e2b9a1d6c3e8f0b2a4c6d8e0f1a3b5c7d9e1".parse().unwrap(),
+        git_ref: Some("main&dir=../../etc".into()),
+    };
+
+    assert!(matches!(
+        harness.engine.deploy(sneaky).await.unwrap(),
+        Err(crate::common::model::Rejection::InvalidRef(_))
+    ));
+    harness.shutdown.cancel();
+}
