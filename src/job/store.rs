@@ -1,10 +1,10 @@
 use std::{fs, path::PathBuf};
 
-use eyre::Result;
+use eyre::{Result, WrapErr, bail};
 use log::warn;
 
 use super::{JobDir, JobSpec};
-use crate::common::model::JobId;
+use crate::common::model::{JobId, OrderId};
 
 /// the job directories under coeusd's state directory, numbered in order of
 /// arrival
@@ -38,12 +38,42 @@ impl JobStore {
         Ok(self.list()?.last().map_or(JobId(1), |last| last.next()))
     }
 
-    /// makes the directory for a newly admitted job
+    /// makes the directory for a newly admitted job under a temporary name
+    /// and renames it into place with its spec, so no reader ever finds a
+    /// job without one. an existing job of the same id is never replaced.
     pub fn create(&self, spec: &JobSpec) -> Result<JobDir> {
         let dir = self.dir(spec.id);
-        fs::create_dir(dir.path())?;
-        dir.write_spec(spec)?;
-        Ok(dir)
+        let staging = self
+            .root
+            .join(format!(".{:06}.{}.tmp", spec.id.0, std::process::id()));
+
+        let _ = fs::remove_dir_all(&staging);
+        fs::create_dir(&staging)?;
+        let placed = JobDir::write_spec(&staging, spec).and_then(|()| {
+            if dir.path().exists() {
+                bail!("job {} already exists", spec.id);
+            }
+            fs::rename(&staging, dir.path())
+                .wrap_err_with(|| format!("failed to place job {}", spec.id))
+        });
+
+        if placed.is_err() {
+            let _ = fs::remove_dir_all(&staging);
+        }
+        placed.map(|()| dir)
+    }
+
+    /// the job admitted for `order`, if it is still on disk
+    pub fn find(&self, order: OrderId) -> Result<Option<JobDir>> {
+        for id in self.list()?.into_iter().rev() {
+            let dir = self.dir(id);
+            match dir.spec() {
+                Ok(spec) if spec.order.id == order => return Ok(Some(dir)),
+                Ok(_) => {}
+                Err(error) => warn!("ignoring unreadable job {id}: {error:#}"),
+            }
+        }
+        Ok(None)
     }
 
     /// removes the oldest finished jobs beyond `keep`
