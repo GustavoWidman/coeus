@@ -1,4 +1,6 @@
 mod enrollment;
+mod eval;
+mod nix;
 mod question;
 
 use serde_json::json;
@@ -183,3 +185,14 @@ fn repository_paths_stay_inside_the_repository() {
     );
 }
 
+#[test]
+fn the_input_reaches_nix_as_a_string_nothing_interpolates() {
+    assert_eq!(super::nix_string("plain"), r#""plain""#);
+    assert_eq!(
+        super::nix_string(r#"a "quote", a \ and ${x}"#),
+        r#""a \"quote\", a \\ and \${x}""#
+    );
+    // a `$` not before `{` is plain text, and nix keeps a newline as it is
+    assert_eq!(super::nix_string("$5 $ \n"), "\"$5 $ \n\"");
+    assert_eq!(super::nix_string("$${x}"), r#""$\${x}""#);
+}
