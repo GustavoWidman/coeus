@@ -375,10 +375,10 @@ impl<H: Host> Actor<H> {
             .filter(|pid| *pid > 1)
             .and_then(rustix::process::Pid::from_raw);
 
-        if let Some(pid) = pid {
-            if let Err(error) = rustix::process::kill_process(pid, rustix::process::Signal::TERM) {
-                warn!("failed to signal the runner of job {job}: {error}");
-            }
+        if let Some(pid) = pid
+            && let Err(error) = rustix::process::kill_process(pid, rustix::process::Signal::TERM)
+        {
+            warn!("failed to signal the runner of job {job}: {error}");
         }
     }
 

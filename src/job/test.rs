@@ -131,7 +131,7 @@ async fn readers_resume_and_never_take_a_partial_line() {
     assert_eq!(
         resumed.next(usize::MAX).await.unwrap(),
         Some(LogItem::Nix(
-            br#"@nix {"action":"stop","id":2}"#.iter().copied().chain([b'\n']).collect()
+            br#"@nix {"action":"stop","id":2}"#.iter().copied().chain(*b"\n").collect()
         ))
     );
 }

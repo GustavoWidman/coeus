@@ -114,7 +114,7 @@ impl SystemRoot {
             })
             .collect();
 
-        generations.sort_unstable_by(|a, b| b.number.cmp(&a.number));
+        generations.sort_unstable_by_key(|generation| std::cmp::Reverse(generation.number));
         Ok(generations)
     }
 
