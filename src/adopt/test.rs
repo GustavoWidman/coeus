@@ -332,6 +332,24 @@ async fn gives_up_on_a_job_no_runner_holds() {
     assert!(lines.last().unwrap().starts_with("@at "));
 }
 
+#[tokio::test]
+async fn a_coeusd_listening_on_any_of_its_addresses_is_found() {
+    let ipv6 = tokio::net::TcpListener::bind("[::1]:0").await.unwrap();
+    let port = ipv6.local_addr().unwrap().port();
+    assert!(settings::listening(format!("[::]:{port}").parse().unwrap()).await);
+
+    // a configuration listening on one address only, here standing in for
+    // its tailnet address
+    let named = tokio::net::TcpListener::bind("127.0.0.2:0").await;
+    if let Ok(named) = named {
+        let listen = named.local_addr().unwrap();
+        assert!(settings::listening(listen).await);
+    }
+
+    drop(ipv6);
+    assert!(!settings::listening(format!("[::]:{port}").parse().unwrap()).await);
+}
+
 #[test]
 fn the_settings_are_coeusds_own() {
     let json = br#"{
