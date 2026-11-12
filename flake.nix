@@ -7,7 +7,6 @@
     };
     crane.url = "github:ipetkov/crane";
     flake-parts.url = "github:hercules-ci/flake-parts";
-    systems.url = "github:nix-systems/default";
     devshell.url = "github:numtide/devshell";
   };
 
@@ -16,7 +15,6 @@
       flake-parts,
       crane,
       fenix,
-      systems,
       devshell,
       ...
     }:
@@ -26,7 +24,12 @@
         common = flake-parts-lib.importApply ./nix/modules/common.nix { inherit self; };
       in
       {
-        systems = import systems;
+        # nixpkgs no longer evaluates for x86_64-darwin
+        systems = [
+          "aarch64-darwin"
+          "aarch64-linux"
+          "x86_64-linux"
+        ];
         imports = [
           devshell.flakeModule
         ];
