@@ -83,15 +83,22 @@ impl LogReader {
         }
     }
 
-    /// the next event, skipping nix lines
+    /// the next event, skipping nix lines without copying them
     pub async fn next_event(&mut self) -> Result<Option<Stamped<JobEvent>>> {
-        loop {
-            match self.next(usize::MAX).await? {
-                Some(LogItem::Event(event)) => return Ok(Some(event)),
-                Some(LogItem::Nix(_)) => continue,
-                None => return Ok(None),
+        while let Some(end) = self.line_end(0).await? {
+            let event = self.buffer.starts_with(JobLog::COEUS.as_bytes()).then(|| {
+                serde_json::from_slice::<Stamped<JobEvent>>(&self.buffer[JobLog::COEUS.len()..end])
+            });
+            self.consume(end + 1);
+
+            match event {
+                Some(Ok(stamped)) => return Ok(Some(stamped)),
+                Some(Err(error)) => debug!("skipping an unreadable job event: {error}"),
+                None => {}
             }
         }
+
+        Ok(None)
     }
 
     /// the index of the newline ending the line that starts at `start`,
