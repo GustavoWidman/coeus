@@ -127,6 +127,22 @@ fn a_failed_switch_shows_its_tail_and_both_ways_out() {
 }
 
 #[test]
+fn a_failed_boot_into_the_fleet_system_is_named_so() {
+    let failure = Failure::new(Phase::Activating, "systemd-boot could not be installed");
+    let mut job = summary(2, JobState::Finished(Outcome::Failed(failure)));
+    job.action = crate::common::model::Action::Boot;
+    let lines = said(&Finale::Blocked {
+        at: Step::Switch,
+        blocker: Blocker::SwitchFailed { job: Box::new(job) },
+    });
+
+    assert!(
+        lines[0].starts_with("[✗] nova's boot into its fleet system, job #2, failed"),
+        "{lines:#?}"
+    );
+}
+
+#[test]
 fn blocks_say_what_a_person_must_do() {
     let files = (0..7)
         .map(|n| format!("secrets/s{n}.age").parse().unwrap())

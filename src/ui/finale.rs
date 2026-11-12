@@ -23,7 +23,7 @@ use crate::{
         fleet::Reboot,
         state::StateDir,
     },
-    common::model::{FdaStatus, JobState, JobSummary, Outcome},
+    common::model::{Action, FdaStatus, JobState, JobSummary, Outcome},
 };
 
 /// the most files a block lists before it counts the rest
@@ -200,8 +200,12 @@ fn blocked(state: &StateDir, at: Step, blocker: &Blocker) -> Vec<String> {
                 .map(|failure| format!(" {}", describe::failure(failure)))
                 .unwrap_or_default();
 
+            let switch = match job.action {
+                Action::Boot => "boot into its fleet system",
+                _ => "first switch",
+            };
             let mut lines = vec![say::error(format!(
-                "{host}'s first switch, job {}, {what}{why}",
+                "{host}'s {switch}, job {}, {what}{why}",
                 job.id
             ))];
             if let Some(failure) = failure {

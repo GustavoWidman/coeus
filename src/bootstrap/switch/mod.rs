@@ -31,7 +31,7 @@ pub use stock::{Ending, FleetCoeus, Plan};
 use crate::{
     bootstrap::{Blocker, Bootstrap, Step, fleet::Daemon, remote::Target},
     cli::Console,
-    common::model::{CommitSha, JobState, JobSummary, NarHash, Outcome, Platform, Source},
+    common::model::{Action, CommitSha, JobState, JobSummary, NarHash, Outcome, Platform, Source},
     ui::checklist::{Live, Mark, Row},
 };
 
@@ -145,10 +145,14 @@ fn finished(job: JobSummary, via: Door, feed: &Feed, console: &Console) -> Resul
 fn show(console: &Console, feed: &Feed, waiting: Option<Live>) {
     let Some(view) = &feed.view else { return };
     let summary = &view.summary;
+    let job = match summary.action {
+        Action::Boot => format!("boot job {}", summary.id),
+        _ => format!("job {}", summary.id),
+    };
     let detail = match &summary.state {
-        JobState::Queued => format!("job {} queued", summary.id),
-        JobState::Running { phase } => format!("job {} {phase}", summary.id),
-        JobState::Finished(outcome) => format!("job {} {outcome}", summary.id),
+        JobState::Queued => format!("{job} queued"),
+        JobState::Running { phase } => format!("{job} {phase}"),
+        JobState::Finished(outcome) => format!("{job} {outcome}"),
     };
     let mut live = vec![Live::Job(Box::new(view.clone()))];
     live.extend(waiting);
