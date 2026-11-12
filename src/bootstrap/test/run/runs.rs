@@ -127,6 +127,37 @@ async fn a_failed_switch_waits_for_retry() {
 }
 
 #[tokio::test]
+async fn a_switch_nixos_refuses_is_booted_and_rebooted_into() {
+    if !has_nix() {
+        return;
+    }
+    let fleet = Fleet::new().await;
+    fleet.world.lock().unwrap().refuses = true;
+
+    let ran = fleet.run(&Kill::default()).await.unwrap();
+    fleet.assert_in_the_fleet(&ran);
+    assert_eq!(ran.mark(Step::Switch), Mark::Done);
+    assert_eq!(
+        ran.mark(Step::Reboot),
+        Mark::Skipped,
+        "it booted what it runs"
+    );
+    assert!(
+        ran.rows.notes.iter().any(|note| note
+            .starts_with("NixOS asks for a reboot into this system instead of a live switch")
+            && note.contains("Pre-switch check 'switchInhibitors' failed")),
+        "{:?}",
+        ran.rows.notes
+    );
+    fleet.assert_booted_into_the_fleet();
+
+    let rerun = fleet.run(&Kill::default()).await.unwrap();
+    fleet.assert_in_the_fleet(&rerun);
+    assert_eq!(rerun.mark(Step::Switch), Mark::Kept);
+    fleet.assert_booted_into_the_fleet();
+}
+
+#[tokio::test]
 async fn a_question_without_a_terminal_or_an_answer_blocks_before_anything_is_written() {
     if !has_nix() {
         return;

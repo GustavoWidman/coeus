@@ -18,14 +18,17 @@ use crate::{
         Blocker, Bootstrap, SshKey,
         branch::{PullRequest, PullState, body},
         fleet::Reboot,
-        remote::{Facts, NixState, Probed, SessionKey, Ssh},
-        switch::{Door, Release, Switched},
+        remote::{Facts, NixState, Probed, Running, SessionKey, Ssh},
+        switch::{
+            Door, Ending, Release, Switched,
+            first::{self, Stocked},
+        },
         world::{Answer, Forge, Machine, NixReady, Reached},
     },
     cli::Console,
     common::model::{
-        Action, Attempt, CommitSha, Failure, FdaStatus, JobId, JobState, JobSummary, Origin,
-        Outcome, Phase, Platform, StorePath, Timestamp,
+        Action, Attempt, CommitSha, Failure, FdaStatus, JobId, JobState, JobSummary, OrderId,
+        Origin, Outcome, Phase, Platform, StorePath, Timestamp,
     },
 };
 
@@ -67,6 +70,9 @@ impl Kill {
     }
 }
 
+/// the system a stock NixOS runs
+const STOCK: &str = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-nixos-system-nixos-25.11";
+
 /// what the machine is, whatever happens to the runs
 pub struct World {
     pub facts: Facts,
@@ -84,6 +90,16 @@ pub struct World {
     pub ssh: usize,
     /// the next switch fails
     pub breaks: bool,
+    /// NixOS refuses to switch live into the fleet's system
+    pub refuses: bool,
+    /// the system it runs
+    pub running: Option<StorePath>,
+    /// the system it boots by default
+    pub default: Option<StorePath>,
+    /// its boot id, one more each boot
+    pub boot: u32,
+    /// how many times it was rebooted into a boot job's system
+    pub reboots: usize,
 }
 
 impl World {
@@ -101,6 +117,11 @@ impl World {
             reboot_required: true,
             ssh: 0,
             breaks: false,
+            refuses: false,
+            running: Some(STOCK.parse().unwrap()),
+            default: Some(STOCK.parse().unwrap()),
+            boot: 1,
+            reboots: 0,
         }
     }
 }
@@ -186,72 +207,45 @@ impl Machine for FakeMachine {
         &self,
         release: &Release,
         bootstrap: &Bootstrap,
-        _: &Console,
+        console: &Console,
     ) -> Result<Switched> {
         self.kill.point().await;
         self.world().releases.push(release.clone());
-        let attempt = Attempt::of(&self.world().jobs, &release.nar_hash);
-        let order = match attempt {
-            Attempt::Succeeded(job) => {
-                return Ok(Switched {
-                    job,
-                    via: Door::Ordered,
-                });
-            }
-            Attempt::Running(job) => job.order,
-            Attempt::Fresh(order) => order,
-            Attempt::Failed {
-                next: Some(next), ..
-            } if bootstrap.options.retry => next,
-            Attempt::Failed { last, .. } => {
-                return Err(Blocker::SwitchFailed {
-                    job: Box::new(last),
-                }
-                .into());
-            }
-        };
-
-        let id = {
-            let mut world = self.world();
-            match world.jobs.iter().position(|job| job.order == order) {
-                Some(at) => world.jobs[at].id,
-                None => {
-                    let id = JobId(world.jobs.len() as u64 + 1);
-                    let job = job(id, order, release);
-                    world.jobs.push(job);
-                    id
-                }
-            }
-        };
-        // the runner goes on on the machine whether or not anyone follows
-        self.kill.point().await;
-        let mut world = self.world();
-        let outcome = match world.breaks {
-            true => Outcome::Failed(Failure {
-                phase: Phase::Building,
-                message: "builder for thoth-0.4 failed with exit code 1".into(),
-                tail: vec!["error: linker `cc` not found".into()],
-            }),
-            false => Outcome::Succeeded,
-        };
-        let succeeded = matches!(outcome, Outcome::Succeeded);
-        let job = world
-            .jobs
-            .iter_mut()
-            .find(|job| job.id == id)
-            .expect("the job was admitted");
-        job.state = JobState::Finished(outcome);
-        job.finished_at = Some(Timestamp::now());
-        let job = job.clone();
-        if !succeeded {
-            return Err(Blocker::SwitchFailed { job: Box::new(job) }.into());
+        if self.world().daemon {
+            return self.ordered(release, bootstrap.options.retry).await;
         }
-        let via = match world.daemon {
-            true => Door::Ordered,
-            false => Door::Adopted,
+
+        let platform = self.world().facts.platform.into();
+        let mut stocked = FakeStock {
+            machine: self,
+            release,
         };
-        world.daemon = true;
-        Ok(Switched { job, via })
+        let ending = first::converge(
+            &mut stocked,
+            &bootstrap.host,
+            platform,
+            bootstrap.options.retry,
+            console,
+        )
+        .await?;
+        let job = match ending {
+            Ending::Finished(job) => job,
+            // the machine comes back on its own
+            Ending::Rebooted { job, .. } => {
+                self.kill.point().await;
+                job
+            }
+            Ending::Lost { .. } | Ending::DaemonHere => {
+                bail!("the fake machine never drops ssh");
+            }
+        };
+        match job.state {
+            JobState::Finished(Outcome::Succeeded | Outcome::UpToDate) => Ok(Switched {
+                job,
+                via: Door::Adopted,
+            }),
+            _ => Err(Blocker::SwitchFailed { job: Box::new(job) }.into()),
+        }
     }
 
     async fn answer(&self, _: &Switched, _: &Console) -> Result<Answer> {
@@ -289,14 +283,149 @@ impl Machine for FakeMachine {
     }
 }
 
+impl FakeMachine {
+    /// the switch through coeusd, once it answers: the release's job from
+    /// history, or one ordered and run to its end
+    async fn ordered(&self, release: &Release, retry: bool) -> Result<Switched> {
+        let attempt = Attempt::of(&self.world().jobs, &release.nar_hash);
+        let order = match attempt {
+            Attempt::Succeeded(job) => {
+                return Ok(Switched {
+                    job,
+                    via: Door::Ordered,
+                });
+            }
+            Attempt::Running(job) => job.order,
+            Attempt::Fresh(order) => order,
+            Attempt::Failed {
+                next: Some(next), ..
+            } if retry => next,
+            Attempt::Failed { last, .. } => {
+                return Err(Blocker::SwitchFailed {
+                    job: Box::new(last),
+                }
+                .into());
+            }
+        };
+        let job = self.run_job(release, order, Action::Switch).await;
+        match job.state {
+            JobState::Finished(Outcome::Succeeded) => Ok(Switched {
+                job,
+                via: Door::Ordered,
+            }),
+            _ => Err(Blocker::SwitchFailed { job: Box::new(job) }.into()),
+        }
+    }
+
+    /// the job of `order`, admitted as `action` unless it was, carried out
+    /// by its runner on the machine whether or not anyone follows
+    async fn run_job(&self, release: &Release, order: OrderId, action: Action) -> JobSummary {
+        let id = {
+            let mut world = self.world();
+            match world.jobs.iter().position(|job| job.order == order) {
+                Some(at) => world.jobs[at].id,
+                None => {
+                    let id = JobId(world.jobs.len() as u64 + 1);
+                    world.jobs.push(job(id, order, action, release));
+                    id
+                }
+            }
+        };
+        self.kill.point().await;
+
+        let mut world = self.world();
+        let at = world
+            .jobs
+            .iter()
+            .position(|job| job.id == id)
+            .expect("the job was admitted");
+        if let JobState::Finished(_) = world.jobs[at].state {
+            return world.jobs[at].clone();
+        }
+        let toplevel = world.jobs[at].toplevel.clone();
+        let outcome = match (world.jobs[at].action, world.refuses, world.breaks) {
+            (Action::Boot, ..) => {
+                world.default = toplevel;
+                Outcome::Succeeded
+            }
+            (_, true, _) => Outcome::RolledBack(Failure {
+                phase: Phase::Activating,
+                message: "switch-to-configuration failed with exit status: 1".into(),
+                tail: vec![
+                    "Checking switch inhibitors... The following inhibitors changed:".into(),
+                    "dbus-implementation: dbus -> broker".into(),
+                    "Pre-switch check 'switchInhibitors' failed".into(),
+                    "Pre-switch checks failed".into(),
+                ],
+            }),
+            (_, _, true) => Outcome::Failed(Failure {
+                phase: Phase::Building,
+                message: "builder for thoth-0.4 failed with exit code 1".into(),
+                tail: vec!["error: linker `cc` not found".into()],
+            }),
+            _ => {
+                world.running = toplevel.clone();
+                world.default = toplevel;
+                world.daemon = true;
+                Outcome::Succeeded
+            }
+        };
+        let job = &mut world.jobs[at];
+        job.state = JobState::Finished(outcome);
+        job.finished_at = Some(Timestamp::now());
+        job.clone()
+    }
+}
+
+/// the stock machine as the first switch goes through it
+struct FakeStock<'a> {
+    machine: &'a FakeMachine,
+    release: &'a Release,
+}
+
+impl Stocked for FakeStock<'_> {
+    async fn status(&mut self) -> Result<Attempt> {
+        self.machine.kill.point().await;
+        Ok(Attempt::of(
+            &self.machine.world().jobs,
+            &self.release.nar_hash,
+        ))
+    }
+
+    async fn running(&mut self) -> Result<Running> {
+        self.machine.kill.point().await;
+        let world = self.machine.world();
+        Ok(Running {
+            system: world.running.clone(),
+            boot: Some(world.boot.to_string()),
+        })
+    }
+
+    async fn adopt(&mut self, order: OrderId, action: Action) -> Result<Ending> {
+        let job = self.machine.run_job(self.release, order, action).await;
+        Ok(Ending::Finished(job))
+    }
+
+    async fn reboot(&mut self) -> Result<()> {
+        self.machine.kill.point().await;
+        let mut world = self.machine.world();
+        world.running = world.default.clone();
+        world.boot += 1;
+        world.reboots += 1;
+        world.reboot_required = false;
+        world.daemon = true;
+        Ok(())
+    }
+}
+
 /// a job admitted for `release`, running
-fn job(id: JobId, order: crate::common::model::OrderId, release: &Release) -> JobSummary {
+fn job(id: JobId, order: OrderId, action: Action, release: &Release) -> JobSummary {
     let now = Timestamp::now();
     JobSummary {
         id,
         order,
         source: release.source(),
-        action: Action::Switch,
+        action,
         origin: Origin::User {
             user: "bootstrap".into(),
             host: "altar".into(),

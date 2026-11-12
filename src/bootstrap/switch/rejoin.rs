@@ -69,6 +69,7 @@ async fn by_ssh(way: &Way<'_>, mut feed: Feed, console: &Console) -> Result<(End
             way.source,
             way.plan,
             way.job.order,
+            way.job.action,
             from,
             &mut feed,
             console,
@@ -91,7 +92,7 @@ async fn by_ssh(way: &Way<'_>, mut feed: Feed, console: &Console) -> Result<(End
             Ending::Lost { .. } => continue,
             // the machine's own coeusd runs now; the tailnet way finds it
             Ending::DaemonHere => future::pending::<()>().await,
-            Ending::Finished(_) => return Ok((ending, feed)),
+            Ending::Finished(_) | Ending::Rebooted { .. } => return Ok((ending, feed)),
         }
     }
 }

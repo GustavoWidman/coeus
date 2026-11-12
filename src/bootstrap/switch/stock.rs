@@ -1,4 +1,5 @@
-//! the first switch over ssh: ship, build the fleet's coeus, adopt
+//! the first switch over ssh: ship, build the fleet's coeus, adopt, and on a
+//! NixOS that refuses to switch live, adopt a boot and reboot
 
 use std::{
     path::{Path, PathBuf},
@@ -15,6 +16,7 @@ use tokio::{
 use super::{
     AdoptLine, Feed, Release,
     backoff::Backoff,
+    first::{self, Stocked},
     ship::{Archived, Lock},
     show,
 };
@@ -22,18 +24,27 @@ use crate::{
     adopt::{DAEMON_HERE, NEEDS_FULL_DISK_ACCESS},
     bootstrap::{
         Blocker, Bootstrap, Step,
-        remote::{AdoptCall, Call, Platform, Privilege, Ssh, Stock},
+        remote::{AdoptCall, Call, Platform, Privilege, Running, Ssh, Stock},
     },
     cli::Console,
     client::Snapshot,
-    common::model::{Attempt, Hostname, JobSummary, NarHash, OrderId, StorePath, Timestamp},
+    common::model::{
+        self, Action, Attempt, Hostname, JobSummary, NarHash, OrderId, StorePath, Timestamp,
+    },
     nix::LogFold,
     ui::checklist::{Live, Mark, Row},
 };
 
-/// how a stream of `coeusd adopt --follow` ended
+/// how a stream of `coeusd adopt --follow` ended, or the first switch with
+/// it
 pub enum Ending {
     Finished(JobSummary),
+    /// the boot job succeeded and the machine was told to reboot into its
+    /// system, from the boot `before` names
+    Rebooted {
+        job: JobSummary,
+        before: Running,
+    },
     /// the stream ended without the job finishing, at this log offset
     Lost {
         job: JobSummary,
@@ -69,9 +80,10 @@ impl<'a> Plan<'a> {
     }
 }
 
-/// ships, builds the fleet's coeus, reads where the switch stands and
-/// adopts the order that comes next, following it from the start. the coeus
-/// and the source come back for following it again after ssh drops.
+/// ships, builds the fleet's coeus, then reads where the switch stands and
+/// adopts what comes next until the machine runs the release, a try fails,
+/// or it reboots into the release. the coeus and the source come back for
+/// following a job again after ssh drops.
 pub async fn switch(
     stock: &Stock,
     plan: &Plan<'_>,
@@ -80,28 +92,78 @@ pub async fn switch(
 ) -> Result<(FleetCoeus, StorePath, Ending)> {
     let source = ship(stock, plan, console).await?;
     let coeus = fleet_coeus(stock, &source, plan.host, console).await?;
-    let order = match status(stock, &coeus, &source, plan).await? {
-        Attempt::Fresh(order) => order,
-        Attempt::Succeeded(job) => return Ok((coeus, source, Ending::Finished(job))),
-        Attempt::Running(job) => job.order,
-        Attempt::Failed { last, next } => match (plan.retry, next) {
-            (true, Some(next)) => next,
-            (true, None) => {
-                return Err(eyre!(
-                    "every try of this head failed on {}; commit a fix in the clone and run again",
-                    plan.host
-                ));
-            }
-            (false, _) => {
-                return Err(Blocker::SwitchFailed {
-                    job: Box::new(last),
-                }
-                .into());
-            }
-        },
+    let platform = model::Platform::from(stock.probed.facts.platform);
+    let mut over = OverSsh {
+        stock,
+        coeus: &coeus,
+        source: &source,
+        plan,
+        feed,
+        console,
     };
-    let ending = adopt(stock, &coeus, &source, plan, order, 0, feed, console).await?;
+    let ending = first::converge(&mut over, plan.host, platform, plan.retry, console).await?;
     Ok((coeus, source, ending))
+}
+
+/// the stock machine over ssh, as the first switch goes through it
+struct OverSsh<'a, 'p> {
+    stock: &'a Stock,
+    coeus: &'a FleetCoeus,
+    source: &'a StorePath,
+    plan: &'a Plan<'p>,
+    feed: &'a mut Feed,
+    console: &'a Console,
+}
+
+impl Stocked for OverSsh<'_, '_> {
+    async fn status(&mut self) -> Result<Attempt> {
+        status(self.stock, self.coeus, self.source, self.plan).await
+    }
+
+    async fn running(&mut self) -> Result<Running> {
+        Running::parse(&self.stock.run(&Call::Running).await?)
+    }
+
+    async fn adopt(&mut self, order: OrderId, action: Action) -> Result<Ending> {
+        *self.feed = Feed::default();
+        adopt(
+            self.stock,
+            self.coeus,
+            self.source,
+            self.plan,
+            order,
+            action,
+            0,
+            self.feed,
+            self.console,
+        )
+        .await
+    }
+
+    async fn reboot(&mut self) -> Result<()> {
+        reboot(self.stock, self.plan.host, self.console).await
+    }
+}
+
+/// `systemctl reboot` as root. ssh dropping as the machine goes down is
+/// the reboot under way.
+pub async fn reboot(stock: &Stock, host: &Hostname, console: &Console) -> Result<()> {
+    console.mark(
+        Step::Switch,
+        Mark::Active,
+        format!("rebooting {host} into its fleet system"),
+    );
+    let output = stock.output(&Call::Reboot).await?;
+    if output.status.success() || Ssh::lost(output.status) {
+        return Ok(());
+    }
+    bail!(
+        "could not reboot {host}: {}",
+        String::from_utf8_lossy(&output.stderr)
+            .lines()
+            .last()
+            .unwrap_or("systemctl said nothing")
+    );
 }
 
 /// the clone and the inputs only this admin can reach, copied into the
@@ -318,7 +380,8 @@ pub async fn status(
 }
 
 /// runs `coeusd adopt … --follow <from>` as root and feeds its lines to the
-/// switch row until the job finishes or the stream ends
+/// switch row until the job finishes or the stream ends; `action` is what a
+/// job admitted now does
 #[allow(clippy::too_many_arguments)]
 pub async fn adopt(
     stock: &Stock,
@@ -326,6 +389,7 @@ pub async fn adopt(
     source: &StorePath,
     plan: &Plan<'_>,
     order: OrderId,
+    action: Action,
     from: u64,
     feed: &mut Feed,
     console: &Console,
@@ -337,7 +401,7 @@ pub async fn adopt(
         label: plan.release.label.clone(),
         hostname: plan.host.clone(),
         order,
-        boot: false,
+        boot: action == Action::Boot,
         install_bootloader: plan.release.install_bootloader,
         follow: Some(from),
     });
@@ -373,6 +437,11 @@ pub async fn adopt(
             job: view.summary.clone(),
             offset: feed.offset,
         }),
+        _ if action == Action::Boot && said.contains("'--boot'") => Err(eyre!(
+            "NixOS on {} refuses to switch live, and the coeus its configuration pins cannot \
+             `coeusd adopt --boot`: update coeus on the branch",
+            plan.host
+        )),
         _ => Err(eyre!(
             "coeusd adopt on {} failed: {}",
             plan.host,

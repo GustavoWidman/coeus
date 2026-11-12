@@ -29,6 +29,35 @@ async fn a_run_stopped_anywhere_converges_when_run_again() {
     .await;
 }
 
+/// the same on a NixOS that refuses to switch live: a run dropped after the
+/// refusal, while the boot runs, after it succeeded with the machine still
+/// on its stock system, and after the reboot, converges when run again
+#[tokio::test]
+async fn a_refused_switch_stopped_anywhere_converges_when_run_again() {
+    if !has_nix() {
+        return;
+    }
+    let counted = Fleet::new().await;
+    counted.world.lock().unwrap().refuses = true;
+    let counting = Kill::default();
+    counted.assert_in_the_fleet(&counted.run(&counting).await.unwrap());
+    counted.assert_booted_into_the_fleet();
+    let points = counting.seen();
+
+    join_all((0..points).map(|at| async move {
+        let fleet = Fleet::new().await;
+        fleet.world.lock().unwrap().refuses = true;
+        assert!(
+            fleet.run(&Kill::at(at)).await.is_none(),
+            "the run went past {at} of {points}"
+        );
+        let ran = fleet.run(&Kill::default()).await.unwrap();
+        fleet.assert_in_the_fleet(&ran);
+        fleet.assert_booted_into_the_fleet();
+    }))
+    .await;
+}
+
 /// a run dropped wherever it was waiting, inside git, nix or age as much as
 /// on the machine: after its `n`-th wait for a spread of `n`. what a dropped
 /// git left running is given time to end, as it would before anyone ran the

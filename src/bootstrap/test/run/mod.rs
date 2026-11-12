@@ -359,6 +359,29 @@ impl Fleet {
     }
 }
 
+impl Fleet {
+    /// a refused switch, then one boot into the fleet's system and one
+    /// reboot, which it runs now
+    fn assert_booted_into_the_fleet(&self) {
+        use crate::common::model::{Action, JobState, Outcome, Phase};
+
+        let world = self.world.lock().unwrap();
+        assert_eq!(world.jobs.len(), 2, "one refused switch, one boot");
+        let JobState::Finished(Outcome::RolledBack(refused)) = &world.jobs[0].state else {
+            panic!("{:?}", world.jobs[0].state);
+        };
+        assert_eq!(refused.phase, Phase::Activating);
+        let boot = &world.jobs[1];
+        assert_eq!(boot.action, Action::Boot);
+        assert_eq!(boot.state, JobState::Finished(Outcome::Succeeded));
+        assert_eq!(
+            world.running, boot.toplevel,
+            "it runs the boot job's system"
+        );
+        assert_eq!(world.reboots, 1, "rebooted once, however many runs");
+    }
+}
+
 /// a future that ends with `None` once it was found waiting `polls` times
 struct StopAfter<F> {
     inner: Pin<Box<F>>,
