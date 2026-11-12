@@ -1,6 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     process::Stdio,
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use eyre::{Result, WrapErr, bail, eyre};
@@ -53,7 +54,7 @@ impl Snapshots {
         }
 
         tokio::fs::create_dir_all(&self.root).await?;
-        let nar = self.root.join(format!(".{}.nar", hash.file_name()));
+        let nar = self.staging(&hash, "nar");
 
         Ok(Receiving {
             file: File::create(&nar).await?,
@@ -75,8 +76,7 @@ impl Snapshots {
         }
 
         tokio::fs::create_dir_all(&self.root).await?;
-        let unpacked = self.root.join(format!(".{}.tree", hash.file_name()));
-        let _ = tokio::fs::remove_dir_all(&unpacked).await;
+        let unpacked = self.staging(hash, "tree");
 
         let mut dump = Command::new("nix-store")
             .arg("--dump")
@@ -106,6 +106,18 @@ impl Snapshots {
         self.settle(&unpacked, hash).await
     }
 
+    /// a temporary name of `hash`'s no other placing shares, in this
+    /// process or another, so none unpacks into a tree another is writing
+    fn staging(&self, hash: &NarHash, extension: &str) -> PathBuf {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let n = NEXT.fetch_add(1, Ordering::Relaxed);
+        self.root.join(format!(
+            ".{}.{}.{n}.{extension}",
+            hash.file_name(),
+            std::process::id()
+        ))
+    }
+
     /// checks an unpacked tree hashes to `hash` and puts it in place
     async fn settle(&self, unpacked: &Path, hash: &NarHash) -> Result<()> {
         let hashed = Command::new("nix")
@@ -124,7 +136,13 @@ impl Snapshots {
             ));
         }
 
-        tokio::fs::rename(unpacked, self.path(hash)).await?;
+        if let Err(error) = tokio::fs::rename(unpacked, self.path(hash)).await {
+            let _ = tokio::fs::remove_dir_all(unpacked).await;
+            // another placing of the same tree got there first
+            if !self.has(hash) {
+                return Err(error.into());
+            }
+        }
         self.prune()
     }
 

@@ -134,6 +134,11 @@ impl Request {
         let state_dir = &settings.state_dir;
         create_private(state_dir)?;
 
+        // one adopt at a time places the snapshot and decides what the
+        // order's job is; one a killed run left behind may still be at it
+        let lock = fs::File::create(state_dir.join("adopt.lock"))?;
+        lock.lock()?;
+
         Snapshots::new(state_dir)
             .place(&self.source, &self.nar_hash)
             .await?;
@@ -144,10 +149,6 @@ impl Request {
             .wrap_err("failed to locate the coeusd binary")?;
         let launcher = Launcher::new(host.platform, &settings.launcher, state_dir, &exe)?;
         let store = JobStore::open(state_dir)?;
-
-        // one adopt at a time decides what the order's job is
-        let lock = fs::File::create(state_dir.join("adopt.lock"))?;
-        lock.lock()?;
 
         let spec = |id| self.spec(id, &host, settings);
         let current = SystemRoot::default().current();
