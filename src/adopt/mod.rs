@@ -49,7 +49,8 @@ const ORDERED_BY: &str = "bootstrap";
 /// the process's exit code
 pub async fn run(args: &AdoptArgs) -> Result<i32> {
     if args.status {
-        let state_dir = args.state_dir.clone().unwrap_or_else(default_state_dir);
+        let state_dir = status_state_dir(args).await?;
+        create_private(&state_dir)?;
         let store = JobStore::open(&state_dir)?;
         let attempt = Attempt::of(&admit::summaries(&store).await?, &args.nar_hash);
         println!("{}", serde_json::to_string(&attempt)?);
@@ -205,7 +206,17 @@ impl Request {
     }
 }
 
-/// the state directory `--status` reads when not told another, coeusd's
+/// the state directory `--status` reads: the one it is told, else the one
+/// the configuration names, as admitting reads it, else coeusd's default
+async fn status_state_dir(args: &AdoptArgs) -> Result<PathBuf> {
+    Ok(match (&args.state_dir, &args.source, &args.hostname) {
+        (Some(state_dir), _, _) => state_dir.clone(),
+        (None, Some(source), Some(hostname)) => settings::of(source, hostname).await?.state_dir,
+        _ => default_state_dir(),
+    })
+}
+
+/// the state directory `--status` reads when nothing says another, coeusd's
 fn default_state_dir() -> PathBuf {
     DaemonSettings::default().state_dir
 }
