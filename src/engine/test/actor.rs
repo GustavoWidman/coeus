@@ -182,3 +182,40 @@ async fn gives_up_on_runners_that_never_start() {
     );
     harness.shutdown.cancel();
 }
+
+#[tokio::test]
+async fn a_summary_that_cannot_be_written_does_not_wedge_the_machine() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let harness = Harness::start(tempfile::tempdir().unwrap()).await;
+    harness.engine.deploy(order(1)).await.unwrap().unwrap();
+    harness
+        .until(|view| {
+            view.running
+                .as_ref()
+                .is_some_and(|job| job.summary.toplevel.is_some())
+        })
+        .await;
+
+    let job = harness.state.path().join("jobs/000001");
+    let mode =
+        |bits| std::fs::set_permissions(&job, std::fs::Permissions::from_mode(bits)).unwrap();
+    mode(0o555);
+    harness.release.notify_one();
+
+    let view = harness.until(|view| finished(view, 1).is_some()).await;
+    mode(0o755);
+    assert_eq!(finished(&view, 1), Some(Outcome::Succeeded));
+    assert!(
+        !job.join("summary.json").exists(),
+        "the summary could not be written"
+    );
+
+    let admission = harness.engine.deploy(order(2)).await.unwrap().unwrap();
+    assert_eq!(
+        admission.placement,
+        Placement::Started,
+        "the lane is free again"
+    );
+    harness.shutdown.cancel();
+}

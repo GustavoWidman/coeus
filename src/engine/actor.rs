@@ -521,8 +521,12 @@ impl<H: Host> Actor<H> {
         };
 
         let job = running.dir.id();
-        if running.dir.summary()?.is_none() {
-            running.dir.write_summary(&running.view.summary)?;
+        let summary = running.dir.summary().and_then(|written| match written {
+            Some(_) => Ok(()),
+            None => running.dir.write_summary(&running.view.summary),
+        });
+        if let Err(error) = summary {
+            warn!("failed to record the summary of job {job}: {error}");
         }
 
         info!("job {job} finished: {:?}", running.outcome());
