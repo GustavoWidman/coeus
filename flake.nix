@@ -46,6 +46,7 @@
           {
             pkgs,
             system,
+            lib,
             ...
           }:
           let
@@ -63,7 +64,10 @@
             checks = {
               inherit coeus;
             }
-            // coeus.passthru.checks;
+            // coeus.passthru.checks
+            // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+              nixos = pkgs.testers.runNixOSTest (import ./nix/test.nix { inherit self; });
+            };
 
             devshells.default = {
               packages = [
