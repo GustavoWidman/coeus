@@ -2,6 +2,7 @@
 
 mod generate;
 mod header;
+mod identity;
 
 use std::{io::Write, path::Path};
 
