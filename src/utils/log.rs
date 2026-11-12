@@ -70,9 +70,14 @@ pub struct Logger;
 
 impl Logger {
     pub fn init(level: LevelFilter) {
+        Self::init_to(level, Target::Stdout);
+    }
+
+    /// logs to `target`; the CLI keeps stdout for its views and `--json`
+    pub fn init_to(level: LevelFilter, target: Target) {
         Builder::new()
             .filter("coeus".into(), level)
-            .target(Target::Stdout)
+            .target(target)
             .format(formatter(CustomLevelTokens))
             .write_style(WriteStyle::Always)
             .init();
