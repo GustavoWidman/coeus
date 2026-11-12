@@ -3,6 +3,7 @@
 mod ansi;
 mod diff;
 mod filter;
+mod flake;
 mod fold;
 mod line;
 
@@ -11,5 +12,6 @@ mod test;
 
 pub use ansi::strip_ansi;
 pub use filter::*;
+pub use flake::FlakeRepo;
 pub use fold::*;
 pub use line::*;
