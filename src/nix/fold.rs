@@ -164,13 +164,7 @@ impl LogFold {
             return;
         }
 
-        let headline = ansi::strip_ansi(text.lines().next().unwrap_or_default());
-        let headline = headline.trim();
-        let headline = headline
-            .strip_prefix("error:")
-            .unwrap_or(headline)
-            .trim_start();
-        self.error = Some(headline.to_owned());
+        self.error = Some(headline(text));
     }
 
     fn is_copy_path(&self, id: Option<ActivityId>) -> bool {
@@ -219,6 +213,26 @@ impl Tail {
         self.lines.push_back(line);
         true
     }
+}
+
+/// what an error message says went wrong, without its `error:`. an error with
+/// a trace opens on a bare `error:` and names its cause in the last one.
+fn headline(text: &str) -> String {
+    let text = ansi::strip_ansi(text);
+    let first = text.lines().next().unwrap_or_default().trim();
+
+    let line = match first.strip_prefix("error:").map(str::trim) {
+        Some("") => text
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("error:"))
+            .map(str::trim)
+            .rfind(|cause| !cause.is_empty())
+            .unwrap_or_default(),
+        Some(cause) => cause,
+        None => first,
+    };
+
+    line.to_owned()
 }
 
 fn tally_of(counts: Counts) -> Tally {
