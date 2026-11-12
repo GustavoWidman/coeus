@@ -1,5 +1,6 @@
 //! the deployment domain, shared by the daemon, its runners and the CLI
 
+mod attempt;
 mod control;
 mod diff;
 mod event;
@@ -14,6 +15,7 @@ mod time;
 #[cfg(test)]
 mod test;
 
+pub use attempt::*;
 pub use control::*;
 pub use diff::*;
 pub use event::*;
