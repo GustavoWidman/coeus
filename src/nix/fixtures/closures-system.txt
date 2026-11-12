@@ -1,0 +1,13 @@
+Brewfile: (no version) added
+DarwinTools: 1 added, [31;1m69.6 KiB[0m
+ICU: 76142.4.7 added, [31;1m40.0 MiB[0m
+apple-sdk: 15.5 added, [31;1m768.8 MiB[0m
+bootstrap: (no version) added, [31;1m258.0 MiB[0m
+brew: (no version), 7.0.11 added, [31;1m19.6 MiB[0m
+brotli: [31;1m1.9 MiB[0m
+bzip2: [31;1m203.6 KiB[0m
+cctools: [31;1m5.0 MiB[0m
+direnv: (no version), 2.38.2 added, [31;1m8.4 MiB[0m
+ffmpeg: 8.1.2, 9.0.2 added, [31;1m55.2 MiB[0m
+helix: (no version), 25.07.1 added, [31;1m190.8 MiB[0m
+libaom: 3.15.0, 3.15.1 added, [31;1m14.3 MiB[0m
