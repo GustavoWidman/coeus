@@ -5,7 +5,7 @@ use log::LevelFilter;
 
 use super::commands::{
     AttachArgs, CancelArgs, CompletionsArgs, DeployArgs, DoctorArgs, GenerationsArgs, HistoryArgs,
-    LogsArgs, RebootArgs, RollbackArgs, StatusArgs, WatchArgs,
+    LogsArgs, RebootArgs, RollbackArgs, StatusArgs, TopArgs, WatchArgs,
 };
 
 #[derive(Parser, Debug)]
@@ -36,6 +36,8 @@ pub enum Command {
     Status(StatusArgs),
     /// Follow everything happening on the fleet, whoever ordered it
     Watch(WatchArgs),
+    /// Watch and steer the fleet on a full-screen dashboard
+    Top(TopArgs),
     /// Follow a job's build through nix-output-monitor
     Attach(AttachArgs),
     /// Print a job's log as plain text
