@@ -37,6 +37,14 @@ impl Machine {
 
     pub fn new(settings: &DaemonSettings) -> Result<Self> {
         let host = HostInfo::detect(settings.hostname.clone())?;
+        let exe = std::env::current_exe()?
+            .canonicalize()
+            .wrap_err("failed to locate the coeusd binary")?;
+
+        if host.platform == Platform::Darwin {
+            super::darwin::install_launcher(&settings.launcher, &exe)?;
+        }
+
         let launcher = match host.platform {
             Platform::NixOs => Launcher::Systemd,
             Platform::Darwin => Launcher::Launchd {
@@ -50,9 +58,7 @@ impl Machine {
             system: SystemRoot::default(),
             launcher,
             state_dir: settings.state_dir.clone(),
-            exe: std::env::current_exe()?
-                .canonicalize()
-                .wrap_err("failed to locate the coeusd binary")?,
+            exe,
         })
     }
 

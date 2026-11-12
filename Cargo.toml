@@ -11,6 +11,10 @@ path = "src/bin/coeus.rs"
 name = "coeusd"
 path = "src/bin/coeusd.rs"
 
+[[bin]]
+name = "coeus-launcher"
+path = "src/bin/coeus-launcher.rs"
+
 [dependencies]
 bytes = "1.12.1"
 coeus-proto-macros = { path = "proto-macros" }

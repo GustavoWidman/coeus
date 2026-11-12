@@ -98,18 +98,18 @@ mod doctor {
     }
 
     #[test]
-    fn missing_full_disk_access_fails_with_the_fix() {
+    fn missing_full_disk_access_warns_with_the_fix() {
         let mut view = view(Platform::Darwin);
         view.system.fda = FdaStatus::Missing;
 
         let checkup = Checkup::of(&view, "0.2.0");
-        assert_eq!(checkup.severity(), Severity::Fail);
+        assert_eq!(checkup.severity(), Severity::Warn);
         assert!(
             checkup.findings[0]
                 .fix
                 .as_ref()
                 .unwrap()
-                .contains("/usr/bin/time")
+                .contains("coeus-launcher")
         );
     }
 

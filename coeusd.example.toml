@@ -23,9 +23,11 @@ state_dir = "/var/lib/coeus"
 # finished jobs to keep
 history = 100
 
-# the Apple-signed program macOS runners start under; grant it Full Disk
-# Access once (System Settings > Privacy & Security > Full Disk Access)
-launcher = "/usr/bin/time"
+# the program macOS runners start under, installed by coeusd and never
+# replaced. nix-darwin needs Full Disk Access to create or delete users: grant
+# it to this path once (System Settings > Privacy & Security > Full Disk
+# Access), or run `coeus doctor --fix` on the Mac
+launcher = "/Library/Application Support/coeus/coeus-launcher"
 
 # catch up with a git ref on its own, e.g. after waking up from sleep
 [settings.follow]

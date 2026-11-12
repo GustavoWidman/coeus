@@ -207,11 +207,6 @@ impl Runner {
     async fn activate(&mut self, toplevel: StorePath) -> Result<Outcome> {
         let (platform, action) = (self.spec.target.platform, self.spec.order.action);
 
-        if platform == Platform::Darwin && !darwin::has_full_disk_access() {
-            let message = darwin::full_disk_access_missing(&darwin::launcher());
-            return Ok(Outcome::Failed(Failure::new(Phase::Activating, message)));
-        }
-
         let undo = Activation::undo(platform, action, &self.system);
         let activation = Activation {
             platform,
@@ -225,7 +220,9 @@ impl Runner {
 
         self.enter(Phase::Activating)?;
         for step in activation.steps() {
-            self.exec(&step).await?;
+            self.exec(&step)
+                .await
+                .map_err(|error| self.without_full_disk_access(platform, error))?;
         }
 
         let Some(guard) = self.spec.guard.clone().filter(|_| action.activates()) else {
@@ -297,6 +294,22 @@ impl Runner {
             .inspect_err(|error| warn!("unreadable stop request: {error:#}"))
             .ok()
             .flatten()
+    }
+
+    /// names the missing grant when a darwin activation fails without it,
+    /// since nix-darwin then aborts on user changes
+    fn without_full_disk_access(&self, platform: Platform, error: Report) -> Report {
+        if platform != Platform::Darwin || darwin::has_full_disk_access() {
+            return error;
+        }
+
+        let mut failure = self.failure(error);
+        failure.message = format!(
+            "{}; {}",
+            failure.message,
+            darwin::full_disk_access_missing(&darwin::launcher())
+        );
+        Failed(failure).into()
     }
 
     fn failure(&self, error: Report) -> Failure {
