@@ -125,6 +125,21 @@ fn explains_a_failure_with_the_last_error() {
 }
 
 #[test]
+fn explains_an_error_with_a_trace_by_its_cause() {
+    let mut fold = LogFold::new();
+    fold.feed(concat!(
+        r#"@nix {"action":"msg","level":0,"msg":"\u001b[31;1merror:\u001b[0m\n"#,
+        r#"       … while fetching the input '\u001b[35;1mgit+https://github.com/owner/nix?rev=5d93c5b\u001b[0m'\n\n"#,
+        r#"       \u001b[31;1merror:\u001b[0m Failed to fetch git repository '\u001b[35;1mhttps://github.com/owner/nix\u001b[0m'"}"#,
+    ));
+
+    assert_eq!(
+        fold.last_error(),
+        Some("Failed to fetch git repository 'https://github.com/owner/nix'")
+    );
+}
+
+#[test]
 fn keeps_plain_output_in_the_tail() {
     let mut fold = LogFold::new();
     fold.feed("activating the configuration...\n");
