@@ -84,8 +84,7 @@ fn done(evidence: &Evidence) -> Vec<String> {
             pull.url.bold()
         ))),
         PullState::Closed => lines.push(indent(format!(
-            "reopen and merge {}, or no other machine learns about {host}",
-            pull.url.bold()
+            "`coeus bootstrap {host}` opens a new pull request, or no other machine learns about {host}"
         ))),
         PullState::Merged => {}
     }

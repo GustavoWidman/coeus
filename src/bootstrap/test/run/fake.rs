@@ -24,8 +24,8 @@ use crate::{
     },
     cli::Console,
     common::model::{
-        Action, Attempt, Failure, FdaStatus, JobId, JobState, JobSummary, Origin, Outcome, Phase,
-        Platform, StorePath, Timestamp,
+        Action, Attempt, CommitSha, Failure, FdaStatus, JobId, JobState, JobSummary, Origin,
+        Outcome, Phase, Platform, StorePath, Timestamp,
     },
 };
 
@@ -366,21 +366,38 @@ impl FakeForge {
     }
 }
 
+/// the branch's head on origin, as the clone saw it pushed: what the forge
+/// shows as the head of its open pull requests
+fn pushed(clone: &Path, branch: &str) -> Result<CommitSha> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(clone)
+        .args(["rev-parse", &format!("refs/remotes/origin/{branch}")])
+        .output()?;
+    if !output.status.success() {
+        bail!("{branch} is not on origin");
+    }
+    String::from_utf8(output.stdout)?.trim().parse()
+}
+
 impl Forge for FakeForge {
-    async fn find(&self, _: &Path, branch: &str) -> Result<Option<PullRequest>> {
+    async fn find(&self, clone: &Path, branch: &str) -> Result<Option<PullRequest>> {
         self.kill.point().await;
-        Ok(self
-            .pulls()?
-            .open
-            .iter()
-            .filter(|(head, _)| head == branch)
-            .map(|(_, pull)| pull.clone())
-            .max_by_key(|pull| pull.number))
+        let head = pushed(clone, branch).ok();
+        let mut pulls = self.pulls()?;
+        let listed = pulls.open.iter_mut().filter(|(on, _)| on == branch);
+        let listed = listed.map(|(_, pull)| {
+            if let Some(head) = head.filter(|_| pull.state == PullState::Open) {
+                pull.head = head;
+            }
+            pull.clone()
+        });
+        Ok(PullRequest::pick(listed.collect::<Vec<_>>()))
     }
 
     async fn create_draft(
         &self,
-        _: &Path,
+        clone: &Path,
         branch: &str,
         _: &str,
         _: &str,
@@ -396,6 +413,7 @@ impl Forge for FakeForge {
                 draft: true,
                 state: PullState::Open,
                 body: body.to_owned(),
+                head: pushed(clone, branch)?,
             };
             pulls.open.push((branch.to_owned(), pull.clone()));
             pull

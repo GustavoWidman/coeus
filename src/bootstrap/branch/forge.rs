@@ -1,5 +1,7 @@
 //! the pull request through `gh`, found by its head branch, so a run that
-//! died after `gh pr create` finds the one it opened
+//! died after `gh pr create` finds the one it opened. only a pull request
+//! from the repository itself counts: anyone can open one from a fork
+//! whose branch has the same name.
 
 use std::{fmt, path::Path, process::Stdio};
 
@@ -8,8 +10,9 @@ use serde::Deserialize;
 use tokio::{io::AsyncWriteExt, process::Command};
 
 use super::{body, git::REDIRECTING};
+use crate::common::model::CommitSha;
 
-const FIELDS: &str = "number,url,isDraft,state,body";
+const FIELDS: &str = "number,url,isDraft,state,body,headRefOid,isCrossRepository";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PullRequest {
@@ -18,6 +21,8 @@ pub struct PullRequest {
     pub draft: bool,
     pub state: PullState,
     pub body: String,
+    /// the commit its head branch points at, as the forge saw it last
+    pub head: CommitSha,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
@@ -25,7 +30,7 @@ pub struct PullRequest {
 pub enum PullState {
     Open,
     Merged,
-    /// closed without merging: reopened only when the person says so
+    /// closed without merging: left alone, and a new one opened
     Closed,
 }
 
@@ -52,6 +57,8 @@ struct Wire {
     is_draft: bool,
     state: PullState,
     body: String,
+    head_ref_oid: CommitSha,
+    is_cross_repository: bool,
 }
 
 impl From<Wire> for PullRequest {
@@ -62,17 +69,21 @@ impl From<Wire> for PullRequest {
             draft: wire.is_draft,
             state: wire.state,
             body: wire.body,
+            head: wire.head_ref_oid,
         }
     }
 }
 
-/// `gh pr list --json` output: the newest pull request, if any
+/// `gh pr list --json` output: the pull request of the branch, if any, from
+/// the repository's own pull requests
 pub(super) fn parse_list(json: &str) -> Result<Option<PullRequest>> {
     let listed: Vec<Wire> = serde_json::from_str(json).wrap_err("unexpected gh pr list output")?;
-    Ok(listed
-        .into_iter()
-        .max_by_key(|wire| wire.number)
-        .map(PullRequest::from))
+    Ok(PullRequest::pick(
+        listed
+            .into_iter()
+            .filter(|wire| !wire.is_cross_repository)
+            .map(PullRequest::from),
+    ))
 }
 
 /// `gh pr view --json` output
@@ -82,7 +93,19 @@ pub(super) fn parse_view(json: &str) -> Result<PullRequest> {
 }
 
 impl PullRequest {
-    /// `gh pr list --head <branch> --state all --json …`, the newest
+    /// of a branch's pull requests, the newest open or merged one. a merged
+    /// one means the work is done; one closed without merging is history,
+    /// and a new one is opened beside it, since GitHub does not reopen a
+    /// pull request whose branch was force-pushed since
+    pub fn pick(listed: impl IntoIterator<Item = Self>) -> Option<Self> {
+        listed
+            .into_iter()
+            .filter(|pull| pull.state != PullState::Closed)
+            .max_by_key(|pull| pull.number)
+    }
+
+    /// `gh pr list --head <branch> --state all --json …`, as [Self::pick]
+    /// chooses among the repository's own
     pub async fn find(clone: &Path, branch: &str) -> Result<Option<Self>> {
         let args = [
             "pr", "list", "--head", branch, "--state", "all", "--json", FIELDS,

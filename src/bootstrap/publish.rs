@@ -11,7 +11,7 @@ use super::{
     run::Shown,
     world::Forge,
 };
-use crate::{cli::Console, ui::checklist::Mark};
+use crate::{cli::Console, common::model::CommitSha, ui::checklist::Mark};
 
 /// the branch on origin and its pull request, opened as a draft when there
 /// is none
@@ -57,18 +57,29 @@ pub async fn push<F: Forge>(
     })
 }
 
-/// coeus's section rewritten from the evidence, and the draft marked ready
+/// coeus's section rewritten from the evidence, and the draft marked ready,
+/// once the pull request shows the head this run switched the machine to
 pub async fn review<F: Forge>(
     enrolled: &Enrolled,
-    mut pull: PullRequest,
+    pull: PullRequest,
     evidence: &body::Evidence,
     forge: &F,
     console: &Console,
 ) -> Result<Shown<PullRequest>> {
     let clone = enrolled.branch.clone_dir();
+    let head = enrolled.branch.head().await?;
+    let name = Branch::name(&enrolled.host);
     let section = body::section(evidence);
     let said = |pull: &PullRequest| body::splice(&pull.body, &section) == pull.body;
     let ready = |pull: &PullRequest| !pull.draft || pull.state != PullState::Open;
+
+    // the forge as it is now: the push step read it right after pushing
+    let mut pull = forge
+        .find(clone, &name)
+        .await?
+        .filter(|found| found.number == pull.number)
+        .ok_or_else(|| eyre!("gh no longer finds #{} for {name}", pull.number))?;
+    shows(&pull, head)?;
     let kept = said(&pull) && ready(&pull);
 
     console.mark(
@@ -81,11 +92,11 @@ pub async fn review<F: Forge>(
         forge.ready(clone, &mut pull).await?;
     }
 
-    let name = Branch::name(&enrolled.host);
     let pull = forge
         .find(clone, &name)
         .await?
         .ok_or_else(|| eyre!("gh no longer finds the pull request for {name}"))?;
+    shows(&pull, head)?;
     if !said(&pull) || !ready(&pull) {
         return Err(eyre!(
             "#{} does not show coeus's section, or is still a draft",
@@ -102,4 +113,18 @@ pub async fn review<F: Forge>(
         mark: if kept { Mark::Kept } else { Mark::Done },
         detail,
     })
+}
+
+/// the pull request is of the commit the machine runs: coeus says what
+/// happened only in its own pull request, about its own commit
+fn shows(pull: &PullRequest, head: CommitSha) -> Result<()> {
+    if pull.head != head {
+        return Err(eyre!(
+            "#{} is of {}, not of {} which this run pushed; running again looks again",
+            pull.number,
+            pull.head.short(),
+            head.short()
+        ));
+    }
+    Ok(())
 }
