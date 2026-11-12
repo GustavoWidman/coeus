@@ -10,7 +10,14 @@ use std::{
 use eyre::{Result, WrapErr, bail};
 use tokio::process::Command;
 
-use crate::common::model::JobId;
+use crate::{
+    common::model::{JobId, Platform},
+    job::JobDir,
+};
+
+/// where the running system's tools are, whichever system that is: after a
+/// switch, nix and tailscale are found here
+const CURRENT_SYSTEM: &str = "/run/current-system/sw/bin";
 
 /// what the service manager runs on coeusd's behalf
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +60,34 @@ pub enum Launcher {
 }
 
 impl Launcher {
+    /// how tasks start on `platform`. on darwin the launcher shipped next
+    /// to `exe` is installed at `program` first, unless one is there.
+    pub fn new(platform: Platform, program: &Path, state_dir: &Path, exe: &Path) -> Result<Self> {
+        match platform {
+            Platform::NixOs => Ok(Self::Systemd),
+            Platform::Darwin => {
+                super::darwin::install_launcher(program, exe)?;
+                Ok(Self::Launchd {
+                    program: program.to_owned(),
+                    plists: state_dir.join("launchd"),
+                })
+            }
+        }
+    }
+
+    /// starts `<exe> run <dir>`, the runner of the job in `dir`; a runner
+    /// already running for it is left alone
+    pub async fn run_job(&self, exe: &Path, dir: &JobDir) -> Result<()> {
+        let command =
+            [exe.as_os_str(), OsStr::new("run"), dir.path().as_os_str()].map(OsStr::to_owned);
+        self.start(
+            Task::Job(dir.id()),
+            &command,
+            &dir.path().join("runner.log"),
+        )
+        .await
+    }
+
     /// starts `command` as `task`; a task already running is left alone
     pub async fn start(&self, task: Task, command: &[OsString], log: &Path) -> Result<()> {
         match self {
@@ -224,19 +259,36 @@ fn escape(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// what a runner's environment has on NixOS: coeusd's own `PATH`, which the
-/// module fills with nix and its tools
+/// what a runner's environment has on NixOS: the starter's own `PATH`,
+/// which the module fills with nix and its tools, and the running system's
 fn linux_environment() -> Vec<(String, String)> {
-    let inherited = ["PATH", "LOCALE_ARCHIVE"]
-        .into_iter()
-        .filter_map(|name| Some((name.to_owned(), std::env::var(name).ok()?)));
+    let path = runner_path(std::env::var("PATH").ok().as_deref());
+    let locale = std::env::var("LOCALE_ARCHIVE")
+        .ok()
+        .map(|value| ("LOCALE_ARCHIVE".to_owned(), value));
 
-    inherited
+    [("PATH".to_owned(), path)]
+        .into_iter()
+        .chain(locale)
         .chain([
             ("HOME".to_owned(), "/root".to_owned()),
             ("NIX_REMOTE".to_owned(), "daemon".to_owned()),
         ])
         .collect()
+}
+
+/// `inherited` with the running system's tools last, so a runner started
+/// from a stock system still finds nix and tailscale once it switched
+pub(crate) fn runner_path(inherited: Option<&str>) -> String {
+    let mut dirs: Vec<&str> = inherited
+        .unwrap_or_default()
+        .split(':')
+        .filter(|dir| !dir.is_empty())
+        .collect();
+    if !dirs.contains(&CURRENT_SYSTEM) {
+        dirs.push(CURRENT_SYSTEM);
+    }
+    dirs.join(":")
 }
 
 /// launchd starts jobs with an empty environment; this is what darwin-rebuild

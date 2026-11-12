@@ -1,6 +1,6 @@
 use std::{ffi::OsString, os::unix::fs::symlink, path::Path};
 
-use super::*;
+use super::{launcher::runner_path, *};
 use crate::common::model::{Action, JobId, Platform};
 
 fn system(name: &str) -> String {
@@ -185,6 +185,19 @@ fn systemd_runs_a_collected_transient_service_per_job() {
             "/var/lib/coeus/jobs/000042",
         ]
     );
+}
+
+#[test]
+fn runners_find_the_running_systems_tools() {
+    assert_eq!(
+        runner_path(Some("/nix/store/x-nix/bin:/nix/store/x-git/bin")),
+        "/nix/store/x-nix/bin:/nix/store/x-git/bin:/run/current-system/sw/bin"
+    );
+    assert_eq!(
+        runner_path(Some("/run/wrappers/bin:/run/current-system/sw/bin")),
+        "/run/wrappers/bin:/run/current-system/sw/bin"
+    );
+    assert_eq!(runner_path(None), "/run/current-system/sw/bin");
 }
 
 #[test]
