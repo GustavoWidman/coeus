@@ -210,3 +210,28 @@ async fn a_branch_of_only_a_rekey_rebases_to_the_default_branch() {
     );
     assert_eq!(subjects(&branch), Vec::<String>::new());
 }
+
+#[tokio::test]
+async fn a_strict_missing_commits_check_does_not_stop_the_rebase() {
+    let fleet = Fleet::new();
+    let branch = fleet.open("altar").await;
+    git(
+        branch.clone_dir(),
+        &["config", "rebase.missingCommitsCheck", "error"],
+    );
+    enroll(&branch).await;
+    std::fs::write(branch.path(&path("secrets/cache.age")), "resealed\n").unwrap();
+    branch
+        .commit_rekey("chore(nova): rekey", &[path("secrets/cache.age")])
+        .await
+        .unwrap();
+    fleet.commit_on_main(&[("readme.md", "moved\n")]);
+    branch.behind().await.unwrap();
+
+    assert_eq!(
+        branch.rebase_dropping_rekey().await.unwrap(),
+        Rebased::Clean
+    );
+    assert_eq!(subjects(&branch), ["feat(nova): join the fleet"]);
+    assert!(!branch.clone_dir().join(".git/rebase-merge").exists());
+}
