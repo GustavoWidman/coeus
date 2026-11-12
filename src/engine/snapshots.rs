@@ -73,7 +73,7 @@ impl Snapshots {
             .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
             .filter_map(|entry| Some((entry.metadata().ok()?.modified().ok()?, entry.path())))
             .collect();
-        snapshots.sort_by(|a, b| b.0.cmp(&a.0));
+        snapshots.sort_by_key(|(modified, _)| std::cmp::Reverse(*modified));
 
         for (_, path) in snapshots.into_iter().skip(Self::KEEP) {
             if let Err(error) = std::fs::remove_dir_all(&path) {

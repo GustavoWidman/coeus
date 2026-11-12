@@ -180,11 +180,9 @@ impl CoeusClient {
     async fn ask(&mut self, request: impl Into<Packet>) -> Result<Packet> {
         self.stream.send(request).await?;
         match self.stream.recv().await? {
-            Some(Packet::Error(error)) => {
-                return Err(eyre!("{}: {}", self.host.hostname, error.message));
-            }
+            Some(Packet::Error(error)) => Err(eyre!("{}: {}", self.host.hostname, error.message)),
             Some(packet) => Ok(packet),
-            None => return Err(eyre!("{} closed the connection", self.host.hostname)),
+            None => Err(eyre!("{} closed the connection", self.host.hostname)),
         }
     }
 }
