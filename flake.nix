@@ -25,11 +25,11 @@
       imports = [
         devshell.flakeModule
       ];
+
       perSystem =
         {
           pkgs,
           system,
-          lib,
           ...
         }:
         let
@@ -39,33 +39,15 @@
           };
 
           craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
-          root = ./.;
-
-          args = {
-            src = lib.fileset.toSource {
-              inherit root;
-              fileset = lib.fileset.unions [
-                (craneLib.fileset.commonCargoSources root)
-                # (lib.fileset.fileFilter (file: file.hasExt "md") root)
-              ];
-            };
-            strictDeps = true;
-
-            nativeBuildInputs = [ ];
-            buildInputs = [ ];
-          };
-
-          bin = craneLib.buildPackage (
-            args
-            // {
-              cargoArtifacts = craneLib.buildDepsOnly args;
-            }
-          );
+          coeus = pkgs.callPackage ./nix/package.nix { inherit craneLib; };
         in
         {
-          # checks.<package> = bin;
+          packages.default = coeus;
 
-          packages.default = bin;
+          checks = {
+            inherit coeus;
+          }
+          // coeus.passthru.checks;
 
           devshells.default = {
             packages = [
