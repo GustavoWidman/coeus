@@ -114,9 +114,13 @@ pub async fn ship(stock: &Stock, plan: &Plan<'_>, console: &Console) -> Result<S
     }
 
     let (store, ssh_options) = stock.ssh.nix_store(nix_daemon(stock.probed.facts.platform));
+    // inputs this admin substituted carry signatures of caches a stock machine
+    // does not trust; the lock pins each by its nar hash, which the machine
+    // checks when it evaluates, so root on the machine takes them unsigned
     let mut child = Command::new("nix")
         .args(["--extra-experimental-features", "nix-command flakes"])
         .args(["flake", "archive", "--json", "--no-update-lock-file"])
+        .arg("--no-check-sigs")
         .args(["--log-format", "internal-json", "--to", &store])
         .arg(format!("path:{}", stage.path().display()))
         .env("NIX_SSHOPTS", ssh_options)
