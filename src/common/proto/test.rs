@@ -1,4 +1,7 @@
-use crate::common::proto::envelope::PacketEnvelope;
+use crate::common::{
+    model::{JobId, JobSelector},
+    proto::envelope::PacketEnvelope,
+};
 
 use super::*;
 
@@ -37,4 +40,23 @@ fn packet_envelope_round_trips() {
 fn rejects_unknown_packet_kinds() {
     let encoded = [0xff, 0x7f, 0x00];
     assert!(postcard::from_bytes::<Packet>(&encoded).is_err());
+}
+
+#[test]
+fn daemons_that_cannot_draw_still_read_an_attach_request() {
+    let envelope = PacketEnvelope::new(Packet::from(AttachRequest {
+        job: JobSelector::Id(JobId(6)),
+        from: 42,
+        terminal: Some(TerminalSize {
+            columns: 140,
+            rows: 40,
+        }),
+    }));
+    let encoded = postcard::to_stdvec(&envelope).unwrap();
+
+    let (version, kind, payload): (u8, u16, Vec<u8>) = postcard::from_bytes(&encoded).unwrap();
+    assert_eq!((version, kind), (PROTOCOL_VERSION, 0x0202));
+
+    let request: (JobSelector, u64) = postcard::from_bytes(&payload).unwrap();
+    assert_eq!(request, (JobSelector::Id(JobId(6)), 42));
 }

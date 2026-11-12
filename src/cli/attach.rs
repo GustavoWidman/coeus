@@ -72,7 +72,7 @@ impl Attach<'_> {
 
         loop {
             let attachment = match self.fleet.connect(self.host).await {
-                Ok(client) => client.attach(self.job, from).await,
+                Ok(client) => client.attach(self.job, from, None).await,
                 Err(error) => Err(error),
             };
             let mut attachment = match attachment {
@@ -136,6 +136,7 @@ impl Attach<'_> {
                             }
                         }
                     }
+                    Ok(Some(AttachmentEvent::Screen(_))) => {}
                     Ok(Some(AttachmentEvent::Ended { outcome, .. })) => {
                         if let Some(sink) = sink.take() {
                             sink.close().await?;

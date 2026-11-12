@@ -63,6 +63,10 @@ pub enum Packet {
     HistoryRequest,
     #[packet(id = 0x0207, type = HistoryResponse)]
     HistoryResponse,
+    #[packet(id = 0x0208, type = AttachScreen)]
+    AttachScreen,
+    #[packet(id = 0x0209, type = AttachResize)]
+    AttachResize,
 
     #[packet(id = 0x0300, type = GenerationsRequest)]
     GenerationsRequest,

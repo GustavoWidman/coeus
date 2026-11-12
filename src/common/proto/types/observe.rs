@@ -21,6 +21,34 @@ pub struct MachineUpdate {
 pub struct AttachRequest {
     pub job: JobSelector,
     pub from: u64,
+    /// have the machine draw nix-output-monitor's view of the whole log at
+    /// this size and send [AttachScreen]s; without it, or when the machine
+    /// cannot draw, the log comes as [AttachBatch]es of frames
+    pub terminal: Option<TerminalSize>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TerminalSize {
+    pub columns: u16,
+    pub rows: u16,
+}
+
+/// terminal output of a drawn attach, for the client to write as is. the
+/// job's events still come as batches, so the client knows how it ended
+#[derive(Debug, Serialize, Deserialize, Packet)]
+pub struct AttachScreen {
+    pub bytes: Vec<u8>,
+}
+
+impl AttachScreen {
+    /// the most one carries, well within an encrypted frame
+    pub const MAX: usize = 32 * 1024;
+}
+
+/// the client's terminal changed size during a drawn attach
+#[derive(Debug, Serialize, Deserialize, Packet)]
+pub struct AttachResize {
+    pub size: TerminalSize,
 }
 
 /// the job the attach resolved to, sent once before any batch

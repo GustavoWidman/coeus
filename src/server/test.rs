@@ -86,7 +86,7 @@ async fn orders_and_attaches_until_the_job_ends() {
     let mut attachment = served
         .client()
         .await
-        .attach(JobSelector::Current, 0)
+        .attach(JobSelector::Current, 0, None)
         .await
         .unwrap();
     let Some(AttachmentEvent::Started(job)) = attachment.next().await.unwrap() else {
@@ -162,7 +162,7 @@ async fn errors_travel_as_messages() {
     let error = served
         .client()
         .await
-        .attach(JobSelector::Id(JobId(9)), 0)
+        .attach(JobSelector::Id(JobId(9)), 0, None)
         .await
         .unwrap()
         .next()

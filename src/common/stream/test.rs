@@ -7,7 +7,7 @@ use tokio::{
 
 use crate::common::{
     model::{HostInfo, Platform},
-    proto::{Error as ErrorPacket, Packet, ResolveRequest},
+    proto::{AttachScreen, Error as ErrorPacket, Packet, ResolveRequest},
 };
 
 use super::{EncryptedListener, EncryptedStream};
@@ -263,5 +263,27 @@ async fn owned_halves_send_and_receive_packets_concurrently() -> TestResult {
         Ok::<_, Box<dyn Error + Send + Sync>>(())
     })
     .await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_fullest_screen_fits_one_frame() -> TestResult {
+    let listener = bind().await?;
+    let address = listener.local_addr()?;
+    let bytes = vec![0xff; AttachScreen::MAX];
+    let sent = bytes.clone();
+
+    let server = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await?;
+        stream.send(AttachScreen { bytes: sent }).await?;
+        Ok::<_, Box<dyn Error + Send + Sync>>(())
+    });
+
+    let (mut client, _) = EncryptedStream::connect(address, &PSK).await?;
+    match client.recv().await? {
+        Some(Packet::AttachScreen(screen)) => assert_eq!(screen.bytes, bytes),
+        other => panic!("unexpected packet: {other:?}"),
+    }
+    server.await??;
     Ok(())
 }
