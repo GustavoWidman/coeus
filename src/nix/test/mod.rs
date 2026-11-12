@@ -1,3 +1,5 @@
+mod ansi;
+mod fold;
 mod line;
 
 pub const BUILD: &str = include_str!("../fixtures/build.jsonl");
