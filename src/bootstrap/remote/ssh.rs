@@ -8,7 +8,8 @@
 //!   agenix reads;
 //! - a `known_hosts` of its own holding exactly the trusted key under a
 //!   `HostKeyAlias`, with `StrictHostKeyChecking=yes`, and `BatchMode=yes`
-//!   once the first contact is over.
+//!   once the first contact is over. nothing else may vouch for a key: no
+//!   global file, `KnownHostsCommand` or DNS.
 
 use std::{
     path::{Path, PathBuf},
@@ -236,6 +237,8 @@ impl Ssh {
             format!("HostKeyAlias={}", self.alias),
             format!("UserKnownHostsFile={}", self.known_hosts.display()),
             "GlobalKnownHostsFile=/dev/null".into(),
+            "KnownHostsCommand=none".into(),
+            "VerifyHostKeyDNS=no".into(),
             "StrictHostKeyChecking=yes".into(),
             "HostKeyAlgorithms=ssh-ed25519".into(),
             "UpdateHostKeys=no".into(),
@@ -272,6 +275,8 @@ pub(super) fn first_contact_args(destination: &str, known_hosts: &Path) -> Vec<S
         &format!("UserKnownHostsFile={}", known_hosts.display()),
         "GlobalKnownHostsFile=/dev/null",
         "HashKnownHosts=no",
+        "KnownHostsCommand=none",
+        "VerifyHostKeyDNS=no",
         "HostKeyAlgorithms=ssh-ed25519",
         &format!("HostKeyAlias={FIRST_CONTACT}"),
         "ControlPath=none",

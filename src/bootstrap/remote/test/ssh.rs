@@ -40,6 +40,8 @@ fn first_contact_authenticates_with_nothing_and_records_into_scratch() {
         "UserKnownHostsFile=/tmp/scratch/known_hosts",
         "GlobalKnownHostsFile=/dev/null",
         "HashKnownHosts=no",
+        "KnownHostsCommand=none",
+        "VerifyHostKeyDNS=no",
         "HostKeyAlgorithms=ssh-ed25519",
         "ControlPath=none",
     ] {
@@ -85,6 +87,9 @@ fn nix_goes_through_the_master_with_the_pin() {
     let control = format!("ControlPath={}", state.control_path().display());
     for option in [
         "HostKeyAlias=nova",
+        "GlobalKnownHostsFile=/dev/null",
+        "KnownHostsCommand=none",
+        "VerifyHostKeyDNS=no",
         "StrictHostKeyChecking=yes",
         "HostKeyAlgorithms=ssh-ed25519",
         "BatchMode=yes",
