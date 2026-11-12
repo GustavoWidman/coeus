@@ -1,6 +1,7 @@
 //! what nix prints, understood: its `internal-json` log and its closure diffs
 
 mod ansi;
+mod diff;
 mod filter;
 mod fold;
 mod line;

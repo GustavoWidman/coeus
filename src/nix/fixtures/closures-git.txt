@@ -1,0 +1,12 @@
+bash: 5.3p15 → 5.3p20
+bash-interactive: 5.3p15 removed, [32;1m-8.1 MiB[0m
+clang: [32;1m-112.1 KiB[0m
+coreutils: 9.11 → 9.12, [31;1m17.8 KiB[0m
+expat: 2.8.5 → 2.9.0
+git: 2.55.0 → 2.56.0, [31;1m1.5 MiB[0m
+gzip: 1.14 → 1.15, [32;1m-15.2 KiB[0m
+nghttp3: 1.17.0 → 1.18.0
+openssl: 3.5.8 → 3.5.9, [31;1m18.8 KiB[0m
+pcre2: 10.48 → 10.49
+python3: 3.14.7 → 3.14.8, [31;1m506.0 KiB[0m
+tzdata: 2026d → 2026e

@@ -1,4 +1,5 @@
 mod ansi;
+mod diff;
 mod filter;
 mod fold;
 mod line;
