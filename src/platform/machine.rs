@@ -41,17 +41,7 @@ impl Machine {
             .canonicalize()
             .wrap_err("failed to locate the coeusd binary")?;
 
-        if host.platform == Platform::Darwin {
-            super::darwin::install_launcher(&settings.launcher, &exe)?;
-        }
-
-        let launcher = match host.platform {
-            Platform::NixOs => Launcher::Systemd,
-            Platform::Darwin => Launcher::Launchd {
-                program: settings.launcher.clone(),
-                plists: settings.state_dir.join("launchd"),
-            },
-        };
+        let launcher = Launcher::new(host.platform, &settings.launcher, &settings.state_dir, &exe)?;
 
         Ok(Self {
             host,
@@ -117,14 +107,7 @@ impl Host for Machine {
     /// starts `coeusd run <dir>` detached from coeusd; a runner already running
     /// for the job is left alone
     async fn spawn_runner(&self, dir: &JobDir) -> Result<()> {
-        let command = self.command("run", dir.path().as_os_str().to_owned());
-        self.launcher
-            .start(
-                Task::Job(dir.id()),
-                &command,
-                &dir.path().join("runner.log"),
-            )
-            .await
+        self.launcher.run_job(&self.exe, dir).await
     }
 
     async fn release_runner(&self, id: JobId) -> Result<()> {
