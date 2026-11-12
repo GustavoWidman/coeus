@@ -84,16 +84,30 @@ impl Branch {
     /// - no branch anywhere: a new one on a freshly fetched `origin/<base>`
     /// - a stale `index.lock`: removed, since the bootstrap's flock proves no
     ///   git of ours runs there
+    ///
+    /// `base` is the branch of origin the enrollment goes onto, origin's
+    /// default branch when `None`
     pub async fn open(
         state_dir: &StateDir,
         person_checkout: &Path,
         host: &Hostname,
+        base: Option<&str>,
     ) -> Result<Self> {
         let dir = state_dir.clone_dir();
         let git = clone::ensure(&dir, person_checkout).await?;
         clone::repair(&git).await?;
         git.run(&["fetch", "--quiet", "--prune", "origin"]).await?;
-        let base = clone::base(&git).await?;
+        let base = match base {
+            Some(base) => base.to_owned(),
+            None => clone::base(&git).await?,
+        };
+        if git
+            .resolve(&format!("refs/remotes/origin/{base}"))
+            .await?
+            .is_none()
+        {
+            bail!("origin has no branch {base} to put the enrollment on");
+        }
 
         let name = Self::name(host);
         let remote = git.resolve(&format!("refs/remotes/origin/{name}")).await?;
@@ -396,12 +410,13 @@ impl Branch {
     }
 
     /// `git push --force-with-lease` of the head, against the remote head it
-    /// saw, since a rebase rewrites; nothing when origin has it already
-    pub async fn push(&self) -> Result<()> {
+    /// saw, since a rebase rewrites; nothing when origin has it already.
+    /// whether it pushed.
+    pub async fn push(&self) -> Result<bool> {
         let head = self.head().await?;
         let seen = *self.seen.lock().expect("the lease is never poisoned");
         if seen == Some(head) {
-            return Ok(());
+            return Ok(false);
         }
 
         let name = Self::name(&self.host);
@@ -442,7 +457,7 @@ impl Branch {
             bail!("pushed {name}, but origin does not show {}", head.short());
         }
         *self.seen.lock().expect("the lease is never poisoned") = Some(head);
-        Ok(())
+        Ok(true)
     }
 }
 
