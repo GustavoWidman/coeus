@@ -166,6 +166,11 @@ fn the_rest_are_pinned() {
     assert!(status.privileged());
     assert!(Call::MoveEtcAside.privileged());
     assert!(!Call::Tailscale.privileged());
+    assert_eq!(Call::Reboot.argv()[4..], ["systemctl", "reboot"]);
+    assert!(Call::Reboot.privileged());
+    assert!(Call::Running.argv()[2].contains("/run/current-system"));
+    assert!(Call::Running.argv()[2].contains("boot_id"));
+    assert!(!Call::Running.privileged());
 }
 
 #[test]
@@ -232,4 +237,24 @@ fn the_full_disk_access_pane_opens_for_whoever_sits_at_the_mac() {
         argv.last().unwrap(),
         "/Library/Application Support/coeus/coeus-launcher"
     );
+}
+
+#[test]
+fn what_the_machine_runs_is_read_from_its_lines() {
+    use crate::bootstrap::remote::Running;
+
+    let system = "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-nixos-system-nixos-25.11";
+    let running = Running::parse(&format!(
+        "system={system}\nboot=6f1c0a9e-2b4d-4e8f-9a1b-3c5d7e9f0a2b\n"
+    ))
+    .unwrap();
+    assert_eq!(running.system, Some(system.parse().unwrap()));
+    assert_eq!(
+        running.boot.as_deref(),
+        Some("6f1c0a9e-2b4d-4e8f-9a1b-3c5d7e9f0a2b")
+    );
+
+    let mac = Running::parse("system=\nboot=\n").unwrap();
+    assert_eq!(mac, Running::default(), "an empty key is unknown");
+    assert!(Running::parse("system=/etc/static\n").is_err());
 }

@@ -5,11 +5,15 @@
 //! answers: the job's outcome is read from history, and a head that moved
 //! since is ordered through the protocol like `deploy --local`. either way
 //! the switch is an ordinary job, built, activated and guarded on the
-//! machine whatever happens to the connection or to the admin.
+//! machine whatever happens to the connection or to the admin. a NixOS that
+//! refuses to switch live into the release is given a boot job instead, and
+//! rebooted into it.
 
+mod back;
 mod backoff;
 mod daemon;
 mod feed;
+pub mod first;
 mod rejoin;
 mod ship;
 mod stock;
@@ -27,7 +31,7 @@ pub use stock::{Ending, FleetCoeus, Plan};
 use crate::{
     bootstrap::{Blocker, Bootstrap, Step, fleet::Daemon, remote::Target},
     cli::Console,
-    common::model::{CommitSha, JobState, JobSummary, NarHash, Outcome, Source},
+    common::model::{CommitSha, JobState, JobSummary, NarHash, Outcome, Platform, Source},
     ui::checklist::{Live, Mark, Row},
 };
 
@@ -85,12 +89,23 @@ pub async fn converge(
         }
 
         let stock = target.stock(bootstrap, console).await?;
+        let platform = Platform::from(stock.probed.facts.platform);
         let mut feed = Feed::default();
         let (coeus, source, ending) = stock::switch(stock, &plan, &mut feed, console).await?;
         let mut ending = ending;
         loop {
             match ending {
+                // a job followed back after ssh dropped may leave a boot or a
+                // reboot to do: decided again from the start
+                Ending::Finished(job) if first::goes_on(&job, platform) => break,
                 Ending::Finished(job) => return finished(job, Door::Adopted, &feed, console),
+                Ending::Rebooted { job, before } => {
+                    back::wait(target, stock, &job, &before, console).await?;
+                    return Ok(Switched {
+                        job,
+                        via: Door::Adopted,
+                    });
+                }
                 // a coeusd took the machine over: order through it
                 Ending::DaemonHere => {
                     tokio::time::sleep(POLL).await;

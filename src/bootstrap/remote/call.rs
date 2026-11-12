@@ -46,6 +46,11 @@ pub enum Call {
     },
     /// `tailscale status --json`, when coeusd stays silent
     Tailscale,
+    /// the system the machine runs and its boot id, as `system=` and
+    /// `boot=` lines
+    Running,
+    /// `systemctl reboot`, as root
+    Reboot,
     /// System Settings' Full Disk Access pane, and `launcher` shown in
     /// Finder, on the screen of whoever is logged in at the Mac
     OpenFullDiskAccess { launcher: String },
@@ -137,6 +142,10 @@ launchctl asuser "$uid" sudo -u "$user" open "x-apple.systempreferences:com.appl
 launchctl asuser "$uid" sudo -u "$user" open -R "$1"
 "#;
 
+const RUNNING: &str = r#"printf 'system=%s\n' "$(readlink -f /run/current-system 2>/dev/null)"
+printf 'boot=%s\n' "$(cat /proc/sys/kernel/random/boot_id 2>/dev/null)"
+"#;
+
 const TAILSCALE: &str = r#"for tailscale in tailscale /run/current-system/sw/bin/tailscale /Applications/Tailscale.app/Contents/MacOS/Tailscale; do
   command -v "$tailscale" >/dev/null 2>&1 && exec "$tailscale" status --json
 done
@@ -196,6 +205,8 @@ impl Call {
                 hostname.as_str(),
             ]),
             Self::Tailscale => words(["sh", "-c", TAILSCALE]),
+            Self::Running => words(["sh", "-c", RUNNING]),
+            Self::Reboot => with_nix(["systemctl", "reboot"]),
             Self::OpenFullDiskAccess { launcher } => {
                 words(["sh", "-c", OPEN_FULL_DISK_ACCESS, "sh", launcher])
             }
@@ -204,7 +215,7 @@ impl Call {
 
     /// whether it must run as root
     pub fn privileged(&self) -> bool {
-        !matches!(self, Self::Probe { .. } | Self::Tailscale)
+        !matches!(self, Self::Probe { .. } | Self::Tailscale | Self::Running)
     }
 
     /// what the call reads on stdin, beyond a sudo password

@@ -315,3 +315,220 @@ fn the_shipped_inputs_reach_a_nix_daemon_run_as_root() {
     let password = Privilege::SudoPassword(Zeroizing::new("hunter2".into()));
     assert_eq!(remote_program(Platform::Nixos, &password), nixos);
 }
+
+mod first {
+    use super::job;
+    use crate::{
+        bootstrap::{
+            remote::Running,
+            switch::first::{Back, Next, Refusal, goes_on, owes_reboot},
+        },
+        common::model::{
+            Action, Attempt, Failure, JobState, JobSummary, OrderId, Outcome, Phase, Platform,
+            StorePath,
+        },
+    };
+
+    const NEXT: OrderId = OrderId(0x5f0f);
+
+    fn ended(action: Action, outcome: Outcome) -> JobSummary {
+        JobSummary {
+            action,
+            state: JobState::Finished(outcome),
+            toplevel: Some(fleet()),
+            ..job()
+        }
+    }
+
+    fn fleet() -> StorePath {
+        "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-nixos-system-nova-26.05"
+            .parse()
+            .unwrap()
+    }
+
+    fn stock() -> StorePath {
+        "/nix/store/abcdfghijklmnpqrsvwxyz0123456789-nixos-system-nixos-25.11"
+            .parse()
+            .unwrap()
+    }
+
+    /// what switch-to-configuration prints when a pre-switch check refuses
+    fn refused(phase: Phase, rolled_back: bool) -> JobSummary {
+        let failure = Failure {
+            phase,
+            message: "switch-to-configuration failed with exit status: 1".into(),
+            tail: vec![
+                "copying the system".into(),
+                "Checking switch inhibitors...".into(),
+                "jq: error (at /run/current-system/switch-inhibitors:0): Cannot iterate over null"
+                    .into(),
+                "".into(),
+                "Pre-switch check 'switchInhibitors' failed".into(),
+                "Pre-switch checks failed".into(),
+            ],
+        };
+        let outcome = match rolled_back {
+            true => Outcome::RolledBack(failure),
+            false => Outcome::Failed(failure),
+        };
+        ended(Action::Switch, outcome)
+    }
+
+    fn failed(last: JobSummary) -> Attempt {
+        Attempt::Failed {
+            last,
+            next: Some(NEXT),
+        }
+    }
+
+    #[test]
+    fn a_switch_nixos_refuses_is_booted_by_the_next_try_without_asking() {
+        for rolled_back in [true, false] {
+            let next = Next::of(
+                failed(refused(Phase::Activating, rolled_back)),
+                Platform::NixOs,
+                false,
+            );
+            let Next::Boot { order, refusal } = next else {
+                panic!("expected a boot, got {next:?}");
+            };
+            assert_eq!(order, NEXT);
+            assert_eq!(
+                refusal.lines,
+                [
+                    "Checking switch inhibitors...",
+                    "jq: error (at /run/current-system/switch-inhibitors:0): Cannot iterate over null",
+                    "Pre-switch check 'switchInhibitors' failed",
+                ]
+            );
+            assert!(refusal.note().starts_with(
+                "NixOS asks for a reboot into this system instead of a live switch: Checking switch inhibitors..."
+            ));
+        }
+
+        let last = Attempt::Failed {
+            last: refused(Phase::Activating, true),
+            next: None,
+        };
+        assert_eq!(Next::of(last, Platform::NixOs, false), Next::Exhausted);
+    }
+
+    #[test]
+    fn other_failures_wait_for_retry() {
+        let guard = ended(
+            Action::Switch,
+            Outcome::RolledBack(Failure::new(Phase::Verifying, "coeusd does not answer")),
+        );
+        assert_eq!(
+            Next::of(failed(guard.clone()), Platform::NixOs, false),
+            Next::Failed(guard.clone())
+        );
+        assert_eq!(
+            Next::of(failed(guard), Platform::NixOs, true),
+            Next::Order {
+                order: NEXT,
+                action: Action::Switch
+            }
+        );
+
+        let building = refused(Phase::Building, false);
+        assert!(matches!(
+            Next::of(failed(building), Platform::NixOs, false),
+            Next::Failed(_)
+        ));
+
+        // a Mac has no pre-switch checks and no boot action
+        let mac = refused(Phase::Activating, true);
+        assert_eq!(Refusal::of(&mac, Platform::Darwin), None);
+        assert!(matches!(
+            Next::of(failed(mac), Platform::Darwin, false),
+            Next::Failed(_)
+        ));
+
+        // a boot that failed is booted again on retry, never switched
+        let boot = ended(
+            Action::Boot,
+            Outcome::Failed(Failure::new(Phase::Activating, "no space left on /boot")),
+        );
+        assert_eq!(
+            Next::of(failed(boot), Platform::NixOs, true),
+            Next::Order {
+                order: NEXT,
+                action: Action::Boot
+            }
+        );
+    }
+
+    #[test]
+    fn a_boot_that_succeeded_is_done_once_the_machine_runs_its_system() {
+        let boot = ended(Action::Boot, Outcome::Succeeded);
+        assert_eq!(
+            Next::of(Attempt::Succeeded(boot.clone()), Platform::NixOs, false),
+            Next::Booted(boot.clone())
+        );
+        assert!(owes_reboot(&boot, Some(&stock())));
+        assert!(owes_reboot(&boot, None));
+        assert!(!owes_reboot(&boot, Some(&fleet())));
+
+        let switch = ended(Action::Switch, Outcome::Succeeded);
+        assert_eq!(
+            Next::of(Attempt::Succeeded(switch.clone()), Platform::NixOs, false),
+            Next::Done(switch)
+        );
+        let running = JobSummary {
+            action: Action::Boot,
+            ..job()
+        };
+        assert_eq!(
+            Next::of(Attempt::Running(running.clone()), Platform::NixOs, false),
+            Next::Follow(running)
+        );
+    }
+
+    #[test]
+    fn only_a_refusal_or_a_boot_leaves_more_to_do_after_a_try() {
+        assert!(goes_on(&refused(Phase::Activating, true), Platform::NixOs));
+        assert!(goes_on(
+            &ended(Action::Boot, Outcome::Succeeded),
+            Platform::NixOs
+        ));
+        assert!(!goes_on(
+            &ended(Action::Switch, Outcome::Succeeded),
+            Platform::NixOs
+        ));
+        assert!(!goes_on(
+            &ended(
+                Action::Boot,
+                Outcome::Failed(Failure::new(Phase::Activating, "boom"))
+            ),
+            Platform::NixOs
+        ));
+        assert!(!goes_on(
+            &refused(Phase::Activating, true),
+            Platform::Darwin
+        ));
+    }
+
+    #[test]
+    fn a_rebooted_machine_is_home_only_on_the_boot_jobs_system() {
+        let boot = ended(Action::Boot, Outcome::Succeeded);
+        let before = Running {
+            system: Some(stock()),
+            boot: Some("first".into()),
+        };
+        let now = |system: StorePath, boot: &str| Running {
+            system: Some(system),
+            boot: Some(boot.into()),
+        };
+
+        assert_eq!(Back::of(&boot, &before, &before), Back::NotYet);
+        assert_eq!(
+            Back::of(&boot, &before, &now(fleet(), "second")),
+            Back::Home
+        );
+        assert_eq!(
+            Back::of(&boot, &before, &now(stock(), "second")),
+            Back::Elsewhere(Some(stock()))
+        );
+    }
+}
