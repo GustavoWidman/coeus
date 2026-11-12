@@ -1,9 +1,12 @@
 //! everything the CLI draws. views are pure, a model in and lines out; only
 //! [Screen] touches the terminal.
 
+pub mod ask;
 pub mod board;
+pub mod checklist;
 pub mod describe;
 pub mod diff;
+pub mod finale;
 pub mod format;
 pub mod history;
 pub mod journal;
