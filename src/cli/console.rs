@@ -5,7 +5,10 @@
 //! console draws a last frame, hands the terminal over, and starts a new
 //! frame below when they are done.
 
-use std::{fmt, future::Future, io::Write, time::Duration};
+#[cfg(test)]
+mod test;
+
+use std::{fmt, future::Future, io::Write, sync::Once, time::Duration};
 
 use crossterm::{
     cursor,
@@ -88,6 +91,9 @@ impl Console {
         let cancelled = CancellationToken::new();
         let interrupts = signal(SignalKind::interrupt())?;
 
+        if live {
+            guard()?;
+        }
         let out = match live {
             true => Out::Live(Some(Screen::new()?)),
             false => Out::Plain {
@@ -185,6 +191,41 @@ impl Console {
 
 fn stopped() -> eyre::Report {
     eyre!("the terminal's task stopped")
+}
+
+/// the terminal as the shell expects it back: out of raw mode, its cursor
+/// shown
+fn restore() {
+    let _ = disable_raw_mode();
+    let _ = execute!(std::io::stdout(), cursor::Show);
+}
+
+/// the terminal given back however the process ends early: a panic, or a
+/// SIGTERM or SIGHUP, which leave at once as a second ctrl-c does. apart
+/// from the terminal's task, which waits while ssh or sudo hold the
+/// terminal and must not keep the process from ending then.
+fn guard() -> Result<()> {
+    static HOOK: Once = Once::new();
+    HOOK.call_once(|| {
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            restore();
+            previous(info);
+        }));
+    });
+
+    let mut terminate = signal(SignalKind::terminate())?;
+    let mut hangup = signal(SignalKind::hangup())?;
+    tokio::spawn(async move {
+        // 128 plus the signal's number, as a shell reports it
+        let code = tokio::select! {
+            _ = terminate.recv() => 128 + 15,
+            _ = hangup.recv() => 128 + 1,
+        };
+        restore();
+        std::process::exit(code);
+    });
+    Ok(())
 }
 
 /// the task's side: the model, where it goes, and the open question
@@ -314,7 +355,7 @@ impl Terminal {
             return;
         }
         self.close_prompt();
-        let _ = execute!(std::io::stdout(), cursor::Show);
+        restore();
         std::process::exit(130);
     }
 
