@@ -3,7 +3,7 @@ use eyre::Result;
 use serde_json::json;
 
 use crate::{
-    cli::{Context, exit::Exit},
+    cli::{Context, context::within, exit::Exit},
     common::model::{Hostname, JobSummary, Timestamp},
     ui::{board::Verdict, history, say},
 };
@@ -28,7 +28,7 @@ impl HistoryArgs {
         let fleet = context.fleet(context.targets_or_all(&self.targets)?)?;
         let limit = self.limit;
         let answers = fleet
-            .each(|_, mut client| async move { client.history(limit).await })
+            .each(|_, mut client| async move { within(client.history(limit)).await })
             .await;
 
         let mut jobs: Vec<(Hostname, JobSummary)> = Vec::new();

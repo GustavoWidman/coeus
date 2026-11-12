@@ -1,6 +1,6 @@
-use std::io::IsTerminal;
+use std::{future::Future, io::IsTerminal, time::Duration};
 
-use eyre::Result;
+use eyre::{Result, eyre};
 
 use crate::{
     client::{Fleet, Targets},
@@ -46,6 +46,17 @@ impl Context {
     pub fn machine(&self, host: &Hostname) -> Result<Fleet> {
         self.fleet(self.targets(&[host.to_string()])?)
     }
+}
+
+/// how long a machine may take to answer one question
+const ANSWER: Duration = Duration::from_secs(15);
+
+/// `answer`, unless the machine stays silent past [ANSWER], as a daemon
+/// too old to know the question does
+pub async fn within<T>(answer: impl Future<Output = Result<T>>) -> Result<T> {
+    tokio::time::timeout(ANSWER, answer)
+        .await
+        .map_err(|_| eyre!("no answer within {}s", ANSWER.as_secs()))?
 }
 
 /// this machine's name without its domain

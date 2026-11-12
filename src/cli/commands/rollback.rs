@@ -4,6 +4,7 @@ use eyre::{Result, eyre};
 use crate::{
     cli::{
         Context,
+        context::within,
         deployment::{Deployment, Following},
         dispatch::Shipment,
         exit::Exit,
@@ -75,7 +76,7 @@ impl RollbackArgs {
 
     /// the newest generation older than the running one
     async fn previous(&self, fleet: &Fleet) -> Result<u32> {
-        let generations = fleet.connect(&self.host).await?.generations().await?;
+        let generations = within(fleet.connect(&self.host).await?.generations()).await?;
         let current = generations
             .iter()
             .find(|generation| generation.current)

@@ -4,7 +4,7 @@ use clap::Args;
 use eyre::{Result, bail};
 
 use crate::{
-    cli::{Context, exit::Exit},
+    cli::{Context, context::within, exit::Exit},
     common::model::Hostname,
     ui::{Theme, say},
 };
@@ -27,7 +27,7 @@ impl RebootArgs {
         }
 
         let fleet = context.machine(&self.host)?;
-        fleet.connect(&self.host).await?.reboot().await?;
+        within(fleet.connect(&self.host).await?.reboot()).await?;
         println!("{}", say::success(format!("{host} is rebooting")));
         Ok(Exit::Success)
     }
