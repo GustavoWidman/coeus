@@ -64,7 +64,7 @@ pub async fn of(source: &StorePath, hostname: &Hostname) -> Result<DaemonSetting
     );
 
     let output = Command::new("nix")
-        .args(["--extra-experimental-features", "nix-command flakes"])
+        .args(["--extra-experimental-features", crate::nix::FLAKE_FEATURES])
         .args(["eval", "--json", "--no-write-lock-file", &installable])
         .args(["--apply", RENDER])
         .output()

@@ -86,7 +86,7 @@ impl Nix {
             "internal-json",
             "-v",
             "--extra-experimental-features",
-            "nix-command flakes pipe-operators",
+            crate::nix::FLAKE_FEATURES,
             "--option",
             "accept-flake-config",
             "true",

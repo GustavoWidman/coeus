@@ -146,7 +146,7 @@ pub async fn ship(stock: &Stock, plan: &Plan<'_>, console: &Console) -> Result<S
     // does not trust; the lock pins each by its nar hash, which the machine
     // checks when it evaluates, so root on the machine takes them unsigned
     let mut child = Command::new("nix")
-        .args(["--extra-experimental-features", "nix-command flakes"])
+        .args(["--extra-experimental-features", crate::nix::FLAKE_FEATURES])
         .args(["copy", "--no-check-sigs", "--log-format", "internal-json"])
         .args(["--to", &store])
         .args(paths.iter().map(ToString::to_string))
@@ -191,7 +191,7 @@ pub async fn ship(stock: &Stock, plan: &Plan<'_>, console: &Console) -> Result<S
 /// what a local nix prints, or its last error line
 async fn nix_output(args: &[&str]) -> Result<String> {
     let output = Command::new("nix")
-        .args(["--extra-experimental-features", "nix-command flakes"])
+        .args(["--extra-experimental-features", crate::nix::FLAKE_FEATURES])
         .args(args)
         .stdin(Stdio::null())
         .kill_on_drop(true)
