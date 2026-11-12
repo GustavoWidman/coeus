@@ -1,0 +1,184 @@
+@nix {"action":"msg","level":4,"msg":"Nix (Determinate Nix 3.24.2) 2.35.3","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '«nix-internal»/derivation-internal.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '/tmp/coeus/fixture.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '/nix/store/cm5m4hjjh37s6z82rwa0vhkbcga3m8bq-source/flake.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '/nix/store/cm5m4hjjh37s6z82rwa0vhkbcga3m8bq-source/flake.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '«flakes-internal»/call-flake.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '/nix/store/cm5m4hjjh37s6z82rwa0vhkbcga3m8bq-source/default.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '/nix/store/cm5m4hjjh37s6z82rwa0vhkbcga3m8bq-source/lib/minfeatures.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '/nix/store/cm5m4hjjh37s6z82rwa0vhkbcga3m8bq-source/pkgs/top-level/impure.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '/nix/store/cm5m4hjjh37s6z82rwa0vhkbcga3m8bq-source/pkgs/top-level/default.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '/nix/store/cm5m4hjjh37s6z82rwa0vhkbcga3m8bq-source/lib/default.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '/nix/store/cm5m4hjjh37s6z82rwa0vhkbcga3m8bq-source/lib/trivial.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '/nix/store/cm5m4hjjh37s6z82rwa0vhkbcga3m8bq-source/lib/lists.nix'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"start","id":420322679455744,"level":4,"name":"BuildInstallables","parent":0,"payload":{},"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"","type":10113}
+@nix {"action":"start","id":420374219063296,"level":6,"name":"QueryMissing","parent":0,"payload":{},"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"querying info about missing paths","type":10113}
+@nix {"action":"start","fields":["/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-coeus-fixture-1794443502","https://cache.r3dlust.com"],"id":420374219063297,"level":4,"parent":420374219063296,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"querying info about '/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-coeus-fixture-1794443502' on 'https://cache.r3dlust.com'","type":109}
+@nix {"action":"start","fields":["https://cache.r3dlust.com/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo"],"id":420374219063298,"level":4,"parent":420374219063297,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"downloading 'https://cache.r3dlust.com/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo'","type":101}
+@nix {"action":"start","id":420374219063299,"level":6,"name":"FileTransferAttempt","parent":420374219063298,"payload":{"http.request.method":"GET","http.request.resend_count":0,"url.full":"https://cache.r3dlust.com/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo"},"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"","type":10113}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[19,19,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[19,19,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[19,19,0,0],"id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"stop","id":420374219063299,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063297,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063298,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"start","fields":["/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-coeus-fixture-1794443502","https://install.determinate.systems"],"id":420374219063300,"level":4,"parent":420374219063296,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"querying info about '/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-coeus-fixture-1794443502' on 'https://install.determinate.systems'","type":109}
+@nix {"action":"start","fields":["https://install.determinate.systems/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo"],"id":420374219063301,"level":4,"parent":420374219063300,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"downloading 'https://install.determinate.systems/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo'","type":101}
+@nix {"action":"start","id":420374219063302,"level":6,"name":"FileTransferAttempt","parent":420374219063301,"payload":{"http.request.method":"GET","http.request.resend_count":0,"url.full":"https://install.determinate.systems/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo"},"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"","type":10113}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[32,32,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[32,32,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[32,32,0,0],"id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"stop","id":420374219063302,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063300,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063301,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"start","fields":["/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-coeus-fixture-1794443502","https://cache.nixos.org"],"id":420374219063303,"level":4,"parent":420374219063296,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"querying info about '/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-coeus-fixture-1794443502' on 'https://cache.nixos.org'","type":109}
+@nix {"action":"start","fields":["https://cache.nixos.org/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo"],"id":420374219063304,"level":4,"parent":420374219063303,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"downloading 'https://cache.nixos.org/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo'","type":101}
+@nix {"action":"start","id":420374219063305,"level":6,"name":"FileTransferAttempt","parent":420374219063304,"payload":{"http.request.method":"GET","http.request.resend_count":0,"url.full":"https://cache.nixos.org/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo"},"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"","type":10113}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[3,3,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[3,3,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[3,3,0,0],"id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"stop","id":420374219063305,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063303,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063304,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"start","fields":["/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-coeus-fixture-1794443502","https://nix-community.cachix.org"],"id":420374219063306,"level":4,"parent":420374219063296,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"querying info about '/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-coeus-fixture-1794443502' on 'https://nix-community.cachix.org'","type":109}
+@nix {"action":"start","fields":["https://nix-community.cachix.org/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo"],"id":420374219063307,"level":4,"parent":420374219063306,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"downloading 'https://nix-community.cachix.org/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo'","type":101}
+@nix {"action":"start","id":420374219063308,"level":6,"name":"FileTransferAttempt","parent":420374219063307,"payload":{"http.request.method":"GET","http.request.resend_count":0,"url.full":"https://nix-community.cachix.org/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo"},"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"","type":10113}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"stop","id":420374219063308,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063306,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063307,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"start","fields":["/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-coeus-fixture-1794443502","https://r3dlust.cachix.org"],"id":420374219063309,"level":4,"parent":420374219063296,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"querying info about '/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-coeus-fixture-1794443502' on 'https://r3dlust.cachix.org'","type":109}
+@nix {"action":"start","fields":["https://r3dlust.cachix.org/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo"],"id":420374219063310,"level":4,"parent":420374219063309,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"downloading 'https://r3dlust.cachix.org/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo'","type":101}
+@nix {"action":"start","id":420374219063311,"level":6,"name":"FileTransferAttempt","parent":420374219063310,"payload":{"http.request.method":"GET","http.request.resend_count":0,"url.full":"https://r3dlust.cachix.org/h0myp2wfggr0x8pfacciv8sfhxyb845d.narinfo"},"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"","type":10113}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"stop","id":420374219063311,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063309,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063310,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063296,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":3,"msg":"this derivation will be built:","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":3,"msg":"  /nix/store/9rfvhi1nqszqmny102jqxp2vmb6n0mk7-coeus-fixture-1794443502.drv","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"start","id":420374219063312,"level":0,"parent":0,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"","type":102}
+@nix {"action":"start","id":420374219063313,"level":0,"parent":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"","type":104}
+@nix {"action":"start","id":420374219063314,"level":0,"parent":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"","type":103}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063314,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[101,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[100,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[0,1,0,0],"id":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063314,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[101,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[100,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"start","id":420374219063315,"level":6,"name":"SubstitutionGoal","parent":420374219063314,"payload":{"nix.store.path":"/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-coeus-fixture-1794443502"},"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"","type":10113}
+@nix {"action":"stop","id":420374219063315,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"result","fields":[0,1,0,0],"id":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063314,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[101,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[100,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[0,1,0,0],"id":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063314,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[101,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[100,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[0,2,0,0],"id":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063314,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[101,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[100,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[0,3,0,0],"id":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063314,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[101,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[100,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[0,2,0,0],"id":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063314,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[101,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[100,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[0,1,0,0],"id":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063314,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[101,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[100,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"start","id":420374219063316,"level":4,"parent":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"connecting to 'ssh-ng://build@builder'","type":0}
+@nix {"action":"msg","level":0,"msg":"ssh: connect to host builder port 22: Operation timed out","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":0,"msg":"SSH master stdout first line:","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063316,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"msg","level":0,"msg":"cannot build on 'ssh-ng://build@builder': \u001b[31;1merror:\u001b[0m failed to start SSH master connection to '\u001b[35;1mbuilder\u001b[0m'","sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"start","fields":["/nix/store/9rfvhi1nqszqmny102jqxp2vmb6n0mk7-coeus-fixture-1794443502.drv","",1,1],"id":420374219063317,"level":3,"parent":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"building '/nix/store/9rfvhi1nqszqmny102jqxp2vmb6n0mk7-coeus-fixture-1794443502.drv'","type":105}
+@nix {"action":"result","fields":[0,1,1,0],"id":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063314,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[101,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[100,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":["step 1"],"id":420374219063317,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":101}
+@nix {"action":"result","fields":["step 2"],"id":420374219063317,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":101}
+@nix {"action":"result","fields":["step 3"],"id":420374219063317,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":101}
+@nix {"action":"start","fields":["/nix/store/9rfvhi1nqszqmny102jqxp2vmb6n0mk7-coeus-fixture-1794443502.drv"],"id":420374219063318,"level":4,"parent":0,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","text":"running post-build-hook '/nix/store/gkdd33qs6lc04i8bvl6jsnzmvpr1h9bk-niks3-filtered-post-build-hook'","type":110}
+@nix {"action":"stop","id":420374219063318,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"result","fields":[1,2,0,0],"id":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":420374219063314,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":105}
+@nix {"action":"result","fields":[101,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"result","fields":[100,0],"id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66","type":106}
+@nix {"action":"stop","id":420374219063317,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063314,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063313,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420374219063312,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}
+@nix {"action":"stop","id":420322679455744,"sid":"01a1cd2a-e4b9-73b5-80ab-5d060ff4ec66"}

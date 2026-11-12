@@ -1,0 +1,115 @@
+@nix {"action":"msg","level":4,"msg":"Nix (Determinate Nix 3.24.2) 2.35.3","sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '«nix-internal»/derivation-internal.nix'","sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"msg","level":4,"msg":"evaluating file '/tmp/coeus/failing.nix'","sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"start","id":8830452760576,"level":4,"name":"BuildInstallables","parent":0,"payload":{},"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"","type":10113}
+@nix {"action":"start","id":8843337662464,"level":6,"name":"QueryMissing","parent":0,"payload":{},"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"querying info about missing paths","type":10113}
+@nix {"action":"stop","id":8843337662464,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"msg","level":3,"msg":"these 3 derivations will be built:","sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"msg","level":3,"msg":"  /nix/store/168mwrqphw6b88iqyix8fb60p0i1hpz5-coeus-count-1794500001.drv","sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"msg","level":3,"msg":"  /nix/store/r88bdlsl5383rv6amgn6idmy9wv0k5r7-coeus-greet-1794500001.drv","sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"msg","level":3,"msg":"  /nix/store/g1w6lisiqps834vb8k4nkvlkihfsrr4b-coeus-broken-1794500001.drv","sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"start","id":8843337662465,"level":0,"parent":0,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"","type":102}
+@nix {"action":"start","id":8843337662466,"level":0,"parent":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"","type":104}
+@nix {"action":"start","id":8843337662467,"level":0,"parent":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"","type":103}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[0,1,0,0],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"start","id":8843337662468,"level":6,"name":"SubstitutionGoal","parent":8843337662467,"payload":{"nix.store.path":"/nix/store/04kpg8zmffg37jdgm9fanylpib16j84i-coeus-broken-1794500001"},"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"","type":10113}
+@nix {"action":"stop","id":8843337662468,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"result","fields":[0,1,0,0],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[0,1,0,0],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[0,2,0,0],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[0,3,0,0],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"start","id":8843337662469,"level":6,"name":"SubstitutionGoal","parent":8843337662467,"payload":{"nix.store.path":"/nix/store/z6nxl2v7fv2nwrfylahxajqhhgbdlilq-coeus-count-1794500001"},"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"","type":10113}
+@nix {"action":"stop","id":8843337662469,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"start","id":8843337662470,"level":6,"name":"SubstitutionGoal","parent":8843337662467,"payload":{"nix.store.path":"/nix/store/4dgl95zaabma1m25372p32jlzxfhibvx-coeus-greet-1794500001"},"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"","type":10113}
+@nix {"action":"stop","id":8843337662470,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"start","fields":["/nix/store/168mwrqphw6b88iqyix8fb60p0i1hpz5-coeus-count-1794500001.drv","",1,1],"id":8843337662471,"level":3,"parent":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"building '/nix/store/168mwrqphw6b88iqyix8fb60p0i1hpz5-coeus-count-1794500001.drv'","type":105}
+@nix {"action":"result","fields":[0,3,1,0],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"start","fields":["/nix/store/r88bdlsl5383rv6amgn6idmy9wv0k5r7-coeus-greet-1794500001.drv","",1,1],"id":8843337662472,"level":3,"parent":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"building '/nix/store/r88bdlsl5383rv6amgn6idmy9wv0k5r7-coeus-greet-1794500001.drv'","type":105}
+@nix {"action":"result","fields":[0,3,2,0],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":["count 1"],"id":8843337662471,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["count 2"],"id":8843337662471,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["count 3"],"id":8843337662471,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"start","fields":["/nix/store/168mwrqphw6b88iqyix8fb60p0i1hpz5-coeus-count-1794500001.drv"],"id":8843337662473,"level":4,"parent":0,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"running post-build-hook '/nix/store/gkdd33qs6lc04i8bvl6jsnzmvpr1h9bk-niks3-filtered-post-build-hook'","type":110}
+@nix {"action":"result","fields":["greet 1"],"id":8843337662472,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["greet 2"],"id":8843337662472,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["greet 3"],"id":8843337662472,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"start","fields":["/nix/store/r88bdlsl5383rv6amgn6idmy9wv0k5r7-coeus-greet-1794500001.drv"],"id":8843337662474,"level":4,"parent":0,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"running post-build-hook '/nix/store/gkdd33qs6lc04i8bvl6jsnzmvpr1h9bk-niks3-filtered-post-build-hook'","type":110}
+@nix {"action":"stop","id":8843337662474,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"result","fields":[1,4,1,0],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"stop","id":8843337662472,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"stop","id":8843337662473,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"result","fields":[2,4,0,0],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"stop","id":8843337662471,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"start","fields":["/nix/store/g1w6lisiqps834vb8k4nkvlkihfsrr4b-coeus-broken-1794500001.drv","",1,1],"id":8843337662475,"level":3,"parent":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","text":"building '/nix/store/g1w6lisiqps834vb8k4nkvlkihfsrr4b-coeus-broken-1794500001.drv'","type":105}
+@nix {"action":"result","fields":[2,3,1,0],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":["broken line 1"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 2"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 3"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 4"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 5"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 6"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 7"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 8"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 9"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 10"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 11"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 12"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 13"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 14"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 15"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 16"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 17"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 18"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 19"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 20"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 21"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 22"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 23"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 24"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["broken line 25"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":["fatal: something went wrong"],"id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":101}
+@nix {"action":"result","fields":[2,3,0,1],"id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":105}
+@nix {"action":"result","fields":[101,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"result","fields":[100,0],"id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc","type":106}
+@nix {"action":"stop","id":8843337662475,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"stop","id":8843337662467,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"stop","id":8843337662466,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"stop","id":8843337662465,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"stop","id":8830452760576,"sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"msg","level":0,"msg":"❌ \u001b[31;1m\u001b[0m","sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
+@nix {"action":"msg","column":null,"file":null,"level":0,"line":null,"msg":"\u001b[31;1merror:\u001b[0m Cannot build '\u001b[35;1m/nix/store/g1w6lisiqps834vb8k4nkvlkihfsrr4b-coeus-broken-1794500001.drv\u001b[0m'.\n       Reason: \u001b[31;1mbuilder failed with exit code 1\u001b[0m.\n       Output paths:\n         \u001b[35;1m/nix/store/04kpg8zmffg37jdgm9fanylpib16j84i-coeus-broken-1794500001\u001b[0m\n       Last 25 log lines:\n       > broken line 2\n       > broken line 3\n       > broken line 4\n       > broken line 5\n       > broken line 6\n       > broken line 7\n       > broken line 8\n       > broken line 9\n       > broken line 10\n       > broken line 11\n       > broken line 12\n       > broken line 13\n       > broken line 14\n       > broken line 15\n       > broken line 16\n       > broken line 17\n       > broken line 18\n       > broken line 19\n       > broken line 20\n       > broken line 21\n       > broken line 22\n       > broken line 23\n       > broken line 24\n       > broken line 25\n       > fatal: something went wrong\n       For full logs, run:\n         \u001b[1mnix log /nix/store/g1w6lisiqps834vb8k4nkvlkihfsrr4b-coeus-broken-1794500001.drv\u001b[0m","raw_msg":"Cannot build '\u001b[35;1m/nix/store/g1w6lisiqps834vb8k4nkvlkihfsrr4b-coeus-broken-1794500001.drv\u001b[0m'.\nReason: \u001b[31;1mbuilder failed with exit code 1\u001b[0m.\nOutput paths:\n  \u001b[35;1m/nix/store/04kpg8zmffg37jdgm9fanylpib16j84i-coeus-broken-1794500001\u001b[0m\nLast 25 log lines:\n> broken line 2\n> broken line 3\n> broken line 4\n> broken line 5\n> broken line 6\n> broken line 7\n> broken line 8\n> broken line 9\n> broken line 10\n> broken line 11\n> broken line 12\n> broken line 13\n> broken line 14\n> broken line 15\n> broken line 16\n> broken line 17\n> broken line 18\n> broken line 19\n> broken line 20\n> broken line 21\n> broken line 22\n> broken line 23\n> broken line 24\n> broken line 25\n> fatal: something went wrong\nFor full logs, run:\n  \u001b[1mnix log /nix/store/g1w6lisiqps834vb8k4nkvlkihfsrr4b-coeus-broken-1794500001.drv\u001b[0m","sid":"01a1cd4e-01c2-71c8-802e-0c83525edebc"}
