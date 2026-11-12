@@ -76,27 +76,36 @@ impl Runner {
             version: env!("CARGO_PKG_VERSION").to_owned(),
         })?;
 
-        let outcome = runner.outcome(attempt, &mut stop).await;
-        runner.finish(outcome).await
+        match runner.outcome(attempt, &mut stop).await {
+            Some(outcome) => runner.finish(outcome).await,
+            None => {
+                info!(
+                    "job {} stopped by the system, the next runner resumes it",
+                    runner.dir.id()
+                );
+                Ok(())
+            }
+        }
     }
 
-    async fn outcome(&mut self, attempt: u8, stop: &mut Signal) -> Outcome {
+    /// how the job ended, or `None` when the system stopped the runner (a
+    /// shutdown, a unit stop) without coeusd asking: the job stays unfinished,
+    /// so the next runner takes it up as a new attempt
+    async fn outcome(&mut self, attempt: u8, stop: &mut Signal) -> Option<Outcome> {
         if attempt > Self::ATTEMPTS {
-            return Outcome::Failed(Failure::new(
+            return Some(Outcome::Failed(Failure::new(
                 Phase::Preparing,
                 "the daemon restarted too many times during this job",
-            ));
+            )));
         }
         if let Some(request) = self.stop_request() {
-            return request.outcome();
+            return Some(request.outcome());
         }
 
         // dropping the preparation kills the nix process it waits on
         let prepared = tokio::select! {
             prepared = self.prepare() => prepared,
-            _ = stop.recv() => {
-                return self.stop_request().map_or(Outcome::Cancelled, StopRequest::outcome);
-            }
+            _ = stop.recv() => return self.stop_request().map(StopRequest::outcome),
         };
 
         let outcome = match prepared {
@@ -104,7 +113,7 @@ impl Runner {
             Ok(Next::Finish(outcome)) => Ok(outcome),
             Err(error) => Err(error),
         };
-        outcome.unwrap_or_else(|error| self.failed(error))
+        Some(outcome.unwrap_or_else(|error| self.failed(error)))
     }
 
     /// everything before activation: fetch, evaluate, build and diff
