@@ -87,7 +87,11 @@ fn shell_files_go_aside_unless_nix_darwin_wrote_them() {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         String::from_utf8(output.stdout).unwrap(),
-        format!("{}\n", etc.join("bashrc").display())
+        format!(
+            "{} to {}\n",
+            etc.join("bashrc").display(),
+            etc.join("bashrc.before-nix-darwin").display()
+        )
     );
     assert!(!etc.join("bashrc").exists());
     assert_eq!(
@@ -122,4 +126,24 @@ fn a_copy_already_aside_is_kept_and_the_new_file_goes_beside_it() {
     assert!(run(&Call::MoveEtcAside, scratch.path()).status.success());
     assert!(!etc.join("zprofile").exists());
     assert!(!etc.join("zprofile.before-nix-darwin.2").exists());
+}
+
+#[test]
+fn the_installers_nix_custom_conf_goes_aside_too() {
+    let scratch = tempfile::tempdir().unwrap();
+    let etc = scratch.path().join("etc");
+    fs::create_dir_all(etc.join("nix")).unwrap();
+    fs::write(
+        etc.join("nix/nix.custom.conf"),
+        "# written by the installer\n",
+    )
+    .unwrap();
+
+    let output = run(&Call::MoveEtcAside, scratch.path());
+    assert!(output.status.success(), "{output:?}");
+    assert!(!etc.join("nix/nix.custom.conf").exists());
+    assert_eq!(
+        fs::read_to_string(etc.join("nix/nix.custom.conf.before-nix-darwin")).unwrap(),
+        "# written by the installer\n"
+    );
 }

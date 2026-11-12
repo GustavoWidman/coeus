@@ -86,29 +86,25 @@ mv "$file.coeus" "$file"
 "#;
 
 /// nix-darwin refuses to replace an `/etc` file it does not know, and asks
-/// for exactly this rename. a copy already aside keeps its name, since it may
-/// be the machine's original (macOS images ship one, and the Nix installer
-/// then writes its own file): a different file goes to the next free
-/// `.before-nix-darwin.<n>`, and one equal to a copy aside is that move done
-/// before. nothing is deleted that is not kept somewhere aside.
+/// for exactly this rename: the shell files and `nix.custom.conf` the Nix
+/// installer writes are such files. a copy already aside keeps its name,
+/// since it may be the machine's original (macOS images ship one): a
+/// different file goes to the next free `.before-nix-darwin.<n>`, and one
+/// equal to a copy aside is that move done before. nothing is deleted that
+/// is not kept somewhere aside. prints `<file> to <where it is kept>`.
 const MOVE_ETC_ASIDE: &str = r#"set -eu
-for file in /etc/bashrc /etc/zshrc /etc/zprofile; do
+for file in /etc/bashrc /etc/zshrc /etc/zprofile /etc/nix/nix.custom.conf; do
   [ -e "$file" ] || continue
   case "$(readlink "$file" || true)" in /etc/static/*) continue ;; esac
   aside="$file.before-nix-darwin"
   target=$aside
   n=0
-  while [ -e "$target" ]; do
-    if cmp -s "$file" "$target"; then
-      rm "$file"
-      target=
-      break
-    fi
+  while [ -e "$target" ] && ! cmp -s "$file" "$target"; do
     n=$((n + 1))
     target="$aside.$n"
   done
-  [ -z "$target" ] || mv "$file" "$target"
-  echo "$file"
+  if [ -e "$target" ]; then rm "$file"; else mv "$file" "$target"; fi
+  echo "$file to $target"
 done
 "#;
 

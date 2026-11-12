@@ -79,8 +79,8 @@ pub async fn converge(stock: &Stock, console: &Console) -> Result<String> {
     }
 }
 
-/// `/etc/bashrc`, `/etc/zshrc` and `/etc/zprofile` moved to
-/// `.before-nix-darwin` when nix-darwin did not write them; the ones moved,
+/// the `/etc` files nix-darwin would refuse to replace, moved to
+/// `.before-nix-darwin` when it did not write them; each `<file> to <aside>`,
 /// for a step note
 pub async fn move_etc_aside(stock: &Stock) -> Result<Vec<String>> {
     let moved = stock.run(&Call::MoveEtcAside).await?;
