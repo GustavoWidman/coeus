@@ -9,7 +9,7 @@ mod write;
 mod test;
 
 use colored::{ColoredString, Colorize};
-use eyre::{Result, eyre};
+use eyre::{Result, WrapErr, eyre};
 pub use listener::EncryptedListener;
 pub use listener::PendingConnection;
 use snow::{Builder, HandshakeState, params::NoiseParams};
@@ -38,7 +38,11 @@ impl EncryptedStream {
     /// introduction along with the stream
     pub async fn connect(address: SocketAddr, psk: &[u8; 32]) -> Result<(Self, HelloResponse)> {
         let stream = TcpStream::connect(address).await?;
-        let mut stream = Self::handshake(stream, psk, true).await?;
+        // a server that cannot decrypt the first message hangs up, which
+        // reads here as nothing more than the end of the stream
+        let mut stream = Self::handshake(stream, psk, true)
+            .await
+            .wrap_err("the handshake failed; does the machine use this fleet key?")?;
         let hello = stream.greet().await?;
         Ok((stream, hello))
     }

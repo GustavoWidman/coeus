@@ -123,7 +123,13 @@ async fn rejects_a_mismatched_psk() -> TestResult {
     )
     .await?;
 
-    assert!(client.is_err(), "a mismatched PSK must fail the handshake");
+    let Err(error) = client else {
+        panic!("a mismatched PSK must fail the handshake");
+    };
+    assert!(
+        format!("{error:#}").contains("fleet key"),
+        "the error names the likely cause: {error:#}"
+    );
     let _server_completed = server.await??;
     Ok(())
 }
