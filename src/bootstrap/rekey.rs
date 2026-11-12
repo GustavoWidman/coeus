@@ -6,12 +6,12 @@
 use eyre::{Result, WrapErr, bail};
 
 use super::{
-    Blocker, Bootstrap, Step,
+    Blocker, Bootstrap, SshKey, Step,
     branch::{Branch, Rebased},
     contract::{RepoPath, Rules},
     enroll::{Enrolled, count},
     run::Shown,
-    secrets::{self, AdminIdentity, Verdict},
+    secrets::{self, AdminIdentity, Header, Verdict},
     switch::Release,
 };
 use crate::{
@@ -36,7 +36,7 @@ pub async fn rekey(
     let subject = &enrolled.enrollment.messages.rekey;
 
     // secrets a stopped run rewrote but did not commit are its rekey
-    let finished = settle(branch).await?;
+    let finished = settle(enrolled).await?;
     if !finished.is_empty() {
         branch.commit_rekey(subject, &finished).await?;
     }
@@ -118,11 +118,12 @@ pub async fn rekey(
 }
 
 /// what a stopped run left in the clone: its temporary files go; the
-/// secrets it rewrote come back to be committed; anything else is the
-/// person's, and blocks
-async fn settle(branch: &Branch) -> Result<Vec<RepoPath>> {
+/// secrets its rekey rewrote come back to be committed; anything else is
+/// the person's, and blocks
+async fn settle(enrolled: &Enrolled) -> Result<Vec<RepoPath>> {
+    let branch = &enrolled.branch;
     let tracked = branch.secrets().await?;
-    let mut finished = Vec::new();
+    let mut changed = Vec::new();
     let mut theirs = Vec::new();
     for path in branch.uncommitted().await? {
         let file = branch.clone_dir().join(&path);
@@ -131,8 +132,21 @@ async fn settle(branch: &Branch) -> Result<Vec<RepoPath>> {
             continue;
         }
         match tracked.iter().find(|secret| secret.as_str() == path) {
-            Some(secret) if file.is_file() => finished.push(secret.clone()),
+            Some(secret) if file.is_file() => changed.push(secret.clone()),
             _ => theirs.push(path),
+        }
+    }
+
+    let mut finished = Vec::new();
+    if !changed.is_empty() {
+        let rules = enrolled.contract.recipients(&changed).await?;
+        for secret in changed {
+            match rules.get(&secret) {
+                Some(Some(recipients)) if rekeyed(branch, &secret, recipients).await? => {
+                    finished.push(secret);
+                }
+                _ => theirs.push(secret.to_string()),
+            }
         }
     }
     if !theirs.is_empty() {
@@ -143,6 +157,16 @@ async fn settle(branch: &Branch) -> Result<Vec<RepoPath>> {
         .into());
     }
     Ok(finished)
+}
+
+/// what a rekey leaves, and nothing else does: the secret encrypted to
+/// exactly its recipients, where the head has it for others. an edit made
+/// with `agenix -e` keeps the recipients, and is the person's.
+async fn rekeyed(branch: &Branch, secret: &RepoPath, recipients: &[SshKey]) -> Result<bool> {
+    let now = Header::read(&branch.path(secret)).map(|header| header.verdict(recipients));
+    let committed = branch.committed(secret).await?;
+    let before = Header::from_reader(&committed[..]).map(|header| header.verdict(recipients));
+    Ok(matches!(now, Ok(Verdict::Current)) && matches!(before, Ok(Verdict::Stale { .. })))
 }
 
 /// the stale secrets re-encrypted with the admin's identity; how many

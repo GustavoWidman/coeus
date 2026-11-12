@@ -430,6 +430,15 @@ impl Branch {
         Ok(git::status_paths(&self.git().run(&status).await?))
     }
 
+    /// `path` as the head commits it, bytes and all
+    pub async fn committed(&self, path: &RepoPath) -> Result<Vec<u8>> {
+        let object = format!("HEAD:{path}");
+        let args = ["cat-file", "blob", object.as_str()];
+        let output = self.git().output(&args, &[]).await?;
+        git::check(&args, &output)?;
+        Ok(output.stdout)
+    }
+
     /// every tracked `.age` file
     pub async fn secrets(&self) -> Result<Vec<RepoPath>> {
         self.git()
