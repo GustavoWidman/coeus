@@ -9,7 +9,7 @@ use eyre::{Result, eyre};
 use crate::common::model::{Generation, Platform, StorePath, Timestamp};
 
 /// what the system profile and `/run` say about the machine right now
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct SystemFacts {
     pub current: Option<StorePath>,
     pub generation: Option<u32>,
