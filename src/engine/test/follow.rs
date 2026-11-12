@@ -37,7 +37,7 @@ fn git(rev: &str) -> Source {
 fn catches_up_when_the_ref_moved_past_the_last_deployment() {
     let source = git(OLD);
     let deployed = Deployed {
-        source: &source,
+        source: Some(&source),
         at: Timestamp(1_000),
     };
 
@@ -53,7 +53,7 @@ fn catches_up_when_the_ref_moved_past_the_last_deployment() {
 fn stays_when_the_machine_runs_the_ref() {
     let source = git(NEW);
     let deployed = Deployed {
-        source: &source,
+        source: Some(&source),
         at: Timestamp(1_000),
     };
 
@@ -66,7 +66,7 @@ fn stays_when_the_machine_runs_the_ref() {
 fn a_later_hand_deploy_holds_until_the_ref_moves_again() {
     let source = Source::Generation(9);
     let deployed = Deployed {
-        source: &source,
+        source: Some(&source),
         at: Timestamp(3_000),
     };
 
@@ -96,4 +96,54 @@ fn waits_a_moment_after_starting_before_the_first_check() {
         !follower.due(),
         "the first check waits for coeusd to settle"
     );
+}
+
+#[test]
+fn a_machine_switched_outside_coeus_holds_until_the_ref_moves() {
+    let deployed = Deployed {
+        source: None,
+        at: Timestamp(3_000),
+    };
+
+    let held = follower(NEW, 2_000);
+    assert_eq!(held.behind(Some(&deployed)), None);
+    assert!(held.state(Some(&deployed)).paused);
+
+    assert!(follower(NEW, 4_000).behind(Some(&deployed)).is_some());
+}
+
+#[test]
+fn a_commit_that_did_not_stick_here_is_not_tried_again() {
+    use std::collections::VecDeque;
+
+    use crate::{
+        common::model::{
+            Action, Failure, JobId, JobState, JobSummary, OrderId, Origin, Outcome, Phase,
+        },
+        engine::actor::failed_here,
+    };
+
+    let job = |rev: &str, outcome: Outcome| JobSummary {
+        id: JobId(1),
+        order: OrderId(1),
+        source: git(rev),
+        action: Action::Switch,
+        origin: Origin::Follow,
+        state: JobState::Finished(outcome),
+        ordered_at: Timestamp(0),
+        started_at: None,
+        finished_at: None,
+        toplevel: None,
+        attempt: 1,
+    };
+
+    let rolled_back = VecDeque::from([job(
+        NEW,
+        Outcome::RolledBack(Failure::new(Phase::Verifying, "unreachable")),
+    )]);
+    assert!(failed_here(&rolled_back, &git(NEW)));
+    assert!(!failed_here(&rolled_back, &git(OLD)));
+
+    let succeeded = VecDeque::from([job(NEW, Outcome::Succeeded)]);
+    assert!(!failed_here(&succeeded, &git(NEW)));
 }
