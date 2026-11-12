@@ -183,3 +183,41 @@ async fn an_inherited_git_environment_redirects_nothing() {
     );
     assert_eq!(git(&decoy, &["branch", "--list", "coeus/*"]), "");
 }
+
+#[tokio::test]
+async fn a_rekey_stopped_midway_does_not_keep_the_branch_from_moving() {
+    let fleet = Fleet::new();
+    let cache = super::path("secrets/cache.age");
+    let stale = fleet.open("altar").await;
+    enroll(&stale).await;
+    std::fs::write(stale.path(&cache), "resealed by altar\n").unwrap();
+    stale
+        .commit_rekey("chore(nova): rekey", std::slice::from_ref(&cache))
+        .await
+        .unwrap();
+    stale.push().await.unwrap();
+
+    // another admin moves the branch onto a newer main and rekeys it there
+    let other = fleet.open("vesta").await;
+    fleet.commit_on_main(&[("readme.md", "moved\n")]);
+    other.behind().await.unwrap();
+    other.rebase_dropping_rekey().await.unwrap();
+    std::fs::write(other.path(&cache), "resealed by vesta\n").unwrap();
+    other
+        .commit_rekey("chore(nova): rekey", std::slice::from_ref(&cache))
+        .await
+        .unwrap();
+    other.push().await.unwrap();
+
+    // the first admin was stopped rewriting the secret again
+    std::fs::write(stale.path(&cache), "half rekeyed\n").unwrap();
+    let temporary = stale.clone_dir().join("secrets/.cache.age.x1y2z3.tmp");
+    std::fs::write(&temporary, "").unwrap();
+    drop(stale);
+    let reopened = fleet.open("altar").await;
+
+    assert_eq!(reopened.head().await.unwrap(), other.head().await.unwrap());
+    assert_eq!(reopened.uncommitted().await.unwrap(), Vec::<String>::new());
+    let kept = std::fs::read_to_string(reopened.path(&cache)).unwrap();
+    assert_eq!(kept, "resealed by vesta\n");
+}

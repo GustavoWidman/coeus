@@ -3,8 +3,6 @@
 //! done when the branch is not behind and every header names its
 //! recipients.
 
-use std::path::Path;
-
 use eyre::{Result, WrapErr, bail};
 
 use super::{
@@ -128,7 +126,7 @@ async fn settle(branch: &Branch) -> Result<Vec<RepoPath>> {
     let mut theirs = Vec::new();
     for path in branch.uncommitted().await? {
         let file = branch.clone_dir().join(&path);
-        if leftover(&path) {
+        if secrets::is_temporary(&path) {
             std::fs::remove_file(&file).ok();
             continue;
         }
@@ -145,15 +143,6 @@ async fn settle(branch: &Branch) -> Result<Vec<RepoPath>> {
         .into());
     }
     Ok(finished)
-}
-
-/// the temporary sibling a secret is written through, `.<name>.age.<random>.tmp`
-fn leftover(path: &str) -> bool {
-    let name = Path::new(path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    name.starts_with('.') && name.ends_with(".tmp") && name.contains(".age.")
 }
 
 /// the stale secrets re-encrypted with the admin's identity; how many

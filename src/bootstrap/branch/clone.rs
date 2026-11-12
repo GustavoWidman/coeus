@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use eyre::{Result, WrapErr, eyre};
 
 use super::git::{Git, check, command};
-use crate::common::model::CommitSha;
+use crate::{bootstrap::secrets, common::model::CommitSha};
 
 /// the clone at `dir`, cloned from the checkout's origin when it is missing
 /// or half made. a clone is made under a sibling name and renamed into
@@ -165,8 +165,42 @@ pub(super) async fn check_out(
             ])
             .await?;
         if !contains {
+            discard_rekey(git).await?;
             git.run(&["reset", "--quiet", "--keep", &remote.to_string()])
                 .await?;
+        }
+    }
+    Ok(())
+}
+
+/// what a run stopped while rekeying left: secrets rewritten but not
+/// committed, which `reset --keep` refuses to carry onto a branch that
+/// changes them, and the temporary files they were written through. the
+/// bootstrap's flock proves no run of ours is writing them, and a rekey is
+/// derived: the next one makes it again on the moved branch.
+async fn discard_rekey(git: &Git) -> Result<()> {
+    let rewritten: Vec<String> = git
+        .paths(&["diff", "--name-only", "--no-renames", "-z", "HEAD"])
+        .await?
+        .into_iter()
+        .filter(|path| path.ends_with(".age"))
+        .collect();
+    if !rewritten.is_empty() {
+        let mut args = vec![
+            "--literal-pathspecs",
+            "restore",
+            "--source=HEAD",
+            "--staged",
+            "--worktree",
+            "--",
+        ];
+        args.extend(rewritten.iter().map(String::as_str));
+        git.run(&args).await?;
+    }
+    for path in git.paths(&["ls-files", "--others", "-z"]).await? {
+        if secrets::is_temporary(&path) {
+            std::fs::remove_file(git.dir().join(&path))
+                .wrap_err_with(|| format!("failed to remove {path}"))?;
         }
     }
     Ok(())

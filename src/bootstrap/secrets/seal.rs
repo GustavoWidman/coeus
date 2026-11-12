@@ -213,6 +213,16 @@ fn sibling(file: &Path, bytes: &[u8]) -> eyre::Result<NamedTempFile> {
     Ok(temporary)
 }
 
+/// the temporary sibling a secret is written through,
+/// `.<name>.age.<random>.tmp`: one a stopped run left is derived, and goes
+pub fn is_temporary(path: &str) -> bool {
+    let name = Path::new(path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    name.starts_with('.') && name.ends_with(".tmp") && name.contains(".age.")
+}
+
 /// makes a rename durable
 fn sync_parent(file: &Path) -> eyre::Result<()> {
     File::open(parent(file))?.sync_all()?;
