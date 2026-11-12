@@ -132,15 +132,18 @@ impl Row {
     /// `  ✓ reach    NixOS 26.05 · x86_64-linux`, with `already` at
     /// `already_at` columns when the row was found done
     fn line(&self, frame: Frame, already_at: usize) -> String {
+        let detail = self.styled_detail();
+        if width(&detail) == 0 {
+            return format!("  {} {}", self.glyph(frame.now), self.label());
+        }
         let head = format!(
             "  {} {}",
             self.glyph(frame.now),
             pad(&self.label().to_string(), LABEL)
         );
-        let detail = self.styled_detail();
 
         if self.mark != Mark::Kept {
-            return format!("{head}{detail}").trim_end().to_owned();
+            return format!("{head}{detail}");
         }
         let already = "already".dimmed();
         let room = frame.width.saturating_sub(INDENT + 2 + width("already"));
