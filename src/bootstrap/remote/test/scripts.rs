@@ -103,19 +103,23 @@ fn shell_files_go_aside_unless_nix_darwin_wrote_them() {
 }
 
 #[test]
-fn a_shell_file_whose_copy_aside_differs_stops_the_move() {
+fn a_copy_already_aside_is_kept_and_the_new_file_goes_beside_it() {
     let scratch = tempfile::tempdir().unwrap();
     let etc = scratch.path().join("etc");
     fs::create_dir_all(&etc).unwrap();
-    fs::write(etc.join("zprofile"), "# new\n").unwrap();
-    fs::write(etc.join("zprofile.before-nix-darwin"), "# old\n").unwrap();
+    fs::write(etc.join("zprofile"), "# the installer's\n").unwrap();
+    fs::write(etc.join("zprofile.before-nix-darwin"), "# apple's\n").unwrap();
 
     let output = run(&Call::MoveEtcAside, scratch.path());
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("differ"));
-    assert_eq!(fs::read_to_string(etc.join("zprofile")).unwrap(), "# new\n");
+    assert!(output.status.success(), "{output:?}");
+    assert!(!etc.join("zprofile").exists());
+    let aside = |name: &str| fs::read_to_string(etc.join(name)).unwrap();
+    assert_eq!(aside("zprofile.before-nix-darwin"), "# apple's\n");
+    assert_eq!(aside("zprofile.before-nix-darwin.1"), "# the installer's\n");
 
-    fs::write(etc.join("zprofile"), "# old\n").unwrap();
+    // the same file again was already moved: it goes, a third copy is not made
+    fs::write(etc.join("zprofile"), "# the installer's\n").unwrap();
     assert!(run(&Call::MoveEtcAside, scratch.path()).status.success());
     assert!(!etc.join("zprofile").exists());
+    assert!(!etc.join("zprofile.before-nix-darwin.2").exists());
 }
