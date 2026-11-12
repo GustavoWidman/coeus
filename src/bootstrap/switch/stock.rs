@@ -337,6 +337,7 @@ pub async fn adopt(
         label: plan.release.label.clone(),
         hostname: plan.host.clone(),
         order,
+        boot: false,
         install_bootloader: plan.release.install_bootloader,
         follow: Some(from),
     });

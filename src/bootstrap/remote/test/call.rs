@@ -16,6 +16,10 @@ const NIX_PATH: &str =
     r#"PATH="/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin:$PATH" exec "$@""#;
 
 fn adopt(install_bootloader: bool, follow: Option<u64>) -> Call {
+    adopt_as(false, install_bootloader, follow)
+}
+
+fn adopt_as(boot: bool, install_bootloader: bool, follow: Option<u64>) -> Call {
     Call::Adopt(AdoptCall {
         coeus: COEUS.parse().unwrap(),
         source: SOURCE.into(),
@@ -25,6 +29,7 @@ fn adopt(install_bootloader: bool, follow: Option<u64>) -> Call {
         label: "altar:coeus/bootstrap/nova@a1b2c3d".into(),
         hostname: "nova".parse().unwrap(),
         order: OrderId(0x5f0e_0000_0000_00ff),
+        boot,
         install_bootloader,
         follow,
     })
@@ -80,6 +85,10 @@ fn adopt_passes_every_flag_and_only_asked_ones() {
     full.extend(["--install-bootloader", "--follow", "214"]);
     assert_eq!(adopt(true, Some(214)).argv(), full);
     assert!(adopt(true, None).privileged());
+
+    let mut boot = plain.clone();
+    boot.extend(["--boot", "--install-bootloader", "--follow", "0"]);
+    assert_eq!(adopt_as(true, true, Some(0)).argv(), boot);
 }
 
 #[test]
@@ -193,7 +202,13 @@ fn coeusd_parses_every_adopt_it_is_sent() {
     use crate::cli::daemon::DaemonCLIArgs;
 
     let status = adopt_status();
-    let calls = [adopt(false, None), adopt(true, Some(214)), status];
+    let calls = [
+        adopt(false, None),
+        adopt(true, Some(214)),
+        adopt_as(true, true, Some(0)),
+        adopt_as(true, false, None),
+        status,
+    ];
     for call in calls {
         let argv = call.argv();
         let coeusd = argv
