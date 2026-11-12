@@ -1,4 +1,4 @@
-use eyre::{Result, bail};
+use eyre::{Result, bail, eyre};
 use log::debug;
 
 use crate::common::proto::{HelloFinished, HelloRequest, HelloResponse, PROTOCOL_VERSION, Packet};
@@ -53,9 +53,12 @@ impl EncryptedStream {
         match self.recv().await? {
             Some(Packet::HelloFinished(finished)) if finished.compatible => Ok(()),
             Some(Packet::HelloFinished(_)) => {
-                bail!("{} is incompatible with this server", self.peer())
+                Err(eyre!("{} is incompatible with this server", self.peer()))
             }
-            _ => bail!("{} sent an unexpected packet during the hello", self.peer()),
+            _ => Err(eyre!(
+                "{} sent an unexpected packet during the hello",
+                self.peer()
+            )),
         }
     }
 }
