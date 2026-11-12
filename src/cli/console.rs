@@ -52,6 +52,9 @@ enum Request {
     HandOver(String, oneshot::Sender<oneshot::Sender<()>>),
     /// the run ended: settle the rows, then print these
     Finish(Vec<String>, oneshot::Sender<()>),
+    /// the checklist as it stands, for a test to read
+    #[cfg(test)]
+    Peek(oneshot::Sender<Checklist>),
 }
 
 /// a question nobody can answer: no terminal, and no `--answer` for it
@@ -160,6 +163,16 @@ impl Console {
         output
     }
 
+    /// the checklist as the console holds it now
+    #[cfg(test)]
+    pub async fn checklist(&self) -> Result<Checklist> {
+        let (reply, checklist) = oneshot::channel();
+        self.requests
+            .send(Request::Peek(reply))
+            .map_err(|_| stopped())?;
+        checklist.await.map_err(|_| stopped())
+    }
+
     /// the closing summary, once the run ended
     pub async fn finish(&self, state: &StateDir, finale: &Finale) -> Result<()> {
         let (done, finished) = oneshot::channel();
@@ -259,6 +272,11 @@ impl Terminal {
                 return;
             }
             Request::Finish(..) => unreachable!("finish ends the task"),
+            #[cfg(test)]
+            Request::Peek(reply) => {
+                let _ = reply.send(self.checklist.clone());
+                return;
+            }
         }
         if let Out::Plain { .. } = self.out {
             self.draw();
