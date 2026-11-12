@@ -333,6 +333,43 @@ async fn gives_up_on_a_job_no_runner_holds() {
 }
 
 #[tokio::test]
+async fn with_a_coeusd_here_the_orders_job_is_followed_but_none_admitted() {
+    let state = tempfile::tempdir().unwrap();
+    let store = JobStore::open(state.path()).unwrap();
+    let settings = settings(state.path());
+
+    let mut out = Vec::new();
+    let code = request(0)
+        .carry_out(&settings, true, &mut out)
+        .await
+        .unwrap();
+    assert_eq!(code, super::DAEMON_HERE);
+    assert!(out.is_empty());
+    assert!(store.list().unwrap().is_empty(), "nothing is admitted");
+
+    // the job adopt admitted before that coeusd came up, finished since
+    let dir = created(adopt(&store, state.path(), 0).await.unwrap());
+    runner(&dir, Phase::Activating)
+        .finish(Outcome::Succeeded)
+        .unwrap();
+    dir.write_summary(&dir.view().await.unwrap().summary)
+        .unwrap();
+
+    let following = Request {
+        follow: Some(0),
+        ..request(0)
+    };
+    let code = following
+        .carry_out(&settings, true, &mut out)
+        .await
+        .unwrap();
+    assert_eq!(code, 0);
+    let lines = String::from_utf8(out).unwrap();
+    assert!(lines.starts_with("@job {"), "{lines}");
+    assert!(lines.contains("finished"), "{lines}");
+}
+
+#[tokio::test]
 async fn a_coeusd_listening_on_any_of_its_addresses_is_found() {
     let ipv6 = tokio::net::TcpListener::bind("[::1]:0").await.unwrap();
     let port = ipv6.local_addr().unwrap().port();

@@ -81,7 +81,8 @@ pub async fn switch(
     let coeus = fleet_coeus(stock, &source, plan.host, console).await?;
     let order = match status(stock, &coeus, &source, plan).await? {
         Attempt::Fresh(order) => order,
-        Attempt::Running(job) | Attempt::Succeeded(job) => job.order,
+        Attempt::Succeeded(job) => return Ok((coeus, source, Ending::Finished(job))),
+        Attempt::Running(job) => job.order,
         Attempt::Failed { last, next } => match (plan.retry, next) {
             (true, Some(next)) => next,
             (true, None) => {
