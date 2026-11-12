@@ -261,7 +261,9 @@ impl Ssh {
 /// the alias first contact records the presented key under
 const FIRST_CONTACT: &str = "coeus-first-contact";
 
-/// an ssh that learns the host key and authenticates with nothing
+/// an ssh that learns the host key and authenticates with nothing. the
+/// scratch entry is read back by its alias, so it is written in the clear
+/// whatever the person's config says about hashing
 pub(super) fn first_contact_args(destination: &str, known_hosts: &Path) -> Vec<String> {
     [
         "BatchMode=yes",
@@ -269,6 +271,7 @@ pub(super) fn first_contact_args(destination: &str, known_hosts: &Path) -> Vec<S
         "StrictHostKeyChecking=accept-new",
         &format!("UserKnownHostsFile={}", known_hosts.display()),
         "GlobalKnownHostsFile=/dev/null",
+        "HashKnownHosts=no",
         "HostKeyAlgorithms=ssh-ed25519",
         &format!("HostKeyAlias={FIRST_CONTACT}"),
         "ControlPath=none",

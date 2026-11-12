@@ -39,6 +39,7 @@ fn first_contact_authenticates_with_nothing_and_records_into_scratch() {
         "StrictHostKeyChecking=accept-new",
         "UserKnownHostsFile=/tmp/scratch/known_hosts",
         "GlobalKnownHostsFile=/dev/null",
+        "HashKnownHosts=no",
         "HostKeyAlgorithms=ssh-ed25519",
         "ControlPath=none",
     ] {
