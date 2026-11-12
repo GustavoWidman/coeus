@@ -103,8 +103,8 @@ pub enum Blocker {
     Enrolled { files: Vec<RepoPath> },
     /// changes in the private clone nobody committed
     Uncommitted { clone: PathBuf, files: Vec<String> },
-    /// a rebase onto the default branch stopped on a conflict
-    Conflict { clone: PathBuf },
+    /// the enrollment no longer applies onto the base it goes to
+    Conflict { clone: PathBuf, base: String },
     /// the first switch of this head failed; `--retry` orders it again
     SwitchFailed { job: Box<JobSummary> },
     /// the coeus the machine's configuration pins has no `coeusd adopt`
