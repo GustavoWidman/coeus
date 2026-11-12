@@ -29,7 +29,9 @@ async fn main() -> Result<()> {
                 format!("v{}", env!("CARGO_PKG_VERSION")).magenta()
             );
 
-            serve(&args).await.inspect_err(|error| error!("coeusd stopped: {error:#}"))
+            serve(&args)
+                .await
+                .inspect_err(|error| error!("coeusd stopped: {error:#}"))
         }
     }
 }
