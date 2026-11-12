@@ -60,7 +60,8 @@ pub(crate) trait Machine {
 
 /// the pull request of the enrollment branch
 pub(crate) trait Forge {
-    /// the newest pull request whose head is `branch`
+    /// the pull request of `branch` from the repository itself, as
+    /// [PullRequest::pick] chooses: a closed one is left alone
     async fn find(&self, clone: &Path, branch: &str) -> Result<Option<PullRequest>>;
 
     async fn create_draft(

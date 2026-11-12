@@ -27,6 +27,7 @@ fn evidence(state: PullState) -> Evidence {
             draft: false,
             state,
             body: String::new(),
+            head: "0123456789abcdef0123456789abcdef01234567".parse().unwrap(),
         },
         section: body::Evidence::default(),
         notes: Vec::new(),

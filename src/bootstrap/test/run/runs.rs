@@ -1,6 +1,6 @@
-use super::{ANSWERS, Fleet, has_nix, host};
+use super::{ANSWERS, Fleet, git, has_nix, host};
 use crate::{
-    bootstrap::{Blocker, Finale, Step, state::StateDir},
+    bootstrap::{Blocker, Finale, Step, branch::PullState, state::StateDir},
     ui::checklist::Mark,
 };
 
@@ -235,7 +235,7 @@ async fn a_rekey_stopped_before_its_commit_is_finished_and_an_edit_blocks() {
 
     // the rekey commit never made: its secrets rewritten, nothing committed
     // or pushed
-    super::git(&fleet.clone(), &["reset", "--quiet", "--mixed", "HEAD~1"]);
+    git(&fleet.clone(), &["reset", "--quiet", "--mixed", "HEAD~1"]);
     super::git(
         &fleet.clone(),
         &[
@@ -266,4 +266,62 @@ async fn a_rekey_stopped_before_its_commit_is_finished_and_an_edit_blocks() {
         panic!("{:?}", ran.finale);
     };
     assert_eq!(files, &["secrets/shared.age"]);
+}
+
+#[tokio::test]
+async fn a_pull_request_closed_without_merging_is_left_and_a_new_one_opened() {
+    if !has_nix() {
+        return;
+    }
+    let fleet = Fleet::new().await;
+    fleet.assert_in_the_fleet(&fleet.run(&Kill::default()).await.unwrap());
+    let closed = {
+        let mut pulls = fleet.pulls.lock().unwrap();
+        pulls.open[0].1.state = PullState::Closed;
+        pulls.open[0].1.clone()
+    };
+
+    let ran = fleet.run(&Kill::default()).await.unwrap();
+
+    let Finale::Done(evidence) = &ran.finale else {
+        panic!("{:?}", ran.finale);
+    };
+    assert_ne!(evidence.pull_request.number, closed.number);
+    assert_eq!(evidence.pull_request.state, PullState::Open);
+    assert!(!evidence.pull_request.draft);
+    let pulls = fleet.pulls.lock().unwrap();
+    assert_eq!(pulls.open.len(), 2);
+    assert_eq!(pulls.open[0].1, closed, "the closed one is left as it was");
+}
+
+#[tokio::test]
+async fn a_pull_request_of_another_commit_is_not_reviewed() {
+    if !has_nix() {
+        return;
+    }
+    let fleet = Fleet::new().await;
+    fleet.assert_in_the_fleet(&fleet.run(&Kill::default()).await.unwrap());
+    let elsewhere = git(&fleet.clone(), &["rev-parse", "HEAD~1"]);
+    {
+        let mut pulls = fleet.pulls.lock().unwrap();
+        let pull = &mut pulls.open[0].1;
+        pull.state = PullState::Merged;
+        pull.head = elsewhere.parse().unwrap();
+        pull.body = String::new();
+    }
+
+    let ran = fleet.run(&Kill::default()).await.unwrap();
+
+    assert!(
+        matches!(
+            ran.finale,
+            Finale::Failed {
+                at: Step::Review,
+                ..
+            }
+        ),
+        "{:?}",
+        ran.finale
+    );
+    assert_eq!(fleet.pulls.lock().unwrap().open[0].1.body, "");
 }
