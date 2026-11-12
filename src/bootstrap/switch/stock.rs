@@ -264,14 +264,12 @@ pub async fn fleet_coeus(
     }
 
     let path = built_path(&printed)?;
-    let version = stock
-        .run(&Call::CoeusVersion {
-            coeus: path.clone(),
-        })
-        .await?
-        .split_whitespace()
-        .last()
-        .unwrap_or("unknown")
+    // the store path names the version, even of a coeus older than its
+    // `--version`
+    let version = path
+        .as_str()
+        .rsplit_once("-coeus-")
+        .map_or("unknown", |(_, version)| version)
         .to_owned();
     Ok(FleetCoeus { path, version })
 }

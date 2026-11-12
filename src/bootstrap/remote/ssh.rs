@@ -264,9 +264,17 @@ pub(super) fn known_key(text: &str, alias: &str) -> Option<SshKey> {
 /// the last line ssh said, for an error
 pub(super) fn stderr_tail(stderr: &[u8]) -> String {
     let text = String::from_utf8_lossy(stderr);
+    let said = |line: &&str| !line.trim().is_empty();
+    // a program that explains itself after its error (clap's "try --help",
+    // eyre's location) puts the reason on the error line, not the last one
+    let error = |line: &&str| {
+        let line = line.trim_start().to_ascii_lowercase();
+        line.starts_with("error:") || line.starts_with("error ")
+    };
     text.lines()
         .rev()
-        .find(|line| !line.trim().is_empty())
+        .find(error)
+        .or_else(|| text.lines().rev().find(said))
         .unwrap_or("it said nothing")
         .trim()
         .to_owned()

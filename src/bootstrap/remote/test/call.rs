@@ -129,13 +129,6 @@ fn the_rest_are_pinned() {
         Call::HardwareConfig.argv()[4..],
         ["nixos-generate-config", "--show-hardware-config"]
     );
-    assert_eq!(
-        Call::CoeusVersion {
-            coeus: COEUS.parse().unwrap()
-        }
-        .argv(),
-        [format!("{COEUS}/bin/coeusd"), "--version".into()]
-    );
     let status = Call::AdoptStatus {
         coeus: COEUS.parse().unwrap(),
         nar_hash: "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
@@ -180,4 +173,29 @@ fn sudo_wraps_only_privileged_calls_and_reads_its_password_first() {
     assert_eq!(argv[..7], ["sudo", "-H", "-k", "-S", "-p", "", "--"]);
     assert_eq!(argv[7..], call.argv());
     assert_eq!(line, Some("hunter2"));
+}
+
+/// what the CLI runs on a machine must be what that machine's coeusd takes
+#[test]
+fn coeusd_parses_every_adopt_it_is_sent() {
+    use clap::Parser;
+
+    use crate::cli::daemon::DaemonCLIArgs;
+
+    let status = Call::AdoptStatus {
+        coeus: COEUS.parse().unwrap(),
+        nar_hash: "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+            .parse()
+            .unwrap(),
+    };
+    let calls = [adopt(false, None), adopt(true, Some(214)), status];
+    for call in calls {
+        let argv = call.argv();
+        let coeusd = argv
+            .iter()
+            .position(|word| word.ends_with("/bin/coeusd"))
+            .expect("the call runs coeusd");
+        DaemonCLIArgs::try_parse_from(&argv[coeusd..])
+            .unwrap_or_else(|error| panic!("coeusd refuses {:?}: {error}", &argv[coeusd..]));
+    }
 }

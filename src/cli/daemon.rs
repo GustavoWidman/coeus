@@ -6,7 +6,7 @@ use log::LevelFilter;
 use crate::common::model::{Hostname, NarHash, OrderId, StorePath};
 
 #[derive(Parser, Debug)]
-#[command(name = "coeusd")]
+#[command(name = "coeusd", version)]
 pub struct DaemonCLIArgs {
     /// Sets the logger's verbosity level
     #[arg(short, long, value_name = "VERBOSITY", default_value_t = LevelFilter::Info)]
