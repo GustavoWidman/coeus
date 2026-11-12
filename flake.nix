@@ -20,42 +20,59 @@
       devshell,
       ...
     }:
-    flake-parts.lib.mkFlake { inherit inputs; } {
-      systems = import systems;
-      imports = [
-        devshell.flakeModule
-      ];
+    flake-parts.lib.mkFlake { inherit inputs; } (
+      { self, flake-parts-lib, ... }:
+      let
+        common = flake-parts-lib.importApply ./nix/modules/common.nix { inherit self; };
+      in
+      {
+        systems = import systems;
+        imports = [
+          devshell.flakeModule
+        ];
 
-      perSystem =
-        {
-          pkgs,
-          system,
-          ...
-        }:
-        let
-          toolchain = fenix.packages.${system}.fromToolchainFile {
-            file = ./rust-toolchain.toml;
-            sha256 = "sha256-3MyLNjhfHtXhOj0hzUe3wrwfX6h7B3JURIfNHuSu19w=";
-          };
-
-          craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
-          coeus = pkgs.callPackage ./nix/package.nix { inherit craneLib; };
-        in
-        {
-          packages.default = coeus;
-
-          checks = {
-            inherit coeus;
-          }
-          // coeus.passthru.checks;
-
-          devshells.default = {
-            packages = [
-              toolchain
-            ];
-
-            motd = "";
-          };
+        flake = {
+          nixosModules.default.imports = [
+            common
+            ./nix/modules/nixos.nix
+          ];
+          darwinModules.default.imports = [
+            common
+            ./nix/modules/darwin.nix
+          ];
         };
-    };
+
+        perSystem =
+          {
+            pkgs,
+            system,
+            ...
+          }:
+          let
+            toolchain = fenix.packages.${system}.fromToolchainFile {
+              file = ./rust-toolchain.toml;
+              sha256 = "sha256-3MyLNjhfHtXhOj0hzUe3wrwfX6h7B3JURIfNHuSu19w=";
+            };
+
+            craneLib = (crane.mkLib pkgs).overrideToolchain toolchain;
+            coeus = pkgs.callPackage ./nix/package.nix { inherit craneLib; };
+          in
+          {
+            packages.default = coeus;
+
+            checks = {
+              inherit coeus;
+            }
+            // coeus.passthru.checks;
+
+            devshells.default = {
+              packages = [
+                toolchain
+              ];
+
+              motd = "";
+            };
+          };
+      }
+    );
 }
