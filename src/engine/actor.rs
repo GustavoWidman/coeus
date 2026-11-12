@@ -15,6 +15,7 @@ use super::{
     notify::Notifier,
     reconcile::{Observed, Plan, Resume},
     running::Running,
+    tries,
     upgrade::UpgradeWatch,
 };
 use crate::{
@@ -604,7 +605,7 @@ impl<H: Host> Actor<H> {
             return;
         };
 
-        if failed_here(&self.recent, &source) {
+        if !tries::may_try(&self.recent, &source, Timestamp::now()) {
             return;
         }
 
@@ -686,21 +687,6 @@ fn deployed<'a>(recent: &'a VecDeque<JobSummary>, facts: &SystemFacts) -> Option
         });
 
     by_coeus.or_else(|| facts.switched_at.map(|at| Deployed { source: None, at }))
-}
-
-/// whether this machine already tried `source` and it did not stick, so
-/// catching up waits for the ref to move instead of trying it again
-pub(super) fn failed_here(recent: &VecDeque<JobSummary>, source: &Source) -> bool {
-    let Source::Git { rev, .. } = source else {
-        return false;
-    };
-
-    recent
-        .iter()
-        .find(|job| matches!(&job.source, Source::Git { rev: tried, .. } if tried == rev))
-        .is_some_and(
-            |job| matches!(&job.state, JobState::Finished(outcome) if !outcome.is_success()),
-        )
 }
 
 fn system_info(facts: &SystemFacts, checked_at: Timestamp, fda: FdaStatus) -> SystemInfo {
