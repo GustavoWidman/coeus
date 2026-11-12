@@ -145,11 +145,13 @@ pub struct JobSummary {
 impl JobSummary {
     /// time spent running so far, or in total once finished
     pub fn duration(&self) -> Option<std::time::Duration> {
+        self.duration_at(Timestamp::now())
+    }
+
+    /// [JobSummary::duration] as of `now`
+    pub fn duration_at(&self, now: Timestamp) -> Option<std::time::Duration> {
         let started = self.started_at?;
-        Some(match self.finished_at {
-            Some(finished) => started.until(finished),
-            None => started.elapsed(),
-        })
+        Some(started.until(self.finished_at.unwrap_or(now)))
     }
 }
 
