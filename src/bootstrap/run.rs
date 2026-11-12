@@ -85,9 +85,7 @@ async fn pass<M: Machine, F: Forge>(
         nix_version = step(console, Step::Nix, async {
             let ready = machine.nix(bootstrap, console).await?;
             for file in &ready.moved {
-                console.note(format!(
-                    "moved {file} to {file}.before-nix-darwin, so nix-darwin can write its own"
-                ));
+                console.note(format!("moved {file}, so nix-darwin can write its own"));
             }
             let (mark, detail) = match (&ready.version, ready.installed || !ready.moved.is_empty())
             {
