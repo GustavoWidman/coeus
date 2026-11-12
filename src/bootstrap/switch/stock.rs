@@ -467,13 +467,10 @@ async fn ask_for_full_disk_access(
                 on: format!("someone at {host}"),
             },
             Live::Tail(vec![
-                "nix-darwin's first activation writes where macOS lets only Full Disk Access write"
-                    .to_owned(),
-                format!(
-                    "on {host}: System Settings > Privacy & Security > Full Disk Access, add {launcher}"
-                ),
-                "(Finder shows it: drag it into the list) and turn it on; this goes on by itself"
-                    .to_owned(),
+                "nix-darwin's first activation writes where only Full Disk Access may".to_owned(),
+                format!("on {host}: System Settings > Privacy & Security > Full Disk Access"),
+                format!("add {launcher}, which Finder shows, and turn it on"),
+                "this goes on by itself once it is granted".to_owned(),
             ]),
         ],
     });
