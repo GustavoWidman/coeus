@@ -68,6 +68,7 @@ pub(super) struct Actor<H: Host> {
 impl<H: Host> Actor<H> {
     const RECENT: usize = MachineView::RECENT;
     const FACTS: Duration = Duration::from_secs(60);
+    const UPGRADE: Duration = Duration::from_secs(5);
     const FDA: Duration = Duration::from_secs(600);
     /// while the grant is missing, look again often, so granting it shows up
     /// in seconds
@@ -164,6 +165,7 @@ impl<H: Host> Actor<H> {
         tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
         let mut facts_at = Instant::now();
         let mut fda_at = Instant::now();
+        let mut upgrade_at = Instant::now();
 
         loop {
             tokio::select! {
@@ -193,7 +195,11 @@ impl<H: Host> Actor<H> {
                     }
 
                     self.catch_up().await;
-                    self.upgrade_when_idle();
+
+                    if upgrade_at.elapsed() >= Self::UPGRADE {
+                        upgrade_at = Instant::now();
+                        self.upgrade_when_idle();
+                    }
                 }
             }
 
