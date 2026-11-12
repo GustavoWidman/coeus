@@ -39,6 +39,9 @@ pub enum Call {
     AdoptStatus { coeus: StorePath, nar_hash: NarHash },
     /// `tailscale status --json`, when coeusd stays silent
     Tailscale,
+    /// System Settings' Full Disk Access pane, and `launcher` shown in
+    /// Finder, on the screen of whoever is logged in at the Mac
+    OpenFullDiskAccess { launcher: String },
 }
 
 /// the flags of `coeusd adopt`, the one interface between this CLI and the
@@ -108,6 +111,14 @@ for file in /etc/bashrc /etc/zshrc /etc/zprofile /etc/nix/nix.custom.conf; do
 done
 "#;
 
+/// `$1` the launcher. nothing to open when nobody is logged in at the Mac
+const OPEN_FULL_DISK_ACCESS: &str = r#"user=$(stat -f %Su /dev/console)
+[ "$user" != root ] || exit 0
+uid=$(id -u "$user")
+launchctl asuser "$uid" sudo -u "$user" open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"
+launchctl asuser "$uid" sudo -u "$user" open -R "$1"
+"#;
+
 const TAILSCALE: &str = r#"for tailscale in tailscale /run/current-system/sw/bin/tailscale /Applications/Tailscale.app/Contents/MacOS/Tailscale; do
   command -v "$tailscale" >/dev/null 2>&1 && exec "$tailscale" status --json
 done
@@ -158,6 +169,9 @@ impl Call {
                 nar_hash.as_str(),
             ]),
             Self::Tailscale => words(["sh", "-c", TAILSCALE]),
+            Self::OpenFullDiskAccess { launcher } => {
+                words(["sh", "-c", OPEN_FULL_DISK_ACCESS, "sh", launcher])
+            }
         }
     }
 
