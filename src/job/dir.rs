@@ -2,6 +2,7 @@ use std::{
     fs,
     io::ErrorKind,
     path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use eyre::{Result, WrapErr, eyre};
@@ -121,9 +122,13 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> Result<T> {
     Ok(serde_json::from_slice(&fs::read(path)?)?)
 }
 
-/// writes through a temporary file and a rename, so readers never see half
+/// writes through a temporary file and a rename, so readers never see half.
+/// every write has its own temporary name: the runner and coeusd may both
+/// write a job's summary, and the last rename of equal content wins.
 fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
-    let temporary = path.with_extension("tmp");
+    static WRITES: AtomicU64 = AtomicU64::new(0);
+    let write = WRITES.fetch_add(1, Ordering::Relaxed);
+    let temporary = path.with_extension(format!("{}.{write}.tmp", std::process::id()));
     fs::write(&temporary, serde_json::to_vec_pretty(value)?)?;
     fs::rename(&temporary, path)?;
     Ok(())
