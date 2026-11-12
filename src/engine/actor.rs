@@ -484,9 +484,18 @@ impl<H: Host> Actor<H> {
                     self.close(job, outcome);
                     self.after(job).await;
                 }
+                _ if !running.respawned() => {
+                    let log = running.dir.path().join("runner.log");
+                    error!("runners for job {job} keep dying before they start");
+                    self.fail(
+                        job,
+                        Phase::Preparing,
+                        format!("its runner never started, see {}", log.display()),
+                    )
+                    .await;
+                }
                 _ => {
                     warn!("the runner of job {job} died, starting another");
-                    running.respawned();
                     let dir = running.dir.clone();
                     if let Err(error) = self.host.spawn_runner(&dir).await {
                         self.fail(job, Phase::Preparing, error.to_string()).await;
