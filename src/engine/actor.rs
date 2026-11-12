@@ -155,6 +155,14 @@ impl<H: Host> Actor<H> {
         let plan = Plan::reconcile(observed, actor.facts.current.as_ref());
         actor.resume(plan).await?;
         actor.recent.truncate(Self::RECENT);
+
+        // a coeusd that died between a runner finishing and releasing it
+        // left the runner's platform bookkeeping behind
+        for job in actor.recent.iter().map(|summary| summary.id) {
+            if let Err(error) = actor.host.release_runner(job).await {
+                warn!("failed to release the runner of job {job}: {error}");
+            }
+        }
         actor.publish();
 
         Ok((actor, receiver))
