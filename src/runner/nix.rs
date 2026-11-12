@@ -35,6 +35,8 @@ pub enum Call<'a> {
     },
     /// a store path's metadata, its deriver among it
     PathInfo(&'a StorePath),
+    /// a flake's `nixConfig`, read from its own `flake.nix`
+    FlakeConfig(&'a str),
 }
 
 impl Call<'_> {
@@ -53,6 +55,23 @@ impl Call<'_> {
                 words(["store", "diff-closures", from.as_str(), to.as_str()])
             }
             Self::PathInfo(path) => words(["path-info", "--json", path.as_str()]),
+            Self::FlakeConfig(flake) => {
+                let flake = flake
+                    .replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace("${", "\\${");
+                let expr = format!(
+                    "let flake = builtins.getFlake \"{flake}\"; \
+                     in (import (flake.outPath + \"/flake.nix\")).nixConfig or {{ }}"
+                );
+                vec![
+                    "eval".into(),
+                    "--impure".into(),
+                    "--json".into(),
+                    "--expr".into(),
+                    expr.into(),
+                ]
+            }
         }
     }
 
@@ -69,6 +88,9 @@ impl Call<'_> {
 pub struct Nix {
     options: NixOptions,
     ssh_key: Option<PathBuf>,
+    /// the flake's own caches, which `accept-flake-config` applies where a
+    /// call reads the flake but not to a build of the derivation it named
+    caches: Vec<(&'static str, String)>,
 }
 
 impl Nix {
@@ -76,7 +98,47 @@ impl Nix {
         Self {
             options: spec.order.options,
             ssh_key: spec.ssh_key_file.clone(),
+            caches: Vec::new(),
         }
+    }
+
+    /// the caches and keys the flake's `nixConfig` names, from what
+    /// [Call::FlakeConfig] printed. a machine that has them in `nix.conf`
+    /// already loses nothing; a stock one builds what the fleet's caches hold
+    pub fn use_flake_caches(&mut self, config: &[u8]) {
+        let Ok(serde_json::Value::Object(config)) = serde_json::from_slice(config) else {
+            return;
+        };
+        let joined = |names: [&str; 2]| {
+            names
+                .iter()
+                .filter_map(|name| config.get(*name))
+                .flat_map(|value| match value {
+                    serde_json::Value::String(text) => {
+                        text.split_whitespace().map(str::to_owned).collect()
+                    }
+                    serde_json::Value::Array(items) => items
+                        .iter()
+                        .filter_map(|item| item.as_str().map(str::to_owned))
+                        .collect(),
+                    _ => Vec::new(),
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        self.caches = [
+            (
+                "extra-substituters",
+                joined(["substituters", "extra-substituters"]),
+            ),
+            (
+                "extra-trusted-public-keys",
+                joined(["trusted-public-keys", "extra-trusted-public-keys"]),
+            ),
+        ]
+        .into_iter()
+        .filter(|(_, value)| !value.is_empty())
+        .collect();
     }
 
     pub fn args(&self, call: &Call<'_>) -> Vec<OsString> {
@@ -97,6 +159,11 @@ impl Nix {
         }
         if self.options.no_eval_cache {
             args.extend(words(["--option", "eval-cache", "false"]));
+        }
+        if matches!(call, Call::Build { .. }) && !self.options.clean_substituters {
+            for (name, value) in &self.caches {
+                args.extend(["--option".into(), (*name).into(), value.into()]);
+            }
         }
         if self.options.clean_substituters {
             let options = [
