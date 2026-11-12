@@ -71,6 +71,16 @@ fn created(admitted: Admitted) -> JobDir {
     }
 }
 
+async fn released(dir: &JobDir) {
+    for _ in 0..40 {
+        if !dir.log().is_held().unwrap() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("the log stayed held after its writer went");
+}
+
 /// a runner that took the job and got as far as `phase`
 fn runner(dir: &JobDir, phase: Phase) -> crate::job::LogWriter {
     let mut writer = dir.log().writer().unwrap().unwrap();
@@ -183,12 +193,16 @@ async fn takes_up_a_job_left_unfinished_as_coeusd_would() {
     let writer = runner(&dir, Phase::Building);
     assert_eq!(admit::revive(&dir, None).await.unwrap(), Revival::Running);
 
-    // the runner died building: another may build again
+    // the runner died building: another may build again. a child another
+    // test forks shares the log's open file until it execs, so the lock is
+    // let go of a moment after the writer is
     drop(writer);
+    released(&dir).await;
     assert_eq!(admit::revive(&dir, None).await.unwrap(), Revival::Spawn);
 
     // the runner died activating, and the machine runs what it built
     drop(runner(&dir, Phase::Activating));
+    released(&dir).await;
     assert_eq!(
         admit::revive(&dir, Some(&toplevel)).await.unwrap(),
         Revival::Closed(Outcome::Succeeded)
