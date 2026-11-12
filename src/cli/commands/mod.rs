@@ -8,6 +8,7 @@ mod reboot;
 mod rollback;
 mod setup;
 mod status;
+mod top;
 mod watch;
 
 pub use attach::{AttachArgs, LogsArgs};
@@ -20,6 +21,7 @@ pub use reboot::RebootArgs;
 pub use rollback::RollbackArgs;
 pub use setup::{CompletionsArgs, keygen};
 pub use status::StatusArgs;
+pub use top::TopArgs;
 pub use watch::WatchArgs;
 
 use eyre::Result;
@@ -43,6 +45,7 @@ impl Command {
             Self::Generations(args) => args.run(&context()?).await,
             Self::Reboot(args) => args.run(&context()?).await,
             Self::Doctor(args) => args.run(&context()?).await,
+            Self::Top(args) => args.run(&context()?).await,
             Self::Keygen => Ok(keygen()),
             Self::Completions(args) => Ok(args.run()),
         }
