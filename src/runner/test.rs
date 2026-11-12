@@ -389,20 +389,38 @@ fn undoing_returns_to_the_profile_generation_or_the_running_system() {
     .unwrap();
     let system = SystemRoot::at(root.path());
 
-    let switch = Activation::undo(Platform::NixOs, Action::Switch, &system).unwrap();
+    let switch = Activation::undo(Platform::NixOs, Action::Switch, false, &system).unwrap();
     assert_eq!(switch.generation, Some(9));
     assert_eq!(switch.toplevel, store("system-9"));
     assert_eq!(switch.action, Action::Switch);
+    assert!(!switch.install_bootloader);
 
-    let test = Activation::undo(Platform::NixOs, Action::Test, &system).unwrap();
+    let test = Activation::undo(Platform::NixOs, Action::Test, false, &system).unwrap();
     assert_eq!(test.generation, None);
     assert_eq!(test.toplevel, store("system-8"));
     assert_eq!(test.action, Action::Test);
 
     let fresh = SystemRoot::at(&root.path().join("nowhere"));
     assert_eq!(
-        Activation::undo(Platform::NixOs, Action::Switch, &fresh),
+        Activation::undo(Platform::NixOs, Action::Switch, false, &fresh),
         None
+    );
+}
+
+#[test]
+fn going_back_from_a_switch_that_installed_the_boot_loader_installs_it_again() {
+    let root = tempfile::tempdir().unwrap();
+    let profiles = root.path().join("nix/var/nix/profiles");
+    std::fs::create_dir_all(&profiles).unwrap();
+    symlink(store("system-9").as_str(), profiles.join("system-9-link")).unwrap();
+    symlink("system-9-link", profiles.join("system")).unwrap();
+    let system = SystemRoot::at(root.path());
+
+    let undo = Activation::undo(Platform::NixOs, Action::Switch, true, &system).unwrap();
+    let activate = undo.steps().pop().unwrap();
+    assert_eq!(
+        activate.env,
+        [("NIXOS_INSTALL_BOOTLOADER", Some("1".to_owned()))]
     );
 }
 

@@ -36,8 +36,15 @@ pub struct Activation {
 
 impl Activation {
     /// the activation that puts the machine back where it is now, taken
-    /// before `action` changes it
-    pub fn undo(platform: Platform, action: Action, system: &SystemRoot) -> Option<Self> {
+    /// before `action` changes it. a boot loader `action` installs is
+    /// installed again going back, so its default is no longer the system
+    /// rejected
+    pub fn undo(
+        platform: Platform,
+        action: Action,
+        install_bootloader: bool,
+        system: &SystemRoot,
+    ) -> Option<Self> {
         if action.sets_profile() {
             let generation = system.generation()?;
             return Some(Self {
@@ -45,7 +52,7 @@ impl Activation {
                 action: Action::Switch,
                 toplevel: system.generation_system(generation).ok()?,
                 generation: Some(generation),
-                install_bootloader: false,
+                install_bootloader,
             });
         }
 
