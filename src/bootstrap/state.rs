@@ -251,17 +251,54 @@ impl StateDir {
 
     /// removes this directory: the saved inputs, the pinned key, the session
     /// key and the clone. the branch and the pull request stay, and a later
-    /// run picks them up again
-    pub async fn forget(self) -> Result<()> {
+    /// run picks them up again. `lock` is held until everything else is
+    /// gone, so no run starts on a clone being removed; a run that starts
+    /// once the lock file is gone makes a new one and starts afresh.
+    pub async fn forget(self, lock: Lock) -> Result<()> {
         let root = self.root.clone();
-        tokio::task::spawn_blocking(move || match std::fs::remove_dir_all(&root) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => {
-                Err(error).wrap_err_with(|| format!("could not remove {}", root.display()))
-            }
+        let lock_file = self.lock_file();
+        tokio::task::spawn_blocking(move || {
+            let removed = remove_all_but(&root, &lock_file)
+                .and_then(|()| gone(std::fs::remove_file(&lock_file)))
+                .wrap_err_with(|| format!("could not remove {}", root.display()));
+            // a run that started meanwhile keeps the directory
+            let emptied = match std::fs::remove_dir(&root) {
+                Err(error) if error.kind() == std::io::ErrorKind::DirectoryNotEmpty => Ok(()),
+                result => gone(result),
+            };
+            drop(lock);
+            removed?;
+            emptied.wrap_err_with(|| format!("could not remove {}", root.display()))
         })
         .await?
+    }
+}
+
+/// everything in `dir` but `kept`
+fn remove_all_but(dir: &Path, kept: &Path) -> std::io::Result<()> {
+    let entries = match std::fs::read_dir(dir) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        entries => entries?,
+    };
+    for entry in entries {
+        let entry = entry?;
+        let path = entry.path();
+        if path == kept {
+            continue;
+        }
+        gone(match entry.file_type()?.is_dir() {
+            true => std::fs::remove_dir_all(&path),
+            false => std::fs::remove_file(&path),
+        })?;
+    }
+    Ok(())
+}
+
+/// a removal, where something already gone counts as removed
+fn gone(result: std::io::Result<()>) -> std::io::Result<()> {
+    match result {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result,
     }
 }
 

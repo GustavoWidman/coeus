@@ -43,3 +43,21 @@ fn saved_inputs_round_trip_through_toml() {
 fn an_empty_file_is_a_first_run() {
     assert_eq!(toml::from_str::<Saved>("").unwrap(), Saved::default());
 }
+
+#[tokio::test]
+async fn forgetting_removes_everything_while_holding_the_lock() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = StateDir::under(dir.path(), &"nova".parse().unwrap());
+    let lock = state.lock().await.unwrap();
+    std::fs::create_dir_all(state.clone_dir().join("hosts")).unwrap();
+    std::fs::write(state.clone_dir().join("hosts/nova.nix"), "{ }\n").unwrap();
+    state.save(&Saved::default()).unwrap();
+    let root = state.root().to_owned();
+    let again = StateDir::under(dir.path(), &"nova".parse().unwrap());
+
+    state.forget(lock).await.unwrap();
+
+    assert!(!root.exists());
+    assert!(!again.locked().unwrap());
+    let _relocked = again.lock().await.unwrap();
+}

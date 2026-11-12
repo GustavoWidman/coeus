@@ -229,11 +229,9 @@ async fn forget(state: StateDir, context: &Context) -> Result<Exit> {
             );
         }
         drop(console);
-        drop(lock);
-        bootstrap.state.forget().await?;
+        bootstrap.state.forget(lock).await?;
     } else {
-        drop(lock);
-        state.forget().await?;
+        state.forget(lock).await?;
     }
     println!(
         "{}",
