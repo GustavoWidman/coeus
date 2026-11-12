@@ -44,6 +44,7 @@ humantime-serde = "1.1.1"
 rustix = { version = "1.1.6", features = ["system", "process", "fs"] }
 memchr = "2.8.3"
 tempfile = "3.27.0"
+unicode-width = "0.2.3"
 
 
 [dev-dependencies]
