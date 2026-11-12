@@ -77,4 +77,9 @@ pub struct AdoptArgs {
     /// Print where the snapshot's switch stands, as JSON, and admit nothing
     #[arg(long, conflicts_with_all = ["source", "label", "hostname", "order", "install_bootloader", "follow"])]
     pub status: bool,
+
+    /// The state directory `--status` reads, /var/lib/coeus by default;
+    /// adopting uses the one the machine's configuration names
+    #[arg(long, value_name = "DIR", conflicts_with_all = ["source", "label", "hostname", "order"])]
+    pub state_dir: Option<PathBuf>,
 }
