@@ -69,6 +69,7 @@ fn row(change: &PackageChange) -> Vec<String> {
             versions(&change.after).green().to_string(),
         ),
         (_, true) => ("-".red().bold(), versions(&change.before).red().to_string()),
+        _ if change.before.is_empty() => ("~".yellow().bold(), String::new()),
         _ => (
             "~".yellow().bold(),
             format!(

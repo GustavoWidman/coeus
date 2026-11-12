@@ -26,6 +26,7 @@ pub fn event(stamped: &Stamped<JobEvent>) -> Option<String> {
             say::info(format!("system {}", toplevel.name().cyan()))
         }
         JobEvent::Progress(_) => return None,
+        JobEvent::Diff(changes) if changes.is_empty() => say::info("no package changes".dimmed()),
         JobEvent::Diff(changes) => say::info(diff::totals(changes)),
         JobEvent::Note(note) => say::aside(note.dimmed()),
         JobEvent::Finished(outcome) => finished(outcome),
