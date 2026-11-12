@@ -9,24 +9,33 @@
 let
   root = ../.;
 
+  # the probe a bootstrap runs on a stock machine is compiled into the binary
+  sources = lib.fileset.unions [
+    (craneLib.fileset.commonCargoSources root)
+    ../src/bootstrap/remote/probe.sh
+  ];
+
   args = {
     src = lib.fileset.toSource {
       inherit root;
-      fileset = craneLib.fileset.commonCargoSources root;
+      fileset = sources;
     };
     strictDeps = true;
   };
 
   cargoArtifacts = craneLib.buildDepsOnly args;
 
-  # the tests also read recorded nix output, which the package itself never needs
+  # the tests also read recorded nix output and sample contracts, which the
+  # package itself never needs
   checkArgs = args // {
     inherit cargoArtifacts;
     src = lib.fileset.toSource {
       inherit root;
       fileset = lib.fileset.unions [
-        (craneLib.fileset.commonCargoSources root)
+        sources
         ../src/nix/fixtures
+        ../src/bootstrap/contract/test/fixtures
+        ../src/bootstrap/test/run/contract.nix
       ];
     };
   };
