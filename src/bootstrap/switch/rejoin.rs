@@ -5,11 +5,11 @@
 //! deadline: after the guard's timeout the runner has kept the system or
 //! rolled back, and one way or the other comes back to say which.
 
-use std::future;
+use std::{future, time::Duration};
 
 use eyre::{Result, eyre};
 
-use super::{Ending, Feed, FleetCoeus, POLL, Plan, show, stock};
+use super::{Ending, Feed, FleetCoeus, POLL, Plan, backoff::Backoff, show, stock};
 use crate::{
     bootstrap::{fleet::Daemon, remote::Stock, remote::Target},
     cli::Console,
@@ -46,14 +46,24 @@ pub async fn race(way: &Way<'_>, feed: &Feed, console: &Console) -> Result<(Endi
     }
 }
 
+/// how long ssh is left alone at most after adopt failed on it
+const FAILING_AT_MOST: Duration = Duration::from_secs(30);
+
+/// ssh back but adopt failing on it is as good as no ssh: the machine is
+/// still switching (nix-daemon restarting under adopt's evaluation, sudo
+/// gone with the stock user), so it is asked again, less often each time,
+/// while the tailnet way may answer
 async fn by_ssh(way: &Way<'_>, mut feed: Feed, console: &Console) -> Result<(Ending, Feed)> {
+    let mut failing = Backoff::new(POLL, FAILING_AT_MOST);
+    let mut wait = POLL;
     loop {
-        tokio::time::sleep(POLL).await;
+        tokio::time::sleep(wait).await;
+        wait = POLL;
         if way.stock.ssh.connect(true).await.is_err() {
             continue;
         }
         let from = feed.offset;
-        let ending = stock::adopt(
+        let adopted = stock::adopt(
             way.stock,
             way.coeus,
             way.source,
@@ -63,7 +73,20 @@ async fn by_ssh(way: &Way<'_>, mut feed: Feed, console: &Console) -> Result<(End
             &mut feed,
             console,
         )
-        .await?;
+        .await;
+        let ending = match adopted {
+            Ok(ending) => ending,
+            Err(error) => {
+                wait = failing.next();
+                let failed = Live::Tail(vec![format!(
+                    "adopt failed over ssh, asking again in {}s: {error:#}",
+                    wait.as_secs()
+                )]);
+                show(console, &feed, Some(failed));
+                continue;
+            }
+        };
+        failing.reset();
         match ending {
             Ending::Lost { .. } => continue,
             // the machine's own coeusd runs now; the tailnet way finds it

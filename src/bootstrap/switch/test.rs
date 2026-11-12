@@ -259,3 +259,16 @@ fn only_the_clone_and_inputs_the_machine_cannot_fetch_are_shipped() {
     assert!(shipped.contains(&store("local").as_str()), "{shipped:?}");
     assert_eq!(shipped.len(), 3, "public inputs stay behind: {shipped:?}");
 }
+
+#[test]
+fn waits_double_up_to_their_ceiling_and_start_over_after_a_success() {
+    use std::time::Duration;
+
+    use crate::bootstrap::switch::backoff::Backoff;
+
+    let mut backoff = Backoff::new(Duration::from_secs(5), Duration::from_secs(30));
+    let waits: Vec<u64> = (0..5).map(|_| backoff.next().as_secs()).collect();
+    assert_eq!(waits, [5, 10, 20, 30, 30]);
+    backoff.reset();
+    assert_eq!(backoff.next(), Duration::from_secs(5));
+}

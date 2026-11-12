@@ -7,6 +7,7 @@
 //! the switch is an ordinary job, built, activated and guarded on the
 //! machine whatever happens to the connection or to the admin.
 
+mod backoff;
 mod daemon;
 mod feed;
 mod rejoin;
