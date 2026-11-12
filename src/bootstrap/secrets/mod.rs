@@ -15,4 +15,4 @@ mod test;
 pub use generate::{Generated, generate};
 pub use header::{Header, Stanza, Verdict};
 pub use identity::AdminIdentity;
-pub use seal::{Plan, Planned, create, plan};
+pub use seal::{Plan, Planned, create, is_temporary, plan};
