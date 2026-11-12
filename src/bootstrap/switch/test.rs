@@ -2,7 +2,7 @@ use crate::{
     bootstrap::switch::{
         AdoptLine, Feed,
         ship::{Archived, Lock},
-        stock::built_path,
+        stock::{built_path, drain},
     },
     common::model::{
         Action, JobEvent, JobId, JobState, JobSummary, OrderId, Origin, Outcome, Phase, Progress,
@@ -149,6 +149,50 @@ fn a_resumed_follow_keeps_the_progress_it_had() {
     let view = feed.view.as_ref().unwrap();
     assert_eq!(view.summary, running);
     assert_eq!(view.progress.downloaded_bytes, 42);
+}
+
+#[tokio::test]
+async fn adopts_output_is_read_to_its_end_after_the_job_is_seen_finished() {
+    let finished = JobSummary {
+        state: JobState::Finished(Outcome::Failed(crate::common::model::Failure::new(
+            Phase::Building,
+            "builder failed",
+        ))),
+        ..job()
+    };
+    let mut output = format!("@job {}\n", serde_json::to_string(&finished).unwrap());
+    // the log from the offset asked, replayed after the summary
+    output.push_str(&event(2_000, JobEvent::Phase(Phase::Building)));
+    output.push('\n');
+    for n in 0..2_000 {
+        output.push_str(&format!(
+            "@nix {{\"action\":\"msg\",\"level\":0,\"msg\":\"error: line {n}\"}}\n@at {n}\n"
+        ));
+    }
+
+    // a pipe far smaller than the output: adopt finishes writing only if
+    // everything is read
+    let (mut adopt, stdout) = tokio::io::duplex(256);
+    let writing = tokio::spawn(async move {
+        tokio::io::AsyncWriteExt::write_all(&mut adopt, output.as_bytes()).await
+    });
+
+    let mut feed = Feed::default();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        drain(stdout, &mut feed, |_| {}),
+    )
+    .await
+    .expect("the output was read to its end");
+    writing.await.unwrap().unwrap();
+
+    assert_eq!(
+        feed.finished(),
+        Some(&finished),
+        "replayed events are older"
+    );
+    assert_eq!(feed.offset, 1_999);
+    assert!(feed.failure().iter().any(|line| line.contains("line 1999")));
 }
 
 #[test]

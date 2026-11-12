@@ -44,7 +44,9 @@ impl AdoptLine {
 }
 
 /// events over ssh are applied in order, nix lines folded into progress; a
-/// view from coeusd replaces it whole, since coeusd read the same log
+/// view from coeusd replaces it whole, since coeusd read the same log. a
+/// finished job stays finished: the events a stream replays after a
+/// summary that says so are older than it
 #[derive(Default)]
 pub struct Feed {
     pub view: Option<JobView>,
@@ -62,7 +64,9 @@ impl Feed {
                 _ => self.view = Some(JobView::queued(*summary)),
             },
             AdoptLine::Event(event) => {
-                if let Some(view) = &mut self.view {
+                if let Some(view) = &mut self.view
+                    && !view.summary.state.is_finished()
+                {
                     view.apply(&event);
                 }
             }
