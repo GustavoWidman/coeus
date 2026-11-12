@@ -11,7 +11,11 @@ use tokio::{
     process::Command,
 };
 
-use super::{AdoptLine, Feed, Release, show};
+use super::{
+    AdoptLine, Feed, Release,
+    ship::{Archived, Lock},
+    show,
+};
 use crate::{
     adopt::DAEMON_HERE,
     bootstrap::{
@@ -97,11 +101,11 @@ pub async fn switch(
     Ok((coeus, source, ending))
 }
 
-/// `nix flake archive --json --to ssh-ng://<dest>` of the clone through the
-/// pinned master: the source and every locked input land in the machine's
-/// store, so it evaluates exactly what this admin does without any of the
-/// fleet's credentials. a rerun copies only what is missing. returns the
-/// source's store path there.
+/// the clone and the inputs only this admin can reach, copied into the
+/// machine's store through the pinned master: the machine then evaluates
+/// what this admin does without any of the fleet's credentials, and fetches
+/// the public inputs its evaluation touches itself. a rerun copies only what
+/// is missing. returns the source's store path there.
 pub async fn ship(stock: &Stock, plan: &Plan<'_>, console: &Console) -> Result<StorePath> {
     let host = plan.host;
     let stage = Snapshot::stage(&plan.clone).await?;
@@ -113,30 +117,52 @@ pub async fn ship(stock: &Stock, plan: &Plan<'_>, console: &Console) -> Result<S
         );
     }
 
+    console.mark(Step::Switch, Mark::Active, "reading the clone's inputs");
+    let flake = format!("path:{}", stage.path().display());
+    let archived = Archived::parse(
+        &nix_output(&[
+            "flake",
+            "archive",
+            "--json",
+            "--no-update-lock-file",
+            &flake,
+        ])
+        .await
+        .wrap_err("could not archive the clone on this machine")?,
+    )?;
+    let paths = match tokio::fs::read_to_string(stage.path().join("flake.lock")).await {
+        Ok(lock) => Lock::parse(&lock)?.private_paths(&archived),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => vec![archived.path.clone()],
+        Err(error) => return Err(error).wrap_err("could not read the clone's flake.lock"),
+    };
+
     let (store, ssh_options) = stock.ssh.nix_store(nix_daemon(stock.probed.facts.platform));
+    let what = match paths.len() - 1 {
+        0 => "the clone".to_owned(),
+        1 => "the clone and the input only this machine reaches".to_owned(),
+        inputs => format!("the clone and the {inputs} inputs only this machine reaches"),
+    };
     // inputs this admin substituted carry signatures of caches a stock machine
     // does not trust; the lock pins each by its nar hash, which the machine
     // checks when it evaluates, so root on the machine takes them unsigned
     let mut child = Command::new("nix")
         .args(["--extra-experimental-features", "nix-command flakes"])
-        .args(["flake", "archive", "--json", "--no-update-lock-file"])
-        .arg("--no-check-sigs")
-        .args(["--log-format", "internal-json", "--to", &store])
-        .arg(format!("path:{}", stage.path().display()))
+        .args(["copy", "--no-check-sigs", "--log-format", "internal-json"])
+        .args(["--to", &store])
+        .args(paths.iter().map(ToString::to_string))
         .env("NIX_SSHOPTS", ssh_options)
         .stdin(Stdio::null())
-        .stdout(Stdio::piped())
+        .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
         .wrap_err("could not run nix on this machine")?;
 
-    let mut stdout = child.stdout.take().expect("stdout is piped");
-    let printed = tokio::spawn(async move {
-        let mut text = String::new();
-        let _ = stdout.read_to_string(&mut text).await;
-        text
-    });
+    console.mark(
+        Step::Switch,
+        Mark::Active,
+        format!("shipping {what} to {host}"),
+    );
     let mut fold = LogFold::new();
     let mut lines = BufReader::new(child.stderr.take().expect("stderr is piped")).lines();
     while let Some(line) = lines.next_line().await? {
@@ -147,21 +173,42 @@ pub async fn ship(stock: &Stock, plan: &Plan<'_>, console: &Console) -> Result<S
                 Step::Switch,
                 Mark::Active,
                 format!(
-                    "shipping the clone and its inputs to {host}: {} of {} paths",
+                    "shipping {what} to {host}: {} of {} paths",
                     copied.done, copied.expected
                 ),
             );
         }
     }
-    let status = child.wait().await?;
-    let printed = printed.await.unwrap_or_default();
-    if !status.success() {
+    if !child.wait().await?.success() {
         bail!(
             "could not ship the clone to {host}: {}",
-            fold.last_error().unwrap_or("nix flake archive failed")
+            fold.last_error().unwrap_or("nix copy failed")
         );
     }
-    archived_path(&printed)
+    Ok(archived.path)
+}
+
+/// what a local nix prints, or its last error line
+async fn nix_output(args: &[&str]) -> Result<String> {
+    let output = Command::new("nix")
+        .args(["--extra-experimental-features", "nix-command flakes"])
+        .args(args)
+        .stdin(Stdio::null())
+        .kill_on_drop(true)
+        .output()
+        .await?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "{}",
+            stderr
+                .lines()
+                .rev()
+                .find(|line| !line.trim().is_empty())
+                .unwrap_or("nix failed")
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// `<configurations>.<host>.config.services.coeus.package` built as root,
@@ -357,17 +404,6 @@ async fn nar_hash(dir: &Path) -> Result<NarHash> {
         );
     }
     NarHash::try_from(String::from_utf8(output.stdout)?.trim().to_owned())
-}
-
-/// `{"path": "/nix/store/…-source", "inputs": {…}}`
-pub(super) fn archived_path(printed: &str) -> Result<StorePath> {
-    #[derive(serde::Deserialize)]
-    struct Archived {
-        path: StorePath,
-    }
-    serde_json::from_str::<Archived>(printed.trim())
-        .map(|archived| archived.path)
-        .map_err(|error| eyre!("nix flake archive printed something else: {error}"))
 }
 
 /// `[{"drvPath": …, "outputs": {"out": "/nix/store/…"}}]`

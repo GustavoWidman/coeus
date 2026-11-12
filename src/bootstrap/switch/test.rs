@@ -1,7 +1,8 @@
 use crate::{
     bootstrap::switch::{
         AdoptLine, Feed,
-        stock::{archived_path, built_path},
+        ship::{Archived, Lock},
+        stock::built_path,
     },
     common::model::{
         Action, JobEvent, JobId, JobState, JobSummary, OrderId, Origin, Outcome, Phase, Progress,
@@ -167,7 +168,7 @@ fn nix_lines_explain_a_failure() {
 fn what_nix_prints_names_the_store_paths() {
     let archived = r#"{"inputs":{"nixpkgs":{"inputs":{},"path":"/nix/store/0123456789abcdfghijklmnpqrsvwxyz-source"}},"path":"/nix/store/abcdfghijklmnpqrsvwxyz0123456789-source"}"#;
     assert_eq!(
-        archived_path(archived).unwrap().as_str(),
+        Archived::parse(archived).unwrap().path.as_str(),
         "/nix/store/abcdfghijklmnpqrsvwxyz0123456789-source"
     );
 
@@ -177,4 +178,40 @@ fn what_nix_prints_names_the_store_paths() {
         "/nix/store/0123456789abcdfghijklmnpqrsvwxyz-coeus-0.2.0"
     );
     assert!(built_path("[]").is_err());
+}
+
+#[test]
+fn only_the_clone_and_inputs_the_machine_cannot_fetch_are_shipped() {
+    let store = |name: &str| format!("/nix/store/{name:a>32}-source");
+    let archived = format!(
+        r#"{{"path":"{root}","inputs":{{
+            "nixpkgs":{{"path":"{nixpkgs}","inputs":{{}}}},
+            "bot":{{"path":"{bot}","inputs":{{"nixpkgs":{{"path":"{botpkgs}","inputs":{{}}}}}}}},
+            "local":{{"path":"{local}","inputs":{{}}}},
+            "mirror":{{"path":"{mirror}","inputs":{{}}}}
+        }}}}"#,
+        root = store("root"),
+        nixpkgs = store("nixpkgs"),
+        bot = store("bot"),
+        botpkgs = store("botpkgs"),
+        local = store("local"),
+        mirror = store("mirror"),
+    );
+    let lock = r#"{"root":"root","version":7,"nodes":{
+        "root":{"inputs":{"nixpkgs":"nixpkgs","bot":"bot","local":"local","mirror":"mirror"}},
+        "nixpkgs":{"locked":{"type":"github","owner":"NixOS","repo":"nixpkgs"}},
+        "bot":{"inputs":{"nixpkgs":"nixpkgs_2","shared":["nixpkgs"]},
+               "locked":{"type":"git","url":"ssh://git@github.com/owner/bot"}},
+        "nixpkgs_2":{"locked":{"type":"github","owner":"NixOS","repo":"nixpkgs"}},
+        "local":{"locked":{"type":"path","path":"/home/me/local"}},
+        "mirror":{"locked":{"type":"git","url":"https://example.org/mirror.git"}}
+    }}"#;
+    let shipped = Lock::parse(lock)
+        .unwrap()
+        .private_paths(&Archived::parse(&archived).unwrap());
+    let shipped: Vec<&str> = shipped.iter().map(|path| path.as_str()).collect();
+    assert_eq!(shipped[0], store("root"), "the clone goes first");
+    assert!(shipped.contains(&store("bot").as_str()), "{shipped:?}");
+    assert!(shipped.contains(&store("local").as_str()), "{shipped:?}");
+    assert_eq!(shipped.len(), 3, "public inputs stay behind: {shipped:?}");
 }

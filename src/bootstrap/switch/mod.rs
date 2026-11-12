@@ -10,6 +10,7 @@
 mod daemon;
 mod feed;
 mod rejoin;
+mod ship;
 mod stock;
 
 #[cfg(test)]
