@@ -21,14 +21,7 @@ pub struct Snapshot {
 impl Snapshot {
     pub async fn capture(dir: &Path) -> Result<Self> {
         let root = PathBuf::from(git(dir, &["rev-parse", "--show-toplevel"]).await?.trim());
-        let files = Self::files(&root).await?;
-
-        let stage = tempfile::Builder::new()
-            .prefix("coeus-snapshot")
-            .tempdir()?;
-        for file in &files {
-            copy(&root.join(file), &stage.path().join(file))?;
-        }
+        let stage = Self::stage(&root).await?;
 
         let nar = nix(&["nar", "pack"], stage.path()).await?;
         let hash = nix(&["hash", "path", "--type", "sha256", "--sri"], stage.path()).await?;
@@ -39,6 +32,19 @@ impl Snapshot {
             nar,
             label: Self::label(&root).await,
         })
+    }
+
+    /// the files a snapshot of `dir` holds, copied into a temporary
+    /// directory, whose NAR hash is the snapshot's
+    pub async fn stage(dir: &Path) -> Result<tempfile::TempDir> {
+        let root = PathBuf::from(git(dir, &["rev-parse", "--show-toplevel"]).await?.trim());
+        let stage = tempfile::Builder::new()
+            .prefix("coeus-snapshot")
+            .tempdir()?;
+        for file in Self::files(&root).await? {
+            copy(&root.join(&file), &stage.path().join(&file))?;
+        }
+        Ok(stage)
     }
 
     pub fn source(&self) -> Source {
