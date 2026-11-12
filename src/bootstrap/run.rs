@@ -13,6 +13,7 @@ use super::{
     fleet::Reboot,
     publish,
     rekey::{self, Rekeyed},
+    remote::Ssh,
     state::{Ended, LastRun},
     switch::Switched,
     world::{Answer, Forge, Machine},
@@ -44,6 +45,7 @@ pub(crate) async fn run<M: Machine, F: Forge>(
     console: &Console,
 ) -> Result<Finale> {
     let _lock = bootstrap.state.lock().await?;
+    Ssh::end_stale(&bootstrap.state).await;
     let started_at = Timestamp::now();
     bootstrap.saved.last_run = Some(LastRun {
         started_at,

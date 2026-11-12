@@ -190,6 +190,33 @@ impl Ssh {
             .await;
     }
 
+    /// ends every master an earlier run of this bootstrap left: one killed
+    /// with `-9` leaves its master holding the channels of the commands it
+    /// ran, and a command whose output nobody reads blocks on the machine,
+    /// holding whatever it locked. the run's lock means none of them is in use.
+    pub async fn end_stale(state: &StateDir) {
+        let Ok(entries) = std::fs::read_dir(state.root()) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let is_master = entry.file_name().to_string_lossy().starts_with("ssh-")
+                && entry
+                    .file_type()
+                    .is_ok_and(|kind| std::os::unix::fs::FileTypeExt::is_socket(&kind));
+            if !is_master {
+                continue;
+            }
+            let _ = Command::new("ssh")
+                .args(["-o", &format!("ControlPath={}", entry.path().display())])
+                .args(["-O", "exit", "stale"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .await;
+        }
+    }
+
     /// whether a failure was the connection rather than the command: ssh
     /// exits 255 for its own errors
     pub fn lost(status: ExitStatus) -> bool {
