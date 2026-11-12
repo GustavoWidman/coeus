@@ -5,7 +5,7 @@ use log::{info, warn};
 use tokio::signal::unix::{Signal, SignalKind, signal};
 
 use super::{
-    activation::{self, Activation, Step},
+    activation::{self, Activation, Step, Undo},
     feed::Feed,
     flake::Recipe,
     nix::{self, Call, Nix},
@@ -60,14 +60,7 @@ impl Runner {
         }
 
         let spec = dir.spec()?;
-        let mut runner = Self {
-            nix: Nix::new(&spec),
-            dir,
-            spec,
-            writer,
-            system: SystemRoot::default(),
-            phase: Phase::Preparing,
-        };
+        let mut runner = Self::new(dir, spec, writer);
 
         let attempt = history.started.saturating_add(1);
         runner.writer.event(JobEvent::Started {
@@ -85,6 +78,18 @@ impl Runner {
                 );
                 Ok(())
             }
+        }
+    }
+
+    /// the runner of `dir`'s job, holding its log
+    pub(super) fn new(dir: JobDir, spec: JobSpec, writer: LogWriter) -> Self {
+        Self {
+            nix: Nix::new(&spec),
+            dir,
+            spec,
+            writer,
+            system: SystemRoot::default(),
+            phase: Phase::Preparing,
         }
     }
 
@@ -221,7 +226,8 @@ impl Runner {
         let (platform, action) = (self.spec.target.platform, self.spec.order.action);
 
         let install_bootloader = self.spec.install_bootloader;
-        let undo = Activation::undo(platform, action, install_bootloader, &self.system);
+        let undo = Activation::undo(platform, action, install_bootloader, &self.system)
+            .map(|undo| Undo::of(&undo));
         let activation = Activation {
             platform,
             action,
@@ -233,11 +239,26 @@ impl Runner {
             install_bootloader,
         };
 
+        self.carry_out(&activation.steps(), undo).await
+    }
+
+    /// activates with `steps`, then checks the machine is healthy. a step
+    /// that fails, or a guard that does, goes back with `undo`: a machine is
+    /// never left booting into a system no one verified.
+    pub(super) async fn carry_out(
+        &mut self,
+        steps: &[Step],
+        undo: Option<Undo>,
+    ) -> Result<Outcome> {
+        let (platform, action) = (self.spec.target.platform, self.spec.order.action);
+
         self.enter(Phase::Activating)?;
-        for step in activation.steps() {
-            self.exec(&step)
-                .await
-                .map_err(|error| self.without_full_disk_access(platform, error))?;
+        for step in steps {
+            if let Err(error) = self.exec(step).await {
+                let error = self.without_full_disk_access(platform, error);
+                let failure = self.failure(error);
+                return self.go_back(failure, undo).await;
+            }
         }
 
         let Some(guard) = self.spec.guard.clone().filter(|_| action.activates()) else {
@@ -248,21 +269,40 @@ impl Runner {
         let Err(problem) = guard.verify().await else {
             return Ok(Outcome::Succeeded);
         };
-
-        let Some(undo) = undo else {
+        if undo.is_none() {
             let message = format!("{problem}, and there is no earlier system to go back to");
             return Ok(Outcome::Failed(Failure::new(Phase::Verifying, message)));
+        }
+        self.go_back(Failure::new(Phase::Verifying, problem), undo)
+            .await
+    }
+
+    /// puts the machine back where it was after `failure`, which the job
+    /// then ends with. without an earlier system there is nowhere to go back
+    /// to; an undo that fails too is named next to it.
+    async fn go_back(&mut self, failure: Failure, undo: Option<Undo>) -> Result<Outcome> {
+        let Some(undo) = undo else {
+            return Ok(Outcome::Failed(failure));
         };
 
         self.event(JobEvent::Note(format!(
-            "{problem}: going back to {}",
-            undo.describe()
+            "{}: going back to {}",
+            failure.message, undo.to
         )))?;
-        for step in undo.steps() {
-            self.exec(&step).await?;
+        for step in &undo.steps {
+            if let Err(error) = self.exec(step).await {
+                let undone = self.failure(error);
+                return Ok(Outcome::Failed(Failure {
+                    message: format!(
+                        "{}, and going back failed too: {}",
+                        failure.message, undone.message
+                    ),
+                    ..failure
+                }));
+            }
         }
 
-        Ok(Outcome::RolledBack(Failure::new(Phase::Verifying, problem)))
+        Ok(Outcome::RolledBack(failure))
     }
 
     /// runs one nix call with its log in the job log, and returns its stdout
@@ -339,7 +379,7 @@ impl Runner {
     }
 
     /// ends the log and leaves the summary history reads instead of it
-    async fn finish(self, outcome: Outcome) -> Result<()> {
+    pub(super) async fn finish(self, outcome: Outcome) -> Result<()> {
         info!("job {} finished: {outcome}", self.dir.id());
         self.writer.finish(outcome)?;
 

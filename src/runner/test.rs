@@ -3,10 +3,10 @@ use std::{ffi::OsString, os::unix::fs::symlink, path::Path, time::Duration};
 use tokio::process::Command;
 
 use super::{
-    activation::{Activation, Step, is_up_to_date},
+    activation::{Activation, Step, Undo, is_up_to_date},
     feed::Feed,
     guard::{Health, is_running},
-    job::History,
+    job::{History, Runner},
     nix::{self, Call, Nix},
     process::{Process, Stdout},
     *,
@@ -395,6 +395,14 @@ fn undoing_returns_to_the_profile_generation_or_the_running_system() {
     assert_eq!(switch.action, Action::Switch);
     assert!(!switch.install_bootloader);
 
+    let boot = Activation::undo(Platform::NixOs, Action::Boot, false, &system).unwrap();
+    assert_eq!(boot.generation, Some(9));
+    assert_eq!(
+        boot.action,
+        Action::Boot,
+        "a boot goes back to the old default only"
+    );
+
     let test = Activation::undo(Platform::NixOs, Action::Test, false, &system).unwrap();
     assert_eq!(test.generation, None);
     assert_eq!(test.toplevel, store("system-8"));
@@ -692,4 +700,114 @@ fn the_flake_config_is_read_from_the_flake_itself() {
         "{}",
         args[4]
     );
+}
+
+/// a step that says `said` on stderr and exits with `code`
+fn shell(said: &str, code: i32) -> Step {
+    Step {
+        program: "/bin/sh".into(),
+        args: vec!["-c".into(), format!("echo '{said}' >&2; exit {code}")],
+        env: Vec::new(),
+    }
+}
+
+/// a step that leaves `file` behind
+fn touching(file: &Path) -> Step {
+    Step {
+        program: "/bin/sh".into(),
+        args: vec!["-c".into(), format!("echo back > '{}'", file.display())],
+        env: Vec::new(),
+    }
+}
+
+/// carries out `steps` with `undo` as the runner of a switch, and returns
+/// how the job ended and what its log says
+async fn activated(steps: &[Step], undo: Option<Undo>) -> (Outcome, Vec<JobEvent>) {
+    let spec = spec(git(None), Action::Switch);
+    let (_state, dir) = job(&spec);
+    let writer = dir.log().writer().unwrap().unwrap();
+    let mut runner = Runner::new(dir.clone(), spec, writer);
+
+    let outcome = runner.carry_out(steps, undo).await.unwrap();
+    runner.finish(outcome.clone()).await.unwrap();
+    (outcome, events(&dir).await)
+}
+
+#[tokio::test]
+async fn a_failed_activation_goes_back_to_the_earlier_system() {
+    let scratch = tempfile::tempdir().unwrap();
+    let undone = scratch.path().join("undone");
+    let never = scratch.path().join("never");
+    let steps = [shell("Pre-switch checks failed", 1), touching(&never)];
+    let undo = Undo {
+        to: "generation 9 (nixos-system-stock)".into(),
+        steps: vec![touching(&undone)],
+    };
+
+    let (outcome, events) = activated(&steps, Some(undo)).await;
+
+    let Outcome::RolledBack(failure) = outcome else {
+        panic!("expected a rollback, got {outcome:?}");
+    };
+    assert_eq!(failure.phase, Phase::Activating);
+    assert!(failure.message.contains("/bin/sh failed"), "{failure:?}");
+    assert!(
+        failure
+            .tail
+            .iter()
+            .any(|line| line.contains("Pre-switch checks failed")),
+        "the failure keeps its own last lines: {failure:?}"
+    );
+    assert!(undone.exists(), "the undo ran");
+    assert!(!never.exists(), "the steps after the failed one did not");
+    assert!(events.iter().any(|event| matches!(
+        event,
+        JobEvent::Note(note) if note.ends_with("going back to generation 9 (nixos-system-stock)")
+    )));
+}
+
+#[tokio::test]
+async fn a_failed_activation_with_nowhere_to_go_back_to_fails() {
+    let (outcome, _) = activated(&[shell("boom", 1)], None).await;
+
+    let Outcome::Failed(failure) = outcome else {
+        panic!("expected a failure, got {outcome:?}");
+    };
+    assert_eq!(failure.phase, Phase::Activating);
+    assert!(failure.tail.iter().any(|line| line.contains("boom")));
+}
+
+#[tokio::test]
+async fn going_back_that_fails_too_is_named_with_the_first_failure() {
+    let undo = Undo {
+        to: "generation 9".into(),
+        steps: vec![shell("no space left", 2)],
+    };
+
+    let (outcome, _) = activated(&[shell("refused", 1)], Some(undo)).await;
+
+    let Outcome::Failed(failure) = outcome else {
+        panic!("expected a failure, got {outcome:?}");
+    };
+    assert_eq!(failure.phase, Phase::Activating);
+    assert!(
+        failure.message.contains("going back failed too"),
+        "{failure:?}"
+    );
+    assert!(failure.tail.iter().any(|line| line.contains("refused")));
+}
+
+#[tokio::test]
+async fn activation_that_works_succeeds_without_going_back() {
+    let scratch = tempfile::tempdir().unwrap();
+    let undone = scratch.path().join("undone");
+    let undo = Undo {
+        to: "generation 9".into(),
+        steps: vec![touching(&undone)],
+    };
+
+    let (outcome, _) = activated(&[shell("activating", 0)], Some(undo)).await;
+
+    assert_eq!(outcome, Outcome::Succeeded);
+    assert!(!undone.exists());
 }
