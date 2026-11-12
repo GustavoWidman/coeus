@@ -52,3 +52,100 @@ fn reaches_names_outside_the_inventory_and_rejects_unknown_groups() {
     assert!(select(&["@nothing"]).is_err());
     assert!(select(&["!@all"]).is_err());
 }
+
+mod doctor {
+    use crate::{
+        client::{Checkup, Severity},
+        common::model::{
+            Action, DaemonState, Failure, FdaStatus, HostInfo, JobId, JobState, JobSummary,
+            MachineView, OrderId, Origin, Outcome, Phase, Platform, Source, SystemInfo, Timestamp,
+        },
+    };
+
+    fn view(platform: Platform) -> MachineView {
+        MachineView {
+            host: HostInfo {
+                hostname: "altar".parse().unwrap(),
+                platform,
+                system: "aarch64-darwin".into(),
+                version: "0.2.0".into(),
+            },
+            system: SystemInfo {
+                current: Some(
+                    "/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-darwin-system-26.11"
+                        .parse()
+                        .unwrap(),
+                ),
+                generation: Some(10),
+                pending_boot: false,
+                reboot_required: false,
+                deployed: None,
+                follow: None,
+                fda: FdaStatus::Granted,
+                checked_at: Timestamp(0),
+            },
+            daemon: DaemonState::Serving,
+            running: None,
+            next: None,
+            recent: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_healthy_machine_says_so() {
+        let checkup = Checkup::of(&view(Platform::Darwin), "0.2.0");
+        assert_eq!(checkup.severity(), Severity::Ok);
+    }
+
+    #[test]
+    fn missing_full_disk_access_fails_with_the_fix() {
+        let mut view = view(Platform::Darwin);
+        view.system.fda = FdaStatus::Missing;
+
+        let checkup = Checkup::of(&view, "0.2.0");
+        assert_eq!(checkup.severity(), Severity::Fail);
+        assert!(
+            checkup.findings[0]
+                .fix
+                .as_ref()
+                .unwrap()
+                .contains("/usr/bin/time")
+        );
+    }
+
+    #[test]
+    fn version_skew_reboots_and_failures_are_warnings_worst_first() {
+        let mut view = view(Platform::NixOs);
+        view.system.reboot_required = true;
+        view.system.current = None;
+        view.recent.push(JobSummary {
+            id: JobId(7),
+            order: OrderId(1),
+            source: Source::Generation(3),
+            action: Action::Switch,
+            origin: Origin::Follow,
+            state: JobState::Finished(Outcome::Failed(Failure::new(Phase::Building, "boom"))),
+            ordered_at: Timestamp(0),
+            started_at: None,
+            finished_at: None,
+            toplevel: None,
+            attempt: 1,
+        });
+
+        let checkup = Checkup::of(&view, "0.3.0");
+        let titles: Vec<&str> = checkup
+            .findings
+            .iter()
+            .map(|finding| finding.title.as_str())
+            .collect();
+
+        assert_eq!(checkup.findings[0].severity, Severity::Fail);
+        assert!(titles.iter().any(|title| title.contains("0.2.0")));
+        assert!(titles.iter().any(|title| title.contains("kernel")));
+        assert!(
+            titles
+                .iter()
+                .any(|title| title.contains("#7 failed building: boom"))
+        );
+    }
+}

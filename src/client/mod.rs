@@ -1,6 +1,7 @@
 //! the CLI's side of the protocol: one connection per daemon, typed
 //! conversations, and the fleet of them
 
+mod doctor;
 mod fleet;
 mod origin;
 mod snapshot;
@@ -15,6 +16,7 @@ use eyre::{Result, eyre};
 use log::debug;
 use tokio::{net::lookup_host, time::timeout};
 
+pub use doctor::{Checkup, Finding, Severity};
 pub use fleet::{Fleet, FleetEvent, Link};
 pub use origin::detect_origin;
 pub use snapshot::Snapshot;
