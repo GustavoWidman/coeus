@@ -3,8 +3,9 @@ use std::future::Future;
 use eyre::Result;
 
 use crate::{
-    common::model::{Action, FdaStatus, Generation, HostInfo, JobId, StorePath},
+    common::model::{Action, FdaStatus, Generation, HostInfo, JobId},
     job::JobDir,
+    platform::SystemFacts,
 };
 
 /// what the engine needs from the machine it runs on
@@ -29,13 +30,4 @@ pub trait Host: Send + Sync + 'static {
     fn probe_fda(&self) -> impl Future<Output = FdaStatus> + Send;
 
     fn reboot(&self) -> impl Future<Output = Result<()>> + Send;
-}
-
-/// what the machine runs right now
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct SystemFacts {
-    pub current: Option<StorePath>,
-    pub generation: Option<u32>,
-    pub pending_boot: bool,
-    pub reboot_required: bool,
 }

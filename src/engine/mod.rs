@@ -20,8 +20,9 @@ use eyre::Result;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 
+pub use crate::platform::SystemFacts;
 pub use handle::EngineHandle;
-pub use host::{Host, SystemFacts};
+pub use host::Host;
 
 use crate::{config::DaemonSettings, job::JobStore, nix::FlakeRepo};
 
