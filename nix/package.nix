@@ -2,6 +2,9 @@
   lib,
   craneLib,
   nix-output-monitor,
+  git,
+  nix,
+  ps,
 }:
 let
   root = ../.;
@@ -15,6 +18,18 @@ let
   };
 
   cargoArtifacts = craneLib.buildDepsOnly args;
+
+  # the tests also read recorded nix output, which the package itself never needs
+  checkArgs = args // {
+    inherit cargoArtifacts;
+    src = lib.fileset.toSource {
+      inherit root;
+      fileset = lib.fileset.unions [
+        (craneLib.fileset.commonCargoSources root)
+        ../src/nix/fixtures
+      ];
+    };
+  };
 in
 craneLib.buildPackage (
   args
@@ -29,14 +44,22 @@ craneLib.buildPackage (
     COEUS_NOM = lib.getExe nix-output-monitor;
 
     passthru.checks = {
-      test = craneLib.cargoTest (args // { inherit cargoArtifacts; });
-      clippy = craneLib.cargoClippy (
-        args
+      # snapshots go through git and nix, and the runner tests look processes up
+      test = craneLib.cargoTest (
+        checkArgs
         // {
-          inherit cargoArtifacts;
-          cargoClippyExtraArgs = "--all-targets";
+          nativeBuildInputs = [
+            git
+            nix
+            ps
+          ];
+          preConfigure = ''
+            export HOME="$TMPDIR/home"
+            mkdir -p "$HOME"
+          '';
         }
       );
+      clippy = craneLib.cargoClippy (checkArgs // { cargoClippyExtraArgs = "--all-targets"; });
     };
 
     meta.mainProgram = "coeus";
