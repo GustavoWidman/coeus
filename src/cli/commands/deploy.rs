@@ -23,13 +23,15 @@ pub struct DeployArgs {
     #[arg(value_name = "TARGETS")]
     pub targets: Vec<String>,
 
-    /// Deploy this commit of the fleet's flake repository
-    #[arg(long, value_name = "SHA", conflicts_with = "git_ref")]
+    /// Deploy this commit of the fleet's flake repository; with --ref, the
+    /// branch it belongs to
+    #[arg(long, value_name = "SHA")]
     pub rev: Option<CommitSha>,
 
     /// Deploy the commit this ref points to now, the same on every machine
-    #[arg(long = "ref", value_name = "REF", default_value = "main")]
-    pub git_ref: String,
+    /// [default: main]
+    #[arg(long = "ref", value_name = "REF")]
+    pub git_ref: Option<String>,
 
     /// Deploy a working tree as it is, uncommitted changes included
     #[arg(
@@ -182,13 +184,16 @@ impl DeployArgs {
     /// so the whole order builds the same thing; `None` when none answered
     async fn pin(&self, fleet: &Fleet) -> Result<Option<Source>> {
         if let Some(rev) = self.rev {
-            return Ok(Some(Source::Git { rev, git_ref: None }));
+            let git_ref = self.git_ref.clone();
+            return Ok(Some(Source::Git { rev, git_ref }));
         }
+
+        let git_ref = self.git_ref.as_deref().unwrap_or("main");
 
         let mut failures = Vec::new();
         for host in fleet.hosts() {
             let pinned = match fleet.connect(host).await {
-                Ok(mut client) => client.resolve(&self.git_ref).await,
+                Ok(mut client) => client.resolve(git_ref).await,
                 Err(error) => Err(error),
             };
             match pinned {
@@ -198,11 +203,11 @@ impl DeployArgs {
         }
 
         if failures.is_empty() {
-            bail!("no machine to resolve {} on", self.git_ref);
+            bail!("no machine to resolve {git_ref} on");
         }
         eprintln!(
             "{}",
-            say::error(format!("no machine could resolve {}", self.git_ref))
+            say::error(format!("no machine could resolve {git_ref}"))
         );
         for failure in failures {
             eprintln!("    {failure}");
