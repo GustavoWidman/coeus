@@ -5,42 +5,28 @@ use std::{sync::Arc, time::Duration};
 use colored::Colorize;
 use eyre::{Context, Result};
 use log::{debug, error, info};
-use tokio::{sync::Mutex, task::JoinSet, time::timeout};
+use tokio::{task::JoinSet, time::timeout};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
-        proto::{DeployAccepted, Packet},
+        proto::{Error, Packet},
         stream::{EncryptedListener, EncryptedStream, PendingConnection},
     },
     config::ServerConfig,
-    deploy::Deployer,
 };
 
 pub const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(10);
 
 pub struct CoeusServer {
     listener: EncryptedListener,
-
-    /// IMPORTANT:
-    /// this is a [tokio::sync::Mutex] on purpose as it is a FIFO/"fair" mutex,
-    /// which is important for proper ordering of deploy requests,
-    /// as they are processed in the order they are received
-    deployer: Mutex<Deployer>,
-
     config: ServerConfig,
 }
 
 impl CoeusServer {
     pub async fn new(config: ServerConfig) -> Result<Self> {
         let listener = EncryptedListener::bind(config.address(), &config.key).await?;
-        let deployer = Deployer::new(config.clone()).await?.into();
-
-        Ok(Self {
-            listener,
-            deployer,
-            config,
-        })
+        Ok(Self { listener, config })
     }
 
     pub async fn run(self) -> Result<()> {
@@ -160,15 +146,11 @@ impl CoeusServer {
         match packet {
             Packet::DeployRequest(request) => {
                 debug!("received deploy request: {:?}", request);
-                let deployer = self.deployer.lock().await;
-
                 owner
-                    .send(DeployAccepted {
-                        message: "deploy request accepted".into(),
+                    .send(Error {
+                        message: "this daemon cannot deploy yet".into(),
                     })
                     .await?;
-
-                deployer.deploy(request.as_ref()).await?;
             }
             _ => {
                 debug!("received unknown packet: {:?}", packet);
