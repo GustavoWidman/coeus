@@ -7,16 +7,26 @@
 //! the switch is an ordinary job, built, activated and guarded on the
 //! machine whatever happens to the connection or to the admin.
 
+mod daemon;
 mod feed;
+mod rejoin;
 mod stock;
 
+#[cfg(test)]
+mod test;
+
+use std::time::Duration;
+
+use eyre::{Result, bail};
+
 pub use feed::{AdoptLine, Feed};
-pub use stock::{Ending, FleetCoeus};
+pub use stock::{Ending, FleetCoeus, Plan};
 
 use crate::{
-    bootstrap::{Bootstrap, remote::Target},
+    bootstrap::{Blocker, Bootstrap, Step, fleet::Daemon, remote::Target},
     cli::Console,
-    common::model::{CommitSha, JobSummary, NarHash, Source},
+    common::model::{CommitSha, JobState, JobSummary, NarHash, Outcome, Source},
+    ui::checklist::{Live, Mark, Row},
 };
 
 /// what the machine should run: the clone's committed head as a snapshot
@@ -53,22 +63,82 @@ pub enum Door {
     Ordered,
 }
 
+/// how long a machine that has a coeusd starting up is given before it is
+/// asked again
+const POLL: Duration = Duration::from_secs(3);
+
 pub async fn converge(
     release: &Release,
     target: &Target,
     bootstrap: &Bootstrap,
     console: &Console,
-) -> eyre::Result<Switched> {
-    // TODO:
-    // loop {
-    //   if coeusd answers now: Attempt::of(history, nar_hash) → follow,
-    //       or upload + order the attempt's order like `deploy --local`
-    //   else: stock::switch over ssh:
-    //       Finished(job) → done (Failed without --retry → Blocker::SwitchFailed)
-    //       DaemonHere → loop (coeusd took the machine over)
-    //       Lost { offset } → the switch dropped ssh; race ssh coming back
-    //           (`adopt --follow <offset>`) against coeusd answering (attach),
-    //           without a deadline; ctrl-c detaches
-    // }
-    todo!()
+) -> Result<Switched> {
+    let plan = Plan::of(release, bootstrap);
+    loop {
+        if console.cancelled.is_cancelled() {
+            bail!("detached from the switch");
+        }
+        if let Some(daemon) = Daemon::connect(target.settings(), &target.host).await? {
+            return daemon::switch(&daemon, &plan, console).await;
+        }
+
+        let stock = target.stock(bootstrap, console).await?;
+        let mut feed = Feed::default();
+        let (coeus, source, ending) = stock::switch(stock, &plan, &mut feed, console).await?;
+        let mut ending = ending;
+        loop {
+            match ending {
+                Ending::Finished(job) => return finished(job, Door::Adopted, &feed, console),
+                // a coeusd took the machine over: order through it
+                Ending::DaemonHere => {
+                    tokio::time::sleep(POLL).await;
+                    break;
+                }
+                Ending::Lost { job, .. } => {
+                    let way = rejoin::Way {
+                        stock,
+                        target,
+                        coeus: &coeus,
+                        source: &source,
+                        plan: &plan,
+                        job: &job,
+                    };
+                    (ending, feed) = rejoin::race(&way, &feed, console).await?;
+                }
+            }
+        }
+    }
+}
+
+/// the switch done, or a blocker saying why not, with nix's last words as
+/// notes
+fn finished(job: JobSummary, via: Door, feed: &Feed, console: &Console) -> Result<Switched> {
+    match &job.state {
+        JobState::Finished(Outcome::Succeeded | Outcome::UpToDate) => Ok(Switched { job, via }),
+        _ => {
+            for line in feed.failure() {
+                console.note(line);
+            }
+            Err(Blocker::SwitchFailed { job: Box::new(job) }.into())
+        }
+    }
+}
+
+/// the switch row: the job, drawn with the deploy board's cells
+fn show(console: &Console, feed: &Feed, waiting: Option<Live>) {
+    let Some(view) = &feed.view else { return };
+    let summary = &view.summary;
+    let detail = match &summary.state {
+        JobState::Queued => format!("job {} queued", summary.id),
+        JobState::Running { phase } => format!("job {} {phase}", summary.id),
+        JobState::Finished(outcome) => format!("job {} {outcome}", summary.id),
+    };
+    let mut live = vec![Live::Job(Box::new(view.clone()))];
+    live.extend(waiting);
+    console.update(Row {
+        step: Step::Switch,
+        mark: Mark::Active,
+        detail,
+        live,
+    });
 }

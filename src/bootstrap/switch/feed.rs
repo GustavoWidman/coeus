@@ -2,6 +2,7 @@
 
 use crate::{
     common::model::{JobEvent, JobSummary, JobView, Stamped},
+    job::JobLog,
     nix::LogFold,
 };
 
@@ -21,8 +22,24 @@ pub enum AdoptLine {
 }
 
 impl AdoptLine {
+    const JOB: &'static str = "@job ";
+    const AT: &'static str = "@at ";
+
     pub fn parse(line: &str) -> Self {
-        todo!()
+        let line = line.trim_end_matches(['\r', '\n']);
+        if let Some(json) = line.strip_prefix(Self::JOB) {
+            return serde_json::from_str(json).map_or(Self::Other, |job| Self::Job(Box::new(job)));
+        }
+        if let Some(json) = line.strip_prefix(JobLog::COEUS) {
+            return serde_json::from_str(json).map_or(Self::Other, Self::Event);
+        }
+        if line.starts_with(JobLog::NIX) {
+            return Self::Nix(line.to_owned());
+        }
+        if let Some(offset) = line.strip_prefix(Self::AT) {
+            return offset.trim().parse().map_or(Self::Other, Self::At);
+        }
+        Self::Other
     }
 }
 
@@ -37,14 +54,49 @@ pub struct Feed {
 
 impl Feed {
     pub fn line(&mut self, line: AdoptLine) {
-        todo!()
+        match line {
+            AdoptLine::Job(summary) => match &mut self.view {
+                // a follow resumed past the events already applied: only
+                // what the summary says is newer
+                Some(view) if view.summary.id == summary.id => view.summary = *summary,
+                _ => self.view = Some(JobView::queued(*summary)),
+            },
+            AdoptLine::Event(event) => {
+                if let Some(view) = &mut self.view {
+                    view.apply(&event);
+                }
+            }
+            AdoptLine::Nix(line) => self.fold.feed(&line),
+            AdoptLine::At(offset) => self.offset = offset,
+            AdoptLine::Other => {}
+        }
     }
 
     pub fn replace(&mut self, view: JobView) {
-        todo!()
+        self.view = Some(view);
     }
 
     pub fn finished(&self) -> Option<&JobSummary> {
-        todo!()
+        self.view
+            .as_ref()
+            .map(|view| &view.summary)
+            .filter(|summary| summary.state.is_finished())
+    }
+
+    /// why the job failed, in nix's words when nix said
+    pub fn failure(&self) -> Vec<String> {
+        let mut lines: Vec<String> = self
+            .fold
+            .last_error()
+            .map(str::to_owned)
+            .into_iter()
+            .collect();
+        let tail: Vec<&str> = self.fold.tail().collect();
+        lines.extend(
+            tail[tail.len().saturating_sub(4)..]
+                .iter()
+                .map(|line| (*line).to_owned()),
+        );
+        lines
     }
 }
