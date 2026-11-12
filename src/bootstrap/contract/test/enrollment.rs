@@ -54,6 +54,8 @@ fn a_path_outside_the_repository_or_in_the_wrong_place_is_refused() {
         ("files", "../etc/passwd", json!("x")),
         ("files", "/etc/passwd", json!("x")),
         ("files", ".git/hooks/post-checkout", json!("x")),
+        ("files", ".GIT/hooks/post-checkout", json!("x")),
+        ("files", "hosts/.Git/config", json!("x")),
         ("files", "hosts/nova/password.age", json!("x")),
         (
             "secrets",

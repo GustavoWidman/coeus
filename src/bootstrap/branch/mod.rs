@@ -204,28 +204,50 @@ impl Branch {
         self.clone.join(path.as_str())
     }
 
+    /// where `path` is written in the clone, its directories made. a symlink
+    /// along the way, committed or not, would send the write outside the
+    /// clone, so one is refused
+    pub fn place(&self, path: &RepoPath) -> Result<PathBuf> {
+        let mut dir = self.clone.clone();
+        let parts: Vec<&str> = path.as_str().split('/').collect();
+        for part in &parts[..parts.len() - 1] {
+            dir.push(part);
+            let refused = match dir.symlink_metadata() {
+                Ok(found) if found.file_type().is_symlink() => "a symlink",
+                Ok(found) if !found.is_dir() => "a file",
+                Ok(_) => continue,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    std::fs::create_dir(&dir)
+                        .wrap_err_with(|| format!("failed to make {}", dir.display()))?;
+                    continue;
+                }
+                Err(error) => return Err(error.into()),
+            };
+            bail!("{path} goes through {refused} at {}", dir.display());
+        }
+        Ok(self.path(path))
+    }
+
     /// writes the files that are absent, never edits one that exists, and
     /// stages every declared path; returns the ones it wrote
     pub async fn write(&self, files: &BTreeMap<RepoPath, String>) -> Result<Vec<RepoPath>> {
         let mut written = Vec::new();
         for (path, text) in files {
-            let target = self.path(path);
+            let target = self.place(path)?;
             // a temporary sibling renamed into place: a run killed midway
             // leaves no half-written file that the next run would keep
             let partial = target.with_file_name(format!(
                 ".{}.coeus-partial",
                 target.file_name().unwrap_or_default().to_string_lossy()
             ));
-            if partial.exists() {
+            if partial.symlink_metadata().is_ok() {
                 std::fs::remove_file(&partial)?;
             }
             if target.symlink_metadata().is_ok() {
                 continue;
             }
-            if let Some(parent) = target.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut file = std::fs::File::create(&partial)?;
+            // never through whatever appeared at the partial's name since
+            let mut file = std::fs::File::create_new(&partial)?;
             file.write_all(text.as_bytes())?;
             file.sync_all()?;
             std::fs::rename(&partial, &target)
