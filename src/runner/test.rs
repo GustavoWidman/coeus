@@ -53,6 +53,7 @@ fn spec(source: Source, action: Action) -> JobSpec {
         target: target(Platform::current()),
         ssh_key_file: None,
         guard: None,
+        install_bootloader: false,
     }
 }
 
@@ -274,6 +275,7 @@ fn nixos_sets_the_profile_then_switches() {
         action,
         toplevel: toplevel.clone(),
         generation,
+        install_bootloader: false,
     };
     let commands = |activation: Activation| -> Vec<String> {
         activation
@@ -310,6 +312,25 @@ fn nixos_sets_the_profile_then_switches() {
 
     let switch = activation(Action::Switch, None).steps().pop().unwrap();
     assert_eq!(switch.env, [("NIXOS_INSTALL_BOOTLOADER", None)]);
+
+    let first = Activation {
+        install_bootloader: true,
+        ..activation(Action::Switch, None)
+    };
+    let switch = first.steps().pop().unwrap();
+    assert_eq!(
+        switch.env,
+        [("NIXOS_INSTALL_BOOTLOADER", Some("1".to_owned()))]
+    );
+}
+
+#[test]
+fn specs_written_before_the_boot_loader_flag_still_parse() {
+    let mut json = serde_json::to_value(spec(git(None), Action::Switch)).unwrap();
+    json.as_object_mut().unwrap().remove("install_bootloader");
+
+    let spec: JobSpec = serde_json::from_value(json).unwrap();
+    assert!(!spec.install_bootloader);
 }
 
 #[test]
@@ -320,6 +341,7 @@ fn darwin_activates_as_root_with_the_system_tools() {
         action: Action::Switch,
         toplevel: toplevel.clone(),
         generation: None,
+        install_bootloader: false,
     }
     .steps();
 

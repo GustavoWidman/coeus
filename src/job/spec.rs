@@ -17,6 +17,10 @@ pub struct JobSpec {
     pub ssh_key_file: Option<PathBuf>,
     /// the health checks to pass after activating, if the guard is on
     pub guard: Option<Guard>,
+    /// install the boot loader while activating, as a machine's first switch
+    /// needs when it changes boot loaders
+    #[serde(default)]
+    pub install_bootloader: bool,
 }
 
 /// the machine a job builds and where its configuration lives
