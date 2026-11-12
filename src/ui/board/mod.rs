@@ -6,7 +6,7 @@ mod render;
 mod row;
 
 pub use eta::eta;
-pub use render::Frame;
+pub use render::{Frame, Tally};
 pub use row::{Ordering, Row, Status, Verdict};
 
 use crate::{
