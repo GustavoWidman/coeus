@@ -18,6 +18,10 @@ impl Timestamp {
         Duration::from_millis(later.0.saturating_sub(self.0).max(0) as u64)
     }
 
+    pub fn after(self, duration: Duration) -> Self {
+        Self(self.0.saturating_add(duration.as_millis() as i64))
+    }
+
     pub fn elapsed(self) -> Duration {
         self.until(Self::now())
     }
