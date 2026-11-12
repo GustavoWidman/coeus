@@ -33,13 +33,11 @@ impl Git {
     }
 
     pub async fn output<S: AsRef<str>>(&self, args: &[S], env: &[(&str, &str)]) -> Result<Output> {
-        let mut command = Command::new("git");
+        let mut command = command();
         command
             .arg("-C")
             .arg(&self.dir)
-            .args(args.iter().map(AsRef::as_ref))
-            // the run owns the terminal; a credential prompt would draw over it
-            .env("GIT_TERMINAL_PROMPT", "0");
+            .args(args.iter().map(AsRef::as_ref));
         for (key, value) in env {
             command.env(key, value);
         }
@@ -69,6 +67,30 @@ impl Git {
     pub fn dir(&self) -> &Path {
         &self.dir
     }
+}
+
+/// what an inherited environment would point git at instead of the
+/// directory it is given: a hook or an IDE's terminal may set them
+pub(super) const REDIRECTING: [&str; 8] = [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_NAMESPACE",
+    "GIT_CEILING_DIRECTORIES",
+];
+
+/// `git` working only where it is told, never prompting
+pub(super) fn command() -> Command {
+    let mut command = Command::new("git");
+    for key in REDIRECTING {
+        command.env_remove(key);
+    }
+    // the run owns the terminal; a credential prompt would draw over it
+    command.env("GIT_TERMINAL_PROMPT", "0");
+    command
 }
 
 pub(super) fn check<S: AsRef<str>>(args: &[S], output: &Output) -> Result<()> {

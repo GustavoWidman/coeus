@@ -7,7 +7,7 @@ use eyre::{Result, WrapErr, eyre};
 use serde::Deserialize;
 use tokio::{io::AsyncWriteExt, process::Command};
 
-use super::body;
+use super::{body, git::REDIRECTING};
 
 const FIELDS: &str = "number,url,isDraft,state,body";
 
@@ -164,7 +164,12 @@ async fn gh(clone: &Path, args: &[&str], stdin: Option<&str>) -> Result<String> 
         command: args.iter().take(2).copied().collect::<Vec<_>>().join(" "),
         message,
     };
-    let mut child = Command::new("gh")
+    let mut command = Command::new("gh");
+    // gh finds the repository through git, which these would point elsewhere
+    for key in REDIRECTING {
+        command.env_remove(key);
+    }
+    let mut child = command
         .args(args)
         .current_dir(clone)
         .env("GH_PROMPT_DISABLED", "1")
