@@ -235,3 +235,44 @@ async fn a_strict_missing_commits_check_does_not_stop_the_rebase() {
     assert_eq!(subjects(&branch), ["feat(nova): join the fleet"]);
     assert!(!branch.clone_dir().join(".git/rebase-merge").exists());
 }
+
+#[tokio::test]
+async fn a_symlink_along_a_path_is_never_written_through() {
+    let fleet = Fleet::new();
+    let outside = fleet.root.join("outside");
+    std::fs::create_dir_all(&outside).unwrap();
+    let branch = fleet.open("altar").await;
+    std::os::unix::fs::symlink(&outside, branch.clone_dir().join("hosts")).unwrap();
+
+    let written = branch
+        .write(&files(&[("hosts/nova/flake.nix", "{ }\n")]))
+        .await;
+
+    assert!(written.is_err());
+    assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+    assert!(branch.place(&path("hosts/nova/password.age")).is_err());
+}
+
+#[tokio::test]
+async fn a_partial_file_left_as_a_symlink_is_replaced_not_followed() {
+    let fleet = Fleet::new();
+    let outside = fleet.root.join("outside");
+    let branch = fleet.open("altar").await;
+    std::fs::create_dir_all(branch.path(&path("hosts/nova"))).unwrap();
+    std::os::unix::fs::symlink(
+        &outside,
+        branch.path(&path("hosts/nova/.flake.nix.coeus-partial")),
+    )
+    .unwrap();
+
+    let written = branch
+        .write(&files(&[("hosts/nova/flake.nix", "{ }\n")]))
+        .await
+        .unwrap();
+
+    assert_eq!(written, [path("hosts/nova/flake.nix")]);
+    assert!(!outside.exists());
+    let flake = branch.path(&path("hosts/nova/flake.nix"));
+    assert!(!flake.symlink_metadata().unwrap().file_type().is_symlink());
+    assert_eq!(std::fs::read_to_string(flake).unwrap(), "{ }\n");
+}

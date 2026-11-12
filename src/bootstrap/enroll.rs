@@ -250,10 +250,7 @@ async fn make_secrets(
         console.mark(Step::Enroll, Mark::Active, format!("making {path}"));
         let typed = typed(path, generator, host, console).await?;
         let made = secrets::generate(generator, typed)?;
-        let file = branch.path(path);
-        if let Some(parent) = file.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        let file = branch.place(path)?;
         secrets::create(&file, &made.plaintext, &recipients)
             .wrap_err_with(|| format!("could not make {path}"))?;
     }

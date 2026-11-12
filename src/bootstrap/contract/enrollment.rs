@@ -126,7 +126,8 @@ impl TryFrom<String> for RepoPath {
             let wrong = match part {
                 "" | "." => "is not normalized",
                 ".." => "leaves the repository",
-                ".git" => "touches .git",
+                // a Mac's file system finds `.git` by any case
+                _ if part.eq_ignore_ascii_case(".git") => "touches .git",
                 _ => continue,
             };
             bail!("the repository path {path:?} {wrong}");
