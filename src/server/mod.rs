@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
+        model::HostInfo,
         proto::{Error, Packet},
         stream::{EncryptedListener, EncryptedStream, PendingConnection},
     },
@@ -26,7 +27,8 @@ pub struct CoeusServer {
 impl CoeusServer {
     pub async fn new(config: DaemonConfig) -> Result<Self> {
         let key = config.key.load()?;
-        let listener = EncryptedListener::bind(config.listen, key.as_bytes()).await?;
+        let host = HostInfo::detect(config.hostname.clone())?;
+        let listener = EncryptedListener::bind(config.listen, key.as_bytes(), host).await?;
         Ok(Self { listener, config })
     }
 

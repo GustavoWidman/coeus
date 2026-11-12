@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::common::proto::Packet;
+use crate::common::{model::HostInfo, proto::Packet};
 
 #[derive(Default, Debug, Serialize, Deserialize, Packet)]
 pub struct HelloRequest {}
@@ -8,7 +8,7 @@ pub struct HelloRequest {}
 #[derive(Debug, Serialize, Deserialize, Packet)]
 pub struct HelloResponse {
     pub protocol_version: u8,
-    pub version: String,
+    pub host: HostInfo,
 }
 
 #[derive(Debug, Serialize, Deserialize, Packet)]

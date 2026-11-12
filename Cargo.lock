@@ -286,6 +286,7 @@ dependencies = [
  "log",
  "postcard",
  "rand",
+ "rustix",
  "serde",
  "serde_json",
  "snow",

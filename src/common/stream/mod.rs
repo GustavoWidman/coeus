@@ -19,6 +19,7 @@ use tokio::{
     net::TcpStream,
 };
 
+use crate::common::proto::HelloResponse;
 use read::EncryptedReadHalf;
 use write::EncryptedWriteHalf;
 
@@ -33,16 +34,13 @@ impl EncryptedStream {
     const MAX_FRAME: usize = u16::MAX as usize;
     const TAG_LEN: usize = 16;
 
-    pub async fn connect(address: SocketAddr, psk: &[u8; 32]) -> Result<Self> {
+    /// connects, authenticates and runs the hello, returning the server's
+    /// introduction along with the stream
+    pub async fn connect(address: SocketAddr, psk: &[u8; 32]) -> Result<(Self, HelloResponse)> {
         let stream = TcpStream::connect(address).await?;
         let mut stream = Self::handshake(stream, psk, true).await?;
-        stream.greet().await?;
-        Ok(stream)
-    }
-
-    pub async fn accept(address: SocketAddr, psk: &[u8; 32]) -> Result<(Self, SocketAddr)> {
-        let listener = EncryptedListener::bind(address, psk).await?;
-        listener.accept().await
+        let hello = stream.greet().await?;
+        Ok((stream, hello))
     }
 
     pub fn peer_addr(&self) -> io::Result<SocketAddr> {

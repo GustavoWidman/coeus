@@ -37,6 +37,7 @@ tokio = { version = "1.53.1", features = ["full"] }
 tokio-util = { version = "0.7.19", features = ["codec"] }
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 humantime-serde = "1.1.1"
+rustix = { version = "1.1.6", features = ["system", "process", "fs"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
