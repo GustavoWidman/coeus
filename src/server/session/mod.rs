@@ -1,17 +1,19 @@
+mod draw;
+
 use std::time::Duration;
 
 use eyre::{Result, eyre};
-use log::debug;
+use log::{debug, warn};
 use tokio::time::sleep;
 
-use super::fit::Fit;
+use super::{fit::Fit, nom::Nom};
 use crate::{
     common::{
         model::{AttachFrame, JobEvent, JobSelector, NarHash, Order},
         proto::{
             Ack, AttachBatch, AttachEnded, AttachStarted, CancelResponse, DeployAccepted,
             DeployRejected, Error, GenerationsResponse, HistoryResponse, MachineUpdate, Packet,
-            ResolveResponse, UploadDone, UploadReady,
+            ResolveResponse, TerminalSize, UploadDone, UploadReady,
         },
         stream::EncryptedStream,
     },
@@ -73,7 +75,9 @@ impl<H: Host> Session<H> {
                     self.stream.send(MachineUpdate { view }).await?;
                 }
                 Packet::AttachRequest(request) => {
-                    return self.attach(request.job, request.from).await;
+                    return self
+                        .attach(request.job, request.from, request.terminal)
+                        .await;
                 }
                 Packet::UploadBegin(begin) => self.upload(begin.nar_hash, begin.size).await?,
                 other => {
@@ -169,8 +173,15 @@ impl<H: Host> Session<H> {
         }
     }
 
-    /// streams a job's log from `from` until its terminal event
-    async fn attach(mut self, selector: JobSelector, from: u64) -> Result<()> {
+    /// streams a job's log until its terminal event: drawn by nom at the
+    /// size of the client's `terminal` when it has one and nom runs here,
+    /// else as frames from `from`
+    async fn attach(
+        mut self,
+        selector: JobSelector,
+        from: u64,
+        terminal: Option<TerminalSize>,
+    ) -> Result<()> {
         let Some((summary, dir)) = self.engine.locate(selector) else {
             return self.refuse("no such job".into()).await;
         };
@@ -187,6 +198,16 @@ impl<H: Host> Session<H> {
             tokio::select! {
                 _ = sleep(Self::CAUGHT_UP) => {}
                 _ = reader.recv() => return Ok(()),
+            }
+        }
+
+        if let Some(size) = terminal {
+            match Nom::spawn(size) {
+                Ok((nom, input)) => {
+                    debug!("drawing job {job} at {}x{}", size.columns, size.rows);
+                    return draw::draw(reader, writer, job, log, nom, input).await;
+                }
+                Err(error) => warn!("cannot draw attaches with nom, sending logs instead: {error}"),
             }
         }
 
