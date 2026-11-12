@@ -16,4 +16,4 @@ mod rollout;
 mod test;
 
 pub use console::Console;
-pub use context::Context;
+pub use context::{Context, within};
