@@ -3,7 +3,7 @@
 //! guarded exactly as coeusd will guard every later one
 
 use std::{
-    net::{Ipv4Addr, SocketAddr},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
     time::Duration,
 };
 
@@ -111,9 +111,26 @@ fn tail(stderr: &str) -> String {
     lines[lines.len().saturating_sub(12)..].join("\n")
 }
 
-/// whether something accepts connections on coeusd's port here
-pub async fn listening(port: u16) -> bool {
-    let address = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+/// whether something accepts connections where coeusd listens: on either
+/// loopback, or on the address the configuration names, such as one on the
+/// tailnet only
+pub async fn listening(listen: SocketAddr) -> bool {
+    let port = listen.port();
+    let mut addresses = vec![
+        SocketAddr::from((Ipv4Addr::LOCALHOST, port)),
+        SocketAddr::from((Ipv6Addr::LOCALHOST, port)),
+    ];
+    if !listen.ip().is_unspecified() && !addresses.contains(&listen) {
+        addresses.push(listen);
+    }
+    let answers = addresses.into_iter().map(answers);
+    futures_util::future::join_all(answers)
+        .await
+        .into_iter()
+        .any(|answered| answered)
+}
+
+async fn answers(address: SocketAddr) -> bool {
     time::timeout(Duration::from_secs(2), TcpStream::connect(address))
         .await
         .is_ok_and(|connected| connected.is_ok())

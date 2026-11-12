@@ -58,8 +58,8 @@ pub async fn run(args: &AdoptArgs) -> Result<i32> {
 
     let request = Request::parse(args)?;
     let settings = settings::of(&request.source, &request.hostname).await?;
-    let port = settings.listen.port();
-    if settings::listening(port).await {
+    if settings::listening(settings.listen).await {
+        let port = settings.listen.port();
         eprintln!("coeusd already serves on port {port}: order through it");
         return Ok(DAEMON_HERE);
     }
