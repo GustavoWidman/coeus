@@ -9,7 +9,7 @@ use tokio::time::sleep;
 use super::{fit::Fit, nom::Nom};
 use crate::{
     common::{
-        model::{AttachFrame, JobEvent, JobSelector, NarHash, Order},
+        model::{AttachFrame, JobEvent, JobSelector, NarHash, Order, valid_ref},
         proto::{
             Ack, AttachBatch, AttachEnded, AttachStarted, CancelResponse, DeployAccepted,
             DeployRejected, Error, GenerationsResponse, HistoryResponse, MachineUpdate, Packet,
@@ -48,6 +48,10 @@ impl<H: Host> Session<H> {
                 Packet::CancelRequest(request) => {
                     let report = self.engine.cancel(request.job).await?;
                     self.stream.send(CancelResponse { report }).await?;
+                }
+                Packet::ResolveRequest(request) if !valid_ref(&request.git_ref) => {
+                    self.refuse(format!("{:?} is not a branch or tag name", request.git_ref))
+                        .await?
                 }
                 Packet::ResolveRequest(request) => {
                     match self.engine.resolve(&request.git_ref).await {

@@ -151,3 +151,15 @@ fn progress_is_unknown_until_nix_announces_work() {
     };
     assert_eq!(progress.fraction(), Some(0.5));
 }
+
+#[test]
+fn only_plain_branch_and_tag_names_are_refs() {
+    for good in ["main", "feat/coeus", "v1.2.3", "release_2026-11"] {
+        assert!(valid_ref(good), "{good}");
+    }
+    for bad in [
+        "", "-x", "/main", "a..b", "a//b", "main.", "a&rev=x", "a?b", "a b", "@{1}",
+    ] {
+        assert!(!valid_ref(bad), "{bad}");
+    }
+}
