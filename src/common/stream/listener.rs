@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use eyre::Result;
 use tokio::{
@@ -6,18 +6,21 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
-use crate::common::stream::EncryptedStream;
+use crate::common::{model::HostInfo, stream::EncryptedStream};
 
 pub struct EncryptedListener {
     listener: TcpListener,
     psk: [u8; 32],
+    host: Arc<HostInfo>,
 }
 
 impl EncryptedListener {
-    pub async fn bind(address: SocketAddr, psk: &[u8; 32]) -> Result<Self> {
+    /// binds `address`, introducing itself as `host` to every client
+    pub async fn bind(address: SocketAddr, psk: &[u8; 32], host: HostInfo) -> Result<Self> {
         Ok(Self {
             listener: TcpListener::bind(address).await?,
             psk: *psk,
+            host: Arc::new(host),
         })
     }
 
@@ -40,6 +43,7 @@ impl EncryptedListener {
         Ok(PendingConnection {
             stream,
             psk: self.psk,
+            host: self.host.clone(),
         })
     }
 }
@@ -47,13 +51,14 @@ impl EncryptedListener {
 pub struct PendingConnection {
     stream: TcpStream,
     psk: [u8; 32],
+    host: Arc<HostInfo>,
 }
 
 impl PendingConnection {
     /// runs the NOISE handshake and the hello on an accepted connection
     pub async fn authenticate(self) -> Result<EncryptedStream> {
         let mut stream = EncryptedStream::handshake(self.stream, &self.psk, false).await?;
-        stream.welcome().await?;
+        stream.welcome(&self.host).await?;
         Ok(stream)
     }
 }

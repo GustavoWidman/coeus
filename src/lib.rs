@@ -6,5 +6,6 @@ pub mod common;
 pub mod config;
 pub mod deploy;
 pub mod nix;
+pub mod platform;
 pub mod server;
 pub mod utils;

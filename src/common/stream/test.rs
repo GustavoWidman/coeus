@@ -5,7 +5,10 @@ use tokio::{
     time::{Duration, timeout},
 };
 
-use crate::common::proto::{DeployAccepted, DeployRequest, Packet};
+use crate::common::{
+    model::{HostInfo, Platform},
+    proto::{Error as ErrorPacket, Packet, ResolveRequest},
+};
 
 use super::{EncryptedListener, EncryptedStream};
 
@@ -14,8 +17,21 @@ type TestResult<T = ()> = Result<T, Box<dyn Error + Send + Sync>>;
 const PSK: [u8; 32] = [0x42; 32];
 const WRONG_PSK: [u8; 32] = [0x24; 32];
 
+fn host() -> HostInfo {
+    HostInfo {
+        hostname: "test".parse().unwrap(),
+        platform: Platform::NixOs,
+        system: "x86_64-linux".into(),
+        version: "0.0.0".into(),
+    }
+}
+
+async fn bind() -> TestResult<EncryptedListener> {
+    Ok(EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK, host()).await?)
+}
+
 async fn echo(payload: Vec<u8>) -> TestResult<Vec<u8>> {
-    let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
+    let listener = bind().await?;
     let address = listener.local_addr()?;
     let expected = payload.clone();
 
@@ -30,7 +46,7 @@ async fn echo(payload: Vec<u8>) -> TestResult<Vec<u8>> {
         Ok::<_, Box<dyn Error + Send + Sync>>(received)
     });
 
-    let mut client = EncryptedStream::connect(address, &PSK).await?;
+    let (mut client, _) = EncryptedStream::connect(address, &PSK).await?;
     client.write_all(&payload).await?;
     client.flush().await?;
 
@@ -62,7 +78,7 @@ async fn splits_large_writes_across_encrypted_frames() -> TestResult {
 #[tokio::test]
 async fn serves_plaintext_in_small_read_buffers() -> TestResult {
     let payload = b"response payload spanning several reads".to_vec();
-    let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
+    let listener = bind().await?;
     let address = listener.local_addr()?;
     let expected = payload.clone();
 
@@ -73,7 +89,7 @@ async fn serves_plaintext_in_small_read_buffers() -> TestResult {
         Ok::<_, Box<dyn Error + Send + Sync>>(())
     });
 
-    let mut client = EncryptedStream::connect(address, &PSK).await?;
+    let (mut client, _) = EncryptedStream::connect(address, &PSK).await?;
     let mut actual = Vec::new();
     let mut buffer = [0u8; 3];
 
@@ -93,7 +109,7 @@ async fn serves_plaintext_in_small_read_buffers() -> TestResult {
 
 #[tokio::test]
 async fn rejects_a_mismatched_psk() -> TestResult {
-    let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
+    let listener = bind().await?;
     let address = listener.local_addr()?;
 
     let server = tokio::spawn(async move {
@@ -114,7 +130,7 @@ async fn rejects_a_mismatched_psk() -> TestResult {
 
 #[tokio::test]
 async fn empty_writes_are_noops() -> TestResult {
-    let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
+    let listener = bind().await?;
     let address = listener.local_addr()?;
 
     let server = tokio::spawn(async move {
@@ -124,7 +140,7 @@ async fn empty_writes_are_noops() -> TestResult {
         Ok::<_, Box<dyn Error + Send + Sync>>(received)
     });
 
-    let mut client = EncryptedStream::connect(address, &PSK).await?;
+    let (mut client, _) = EncryptedStream::connect(address, &PSK).await?;
     assert_eq!(client.write(&[]).await?, 0);
     client.write_all(b"x").await?;
     client.flush().await?;
@@ -135,7 +151,7 @@ async fn empty_writes_are_noops() -> TestResult {
 
 #[tokio::test]
 async fn round_trips_registered_packets() -> TestResult {
-    let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
+    let listener = bind().await?;
     let address = listener.local_addr()?;
 
     let server = tokio::spawn(async move {
@@ -143,33 +159,30 @@ async fn round_trips_registered_packets() -> TestResult {
         let packet = stream.recv().await?;
 
         match packet {
-            Some(Packet::DeployRequest(request)) => {
-                assert_eq!(request.rev, "abc123");
-                assert!(request.dry_run);
+            Some(Packet::ResolveRequest(request)) => {
+                assert_eq!(request.git_ref, "abc123");
             }
             other => panic!("unexpected packet: {other:?}"),
         }
 
         stream
-            .send(Packet::DeployAccepted(Box::new(DeployAccepted {
+            .send(ErrorPacket {
                 message: "accepted".into(),
-            })))
+            })
             .await?;
 
         Ok::<_, Box<dyn Error + Send + Sync>>(())
     });
 
-    let mut client = EncryptedStream::connect(address, &PSK).await?;
+    let (mut client, _) = EncryptedStream::connect(address, &PSK).await?;
     client
-        .send(Packet::DeployRequest(Box::new(DeployRequest {
-            rev: "abc123".into(),
-            dry_run: true,
-            clean_substituters: false,
-        })))
+        .send(ResolveRequest {
+            git_ref: "abc123".into(),
+        })
         .await?;
 
     match client.recv().await? {
-        Some(Packet::DeployAccepted(accepted)) => {
+        Some(Packet::Error(accepted)) => {
             assert_eq!(accepted.message, "accepted");
         }
         other => panic!("unexpected packet: {other:?}"),
@@ -184,7 +197,7 @@ async fn owned_halves_send_and_receive_packets_concurrently() -> TestResult {
     const PACKET_COUNT: usize = 8;
 
     timeout(Duration::from_secs(2), async {
-        let listener = EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK).await?;
+        let listener = bind().await?;
         let address = listener.local_addr()?;
 
         let server = tokio::spawn(async move {
@@ -194,8 +207,8 @@ async fn owned_halves_send_and_receive_packets_concurrently() -> TestResult {
             let receive_requests = async {
                 for sequence in 0..PACKET_COUNT {
                     match reader.recv().await? {
-                        Some(Packet::DeployRequest(request)) => {
-                            assert_eq!(request.rev, format!("revision-{sequence}"));
+                        Some(Packet::ResolveRequest(request)) => {
+                            assert_eq!(request.git_ref, format!("revision-{sequence}"));
                         }
                         other => panic!("unexpected request: {other:?}"),
                     }
@@ -206,9 +219,9 @@ async fn owned_halves_send_and_receive_packets_concurrently() -> TestResult {
             let send_responses = async {
                 for sequence in 0..PACKET_COUNT {
                     writer
-                        .send(Packet::DeployAccepted(Box::new(DeployAccepted {
+                        .send(ErrorPacket {
                             message: format!("accepted-{sequence}"),
-                        })))
+                        })
                         .await?;
                 }
                 Ok::<_, eyre::Report>(())
@@ -218,17 +231,16 @@ async fn owned_halves_send_and_receive_packets_concurrently() -> TestResult {
             Ok::<_, Box<dyn Error + Send + Sync>>(())
         });
 
-        let mut stream = EncryptedStream::connect(address, &PSK).await?;
+        let (mut stream, hello) = EncryptedStream::connect(address, &PSK).await?;
+        assert_eq!(hello.host, host());
         let (reader, writer) = stream.split();
 
         let send_requests = async {
             for sequence in 0..PACKET_COUNT {
                 writer
-                    .send(Packet::DeployRequest(Box::new(DeployRequest {
-                        rev: format!("revision-{sequence}"),
-                        dry_run: true,
-                        clean_substituters: false,
-                    })))
+                    .send(ResolveRequest {
+                        git_ref: format!("revision-{sequence}"),
+                    })
                     .await?;
             }
             Ok::<_, eyre::Report>(())
@@ -237,7 +249,7 @@ async fn owned_halves_send_and_receive_packets_concurrently() -> TestResult {
         let receive_responses = async {
             for sequence in 0..PACKET_COUNT {
                 match reader.recv().await? {
-                    Some(Packet::DeployAccepted(response)) => {
+                    Some(Packet::Error(response)) => {
                         assert_eq!(response.message, format!("accepted-{sequence}"));
                     }
                     other => panic!("unexpected response: {other:?}"),

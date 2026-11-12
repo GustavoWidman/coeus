@@ -1,7 +1,10 @@
 use eyre::{Result, bail, eyre};
 use log::debug;
 
-use crate::common::proto::{HelloFinished, HelloRequest, HelloResponse, PROTOCOL_VERSION, Packet};
+use crate::common::{
+    model::HostInfo,
+    proto::{HelloFinished, HelloRequest, HelloResponse, PROTOCOL_VERSION, Packet},
+};
 
 use super::EncryptedStream;
 
@@ -18,9 +21,10 @@ impl EncryptedStream {
         };
 
         debug!(
-            "{} runs coeus v{} (protocol v{})",
+            "{} is {} running coeus v{} (protocol v{})",
             self.peer(),
-            response.version,
+            response.host.hostname,
+            response.host.version,
             response.protocol_version,
         );
 
@@ -38,15 +42,15 @@ impl EncryptedStream {
         Ok(*response)
     }
 
-    /// server side: answer the client's hello and wait for its verdict.
-    pub(super) async fn welcome(&mut self) -> Result<()> {
+    /// server side: introduce `host`, then wait for the client's verdict.
+    pub(super) async fn welcome(&mut self, host: &HostInfo) -> Result<()> {
         let Some(Packet::HelloRequest(_)) = self.recv().await? else {
             bail!("{} sent an unexpected packet during the hello", self.peer());
         };
 
         self.send(HelloResponse {
             protocol_version: PROTOCOL_VERSION,
-            version: env!("CARGO_PKG_VERSION").into(),
+            host: host.clone(),
         })
         .await?;
 
