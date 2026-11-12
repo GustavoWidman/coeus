@@ -651,3 +651,45 @@ async fn a_process_is_done_when_it_exits_even_if_its_children_hold_the_output() 
     assert!(exit.status.success());
     assert_eq!(exit.stdout, b"started\n");
 }
+
+#[test]
+fn a_build_uses_the_caches_the_flake_names() {
+    let mut nix = Nix::new(&spec(git(None), Action::Switch));
+    let drv = store("system.drv");
+    let link = Path::new("/var/lib/coeus/jobs/000042/result");
+    nix.use_flake_caches(
+        br#"{"extra-substituters":["https://cache.example.org"],"extra-trusted-public-keys":"cache.example.org-1:AAAA= other-1:BBBB=","flake-registry":""}"#,
+    );
+
+    let build = strings(nix.args(&Call::Build { drv: &drv, link }));
+    let at = build
+        .iter()
+        .position(|arg| arg == "extra-substituters")
+        .expect("the build names the flake's caches");
+    assert_eq!(build[at + 1], "https://cache.example.org");
+    let at = build
+        .iter()
+        .position(|arg| arg == "extra-trusted-public-keys")
+        .unwrap();
+    assert_eq!(build[at + 1], "cache.example.org-1:AAAA= other-1:BBBB=");
+
+    // evaluating reads the flake, where accept-flake-config applies them already
+    let evaluate = strings(nix.args(&Call::Evaluate("flake#x")));
+    assert!(!evaluate.iter().any(|arg| arg == "extra-substituters"));
+}
+
+#[test]
+fn the_flake_config_is_read_from_the_flake_itself() {
+    let nix = Nix::new(&spec(git(None), Action::Switch));
+    let args = strings(nix.args(&Call::FlakeConfig(
+        "path:/var/lib/coeus/sources/x?narHash=sha256-a%2Bb%3D",
+    )));
+    assert_eq!(args[..4], ["eval", "--impure", "--json", "--expr"]);
+    assert!(
+        args[4].contains(
+            r#"builtins.getFlake "path:/var/lib/coeus/sources/x?narHash=sha256-a%2Bb%3D""#
+        ),
+        "{}",
+        args[4]
+    );
+}

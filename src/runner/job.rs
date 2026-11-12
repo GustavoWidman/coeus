@@ -165,6 +165,10 @@ impl Runner {
     async fn evaluate(&mut self, flake: &str) -> Result<(StorePath, StorePath)> {
         self.enter(Phase::Fetching)?;
         self.nix(Call::Metadata(flake)).await?;
+        match self.nix(Call::FlakeConfig(flake)).await {
+            Ok(config) => self.nix.use_flake_caches(&config),
+            Err(error) => warn!("cannot read the flake's caches: {error:#}"),
+        }
 
         self.enter(Phase::Evaluating)?;
         let installable = self.spec.target.toplevel(flake);
