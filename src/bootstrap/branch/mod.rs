@@ -296,15 +296,28 @@ impl Branch {
     pub async fn rebase_dropping_rekey(&self) -> Result<Rebased> {
         let git = self.git();
         let onto = self.onto();
-        let rekeys: Vec<CommitSha> = self
-            .commits()
-            .await?
-            .into_iter()
+        let commits = self.commits().await?;
+        let rekeys: Vec<String> = commits
+            .iter()
             .filter(|commit| commit.is(Trailer::Rekey))
-            .map(|commit| commit.commit)
+            .map(|commit| commit.commit.to_string())
             .collect();
-        // what a rebase would replay: the branch's commits that `onto` does
-        // not have an equal of already
+        // the branch is the base plus the enroll commit and whatever a person
+        // committed after it. commits from before the enroll commit belong to
+        // the base it was cut from, which may since have been rewritten, so
+        // they are never replayed
+        let own: Vec<String> = match commits.iter().find(|commit| commit.is(Trailer::Enroll)) {
+            Some(enroll) => {
+                let range = format!("{}^..HEAD", enroll.commit);
+                git.run(&["rev-list", "--no-merges", &range])
+                    .await?
+                    .lines()
+                    .map(str::to_owned)
+                    .collect()
+            }
+            None => Vec::new(),
+        };
+        // of those, what `onto` does not have an equal of already
         let range = format!("{onto}...HEAD");
         let replay = [
             "rev-list",
@@ -317,7 +330,8 @@ impl Branch {
             .run(&[&replay[..], &[range.as_str()]].concat())
             .await?
             .lines()
-            .filter(|sha| !rekeys.iter().any(|rekey| rekey.to_string() == *sha))
+            .filter(|sha| own.iter().any(|commit| commit == sha))
+            .filter(|sha| !rekeys.iter().any(|rekey| rekey == sha))
             .map(str::to_owned)
             .collect();
 

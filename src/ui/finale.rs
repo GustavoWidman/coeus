@@ -149,12 +149,14 @@ fn blocked(state: &StateDir, at: Step, blocker: &Blocker) -> Vec<String> {
             ));
             lines
         }
-        Blocker::Conflict { clone } => vec![
+        Blocker::Conflict { clone, base } => vec![
             say::warn(format!(
-                "rebasing {branch} onto the default branch stopped on a conflict in {}",
+                "{branch} no longer applies onto {base}: {base} changed what it adds"
+            )),
+            indent(format!(
+                "the clone in {} is as it was; rebase it onto origin/{base} there",
                 shown(clone)
             )),
-            indent("resolve it and `git rebase --continue` there".to_owned()),
         ],
         Blocker::SwitchFailed { job } => {
             let failure = outcome(job).and_then(Outcome::failure);

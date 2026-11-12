@@ -148,6 +148,34 @@ async fn a_moved_default_branch_is_rebased_onto_without_the_rekey() {
 }
 
 #[tokio::test]
+async fn a_rewritten_default_branch_takes_only_the_enrollment_along() {
+    let fleet = Fleet::new();
+    fleet.commit_on_main(&[("flake.lock", "{ coeus = 1; }\n")]);
+    let branch = fleet.open("altar").await;
+    enroll(&branch).await;
+
+    // the commit the branch was cut from is amended and force-pushed
+    git(&fleet.checkout, &["checkout", "--quiet", "main"]);
+    std::fs::write(fleet.checkout.join("flake.lock"), "{ coeus = 2; }\n").unwrap();
+    git(
+        &fleet.checkout,
+        &["commit", "--quiet", "--all", "--amend", "--no-edit"],
+    );
+    git(
+        &fleet.checkout,
+        &["push", "--quiet", "--force", "origin", "main"],
+    );
+    assert_eq!(branch.behind().await.unwrap(), 1);
+
+    let rebased = branch.rebase_dropping_rekey().await.unwrap();
+
+    assert_eq!(rebased, Rebased::Clean);
+    assert_eq!(subjects(&branch), ["feat(nova): join the fleet"]);
+    let lock = std::fs::read_to_string(branch.path(&path("flake.lock"))).unwrap();
+    assert_eq!(lock, "{ coeus = 2; }\n");
+}
+
+#[tokio::test]
 async fn a_conflicting_rebase_is_aborted_and_the_branch_kept() {
     let fleet = Fleet::new();
     let branch = fleet.open("altar").await;

@@ -53,6 +53,7 @@ pub async fn rekey(
         if branch.rebase_dropping_rekey().await? == Rebased::Conflict {
             return Err(Blocker::Conflict {
                 clone: clone.to_owned(),
+                base: branch.base().to_owned(),
             }
             .into());
         }
