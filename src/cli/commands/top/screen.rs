@@ -5,7 +5,10 @@ use std::{
 
 use crossterm::{
     cursor, execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{
+        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+        enable_raw_mode,
+    },
 };
 use eyre::Result;
 use ratatui::{Frame, Terminal, backend::CrosstermBackend};
@@ -44,9 +47,12 @@ impl Fullscreen {
         Ok(())
     }
 
+    /// back on the alternate screen, redrawn whole. a new terminal rather
+    /// than `Terminal::clear`, which asks the terminal where its cursor is
+    /// and races the keyboard reader for the answer.
     pub fn resume(&mut self) -> Result<()> {
         enter()?;
-        self.terminal.clear()?;
+        self.terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
         Ok(())
     }
 }
@@ -59,7 +65,12 @@ impl Drop for Fullscreen {
 
 fn enter() -> io::Result<()> {
     enable_raw_mode()?;
-    execute!(stdout(), EnterAlternateScreen, cursor::Hide)
+    execute!(
+        stdout(),
+        EnterAlternateScreen,
+        Clear(ClearType::All),
+        cursor::Hide
+    )
 }
 
 fn leave() -> io::Result<()> {
