@@ -69,6 +69,15 @@ coeus deploy @all --rev "$GITHUB_SHA" --ref main --canary @canary --skip-unreach
 
 canaries go first, and the rest only follow if they succeed. a failed machine fails the run. when everything that answered succeeded, the workflow moves a `deployed` branch to the commit, and machines following `deployed` catch up when they come back online. give `tag:ci` access to port 45729 and nothing else.
 
+## machines that are mostly off
+
+`deployed` is the last commit the fleet took without a failure, so a machine that was off or asleep through any number of rollouts switches straight to it, without anyone ordering it:
+
+- 30 seconds after `coeusd` starts, and right after the machine wakes up, it looks `deployed` up. while it can't reach the repository it looks again after 30 seconds, doubling the wait up to the follow interval.
+- a catch-up that fails before building, which is where a network that comes and goes shows up, is tried again after 1 minute and then 2, three tries in all. one that fails while building or activating waits for `deployed` to move.
+- shutting the machine down while it fetches or builds only pauses the catch-up: the job runs again after the next boot, keeping whatever it already built.
+- a machine switched by hand after `deployed` last moved keeps what it runs until the fleet moves on.
+
 ## how a deployment runs
 
 each job is a directory under `/var/lib/coeus/jobs` holding its order, an append-only log and, once finished, a summary. `coeusd` hands the job to a runner it starts through the service manager, a transient systemd unit or a transient launchd job, so the runner survives `coeusd` restarting, crashing or replacing itself with a newer version in the middle of a switch. the runner:
