@@ -128,6 +128,27 @@ fn blocked(state: &StateDir, at: Step, blocker: &Blocker) -> Vec<String> {
             ));
             lines
         }
+        Blocker::Unreadable { files } => {
+            let mut lines = vec![say::warn(format!(
+                "coeus cannot rekey {} without losing a recipient it does not know",
+                count(files.len(), "secret")
+            ))];
+            lines.extend(
+                files
+                    .iter()
+                    .take(FILES)
+                    .map(|(file, why)| indent(format!("{file}: {why}").dimmed())),
+            );
+            if files.len() > FILES {
+                lines.push(indent(
+                    format!("… and {} more", files.len() - FILES).dimmed(),
+                ));
+            }
+            lines.push(indent(format!(
+                "rekey them by hand on {branch}, or have the contract's recipients leave them out"
+            )));
+            lines
+        }
         Blocker::Enrolled { files } => {
             let mut lines = vec![say::warn(format!(
                 "{host} is enrolled on the default branch already"
