@@ -1,6 +1,6 @@
 use eyre::Result;
 
-use crate::common::model::{HostInfo, Hostname, Platform};
+use crate::common::model::{Action, HostInfo, Hostname, Platform};
 
 impl HostInfo {
     /// this machine, named by the configuration or else by its hostname
@@ -27,5 +27,15 @@ impl HostInfo {
             system: format!("{}-{os}", std::env::consts::ARCH),
             version: env!("CARGO_PKG_VERSION").to_owned(),
         })
+    }
+}
+
+impl Platform {
+    /// nix-darwin has no boot default to set apart from activating
+    pub const fn supports(self, action: Action) -> bool {
+        match self {
+            Self::NixOs => true,
+            Self::Darwin => matches!(action, Action::Switch | Action::Build),
+        }
     }
 }
