@@ -1,0 +1,21 @@
+{
+  "name": "mac-sample",
+  "hostKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL5CheLOYNle6Lv5SwXo44HYfK9OAmXYLwiWa68tZgJa",
+  "facts": {
+    "platform": "darwin",
+    "system": "aarch64-darwin",
+    "osVersion": "26.1",
+    "stateVersion": null,
+    "hostname": "Admins-Mac-mini",
+    "efi": false,
+    "bootLoader": null,
+    "bootDevice": null,
+    "hardwareConfig": null,
+    "timeZone": "America/Sao_Paulo",
+    "loginUser": "admin",
+    "mainUser": "admin",
+    "cpus": 10,
+    "memoryMib": 16384,
+    "nixVersion": "2.32.1"
+  }
+}
