@@ -24,6 +24,8 @@ pub struct FakeHost {
     info: HostInfo,
     release: std::sync::Arc<Notify>,
     spawned: Mutex<Vec<JobId>>,
+    /// runners die before taking their job
+    stillborn: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Host for FakeHost {
@@ -45,6 +47,9 @@ impl Host for FakeHost {
 
     async fn spawn_runner(&self, dir: &JobDir) -> Result<()> {
         self.spawned.lock().unwrap().push(dir.id());
+        if self.stillborn.load(std::sync::atomic::Ordering::SeqCst) {
+            return Ok(());
+        }
         let dir = dir.clone();
         let release = self.release.clone();
 
@@ -94,6 +99,7 @@ impl Host for FakeHost {
 pub struct Harness {
     pub engine: EngineHandle<FakeHost>,
     pub release: std::sync::Arc<Notify>,
+    pub stillborn: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub state: tempfile::TempDir,
     pub shutdown: CancellationToken,
 }
@@ -106,6 +112,7 @@ impl Harness {
     /// an engine whose runners share `release` with an earlier engine's, as
     /// detached runners outlive the daemon that started them
     pub async fn start_with(state: tempfile::TempDir, release: std::sync::Arc<Notify>) -> Self {
+        let stillborn = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let host = FakeHost {
             info: HostInfo {
                 hostname: "lab".parse().unwrap(),
@@ -115,6 +122,7 @@ impl Harness {
             },
             release: release.clone(),
             spawned: Mutex::default(),
+            stillborn: stillborn.clone(),
         };
 
         let settings = DaemonSettings {
@@ -142,6 +150,7 @@ impl Harness {
         Self {
             engine,
             release,
+            stillborn,
             state,
             shutdown,
         }
@@ -149,7 +158,7 @@ impl Harness {
 
     pub async fn until(&self, done: impl Fn(&MachineView) -> bool) -> MachineView {
         let mut view = self.engine.watch();
-        let reached = tokio::time::timeout(Duration::from_secs(5), async {
+        let reached = tokio::time::timeout(Duration::from_secs(60), async {
             loop {
                 if done(&view.borrow_and_update()) {
                     return view.borrow().clone();

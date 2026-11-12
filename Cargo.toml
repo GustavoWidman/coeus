@@ -41,3 +41,6 @@ rustix = { version = "1.1.6", features = ["system", "process", "fs"] }
 memchr = "2.8.3"
 tempfile = "3.27.0"
 
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["full", "test-util"] }

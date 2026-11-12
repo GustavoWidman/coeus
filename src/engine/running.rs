@@ -1,4 +1,6 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use tokio::time::Instant;
 
 use eyre::Result;
 
@@ -14,11 +16,14 @@ pub(super) struct Running {
     pub pid: Option<u32>,
     reader: LogReader,
     spawned: Instant,
+    /// runners spawned that never took the job
+    stillborn: u8,
 }
 
 impl Running {
     /// how long a runner may take to take its log before it counts as lost
     const GRACE: Duration = Duration::from_secs(15);
+    const STILLBORN: u8 = 3;
 
     pub async fn open(dir: JobDir) -> Result<Self> {
         let log = dir.log();
@@ -29,6 +34,7 @@ impl Running {
             reader: log.reader(0).await?,
             pid: None,
             spawned: Instant::now(),
+            stillborn: 0,
             dir,
         };
         running.follow().await?;
@@ -68,9 +74,14 @@ impl Running {
             && !self.dir.log().is_held()?)
     }
 
-    /// counts the runner as just started again
-    pub fn respawned(&mut self) {
+    /// counts the runner as just started again; false when runners keep
+    /// dying before taking the job, which no further attempt will fix
+    pub fn respawned(&mut self) -> bool {
+        if self.pid.is_none() {
+            self.stillborn += 1;
+        }
         self.spawned = Instant::now();
         self.pid = None;
+        self.stillborn < Self::STILLBORN
     }
 }

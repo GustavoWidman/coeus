@@ -160,3 +160,25 @@ async fn picks_up_the_jobs_left_on_disk() {
     second.until(|view| finished(view, 2).is_some()).await;
     second.shutdown.cancel();
 }
+
+#[tokio::test(start_paused = true)]
+async fn gives_up_on_runners_that_never_start() {
+    let harness = Harness::start(tempfile::tempdir().unwrap()).await;
+    harness
+        .stillborn
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+
+    harness.engine.deploy(order(1)).await.unwrap().unwrap();
+    let view = harness.until(|view| finished(view, 1).is_some()).await;
+
+    let Some(Outcome::Failed(failure)) = finished(&view, 1) else {
+        panic!("the job must fail");
+    };
+    assert_eq!(failure.phase, Phase::Preparing);
+    assert!(
+        failure.message.contains("runner.log"),
+        "{}",
+        failure.message
+    );
+    harness.shutdown.cancel();
+}
