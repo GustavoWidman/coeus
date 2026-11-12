@@ -79,9 +79,13 @@ pub fn bytes_of(done: u64, total: u64) -> String {
     format!("{}/{} {}", unit.amount(done), unit.amount(total), unit.name)
 }
 
-/// `+1.2 MiB`, `-300.0 KiB`
+/// `+1.2 MiB`, `-300.0 KiB`, or `0 B` without a sign
 pub fn size_delta(delta: i64) -> String {
-    let sign = if delta < 0 { '-' } else { '+' };
+    let sign = match delta.signum() {
+        -1 => "-",
+        1 => "+",
+        _ => "",
+    };
     format!("{sign}{}", bytes(delta.unsigned_abs()))
 }
 
