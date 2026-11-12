@@ -88,7 +88,13 @@ pub async fn enroll<M: Machine>(
     let enrollment = contract.enroll(&input).await?;
 
     let (commit, mark) = match found {
-        Some(commit) => (commit, Mark::Kept),
+        Some(commit) => {
+            let files = diverged(&branch, &commit, &enrollment).await?;
+            if !files.is_empty() {
+                return Err(Blocker::Reanswered { files }.into());
+            }
+            (commit, Mark::Kept)
+        }
         None => {
             let commit = commit(&branch, &contract, &enrollment, &host, console).await?;
             (commit, Mark::Done)
@@ -142,6 +148,35 @@ async fn commit(
     branch
         .commit_enroll(&enrollment.messages.enroll, &declared)
         .await
+}
+
+/// the declared paths the enroll commit does not hold as `enrollment` makes
+/// them: the bootloader, the messages and the notes come from the same
+/// evaluation, so a run goes on only when the commit is what it would make
+async fn diverged(
+    branch: &Branch,
+    commit: &branch::Enrolled,
+    enrollment: &Enrollment,
+) -> Result<Vec<RepoPath>> {
+    let revision = commit.commit.to_string();
+    let mut files = Vec::new();
+    for (path, text) in &enrollment.files {
+        let held = branch.committed(&revision, path).await?;
+        if held.as_deref() != Some(text.as_bytes()) {
+            files.push(path.clone());
+        }
+    }
+    for path in enrollment.secrets.keys() {
+        if branch.committed(&revision, path).await?.is_none() {
+            files.push(path.clone());
+        }
+    }
+    let declared = |path: &RepoPath| {
+        enrollment.files.contains_key(path) || enrollment.secrets.contains_key(path)
+    };
+    files.extend(commit.files.iter().filter(|path| !declared(path)).cloned());
+    files.sort();
+    Ok(files)
 }
 
 /// each question the contract asks and the saved answers do not hold, or

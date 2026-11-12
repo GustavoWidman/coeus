@@ -430,13 +430,18 @@ impl Branch {
         Ok(git::status_paths(&self.git().run(&status).await?))
     }
 
-    /// `path` as the head commits it, bytes and all
-    pub async fn committed(&self, path: &RepoPath) -> Result<Vec<u8>> {
-        let object = format!("HEAD:{path}");
+    /// `path` as `revision` commits it, bytes and all; `None` when it does
+    /// not have it
+    pub async fn committed(&self, revision: &str, path: &RepoPath) -> Result<Option<Vec<u8>>> {
+        let object = format!("{revision}:{path}");
+        let git = self.git();
+        if !git.test(&["cat-file", "-e", object.as_str()]).await? {
+            return Ok(None);
+        }
         let args = ["cat-file", "blob", object.as_str()];
-        let output = self.git().output(&args, &[]).await?;
+        let output = git.output(&args, &[]).await?;
         git::check(&args, &output)?;
-        Ok(output.stdout)
+        Ok(Some(output.stdout))
     }
 
     /// every tracked `.age` file
