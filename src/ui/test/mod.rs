@@ -1,5 +1,7 @@
 mod board;
+mod journal;
 mod plain;
+mod status;
 mod summary;
 mod text;
 
