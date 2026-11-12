@@ -52,6 +52,18 @@ impl fmt::Display for OrderId {
     }
 }
 
+/// the 16 hex digits [OrderId]'s display prints
+impl FromStr for OrderId {
+    type Err = Report;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        if value.len() != 16 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            bail!("an order id has 16 hex digits: {value}");
+        }
+        Ok(Self(u64::from_str_radix(value, 16)?))
+    }
+}
+
 /// a machine's name, as its daemon reports it and as the inventory lists it
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -247,6 +259,14 @@ impl TryFrom<String> for NarHash {
         }
 
         Ok(Self(value))
+    }
+}
+
+impl FromStr for NarHash {
+    type Err = Report;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::try_from(value.to_owned())
     }
 }
 

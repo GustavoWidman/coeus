@@ -180,3 +180,106 @@ fn only_plain_branch_and_tag_names_are_refs() {
         assert!(!valid_ref(bad), "{bad}");
     }
 }
+
+#[test]
+fn order_ids_round_trip_through_their_hex() {
+    let order = OrderId(0x5f0e_0000_00ab_cdef);
+    assert_eq!(order.to_string(), "5f0e000000abcdef");
+    assert_eq!("5f0e000000abcdef".parse::<OrderId>().unwrap(), order);
+    assert!("5f0e".parse::<OrderId>().is_err());
+    assert!("5f0e000000abcdeg".parse::<OrderId>().is_err());
+    assert!("+f0e000000abcdef".parse::<OrderId>().is_err());
+}
+
+const SNAPSHOT: &str = "sha256-Qk3+/abcdefghijklmnopqrstuvwxyz0123456789AB=";
+
+fn try_of(attempt: u8, id: u64, state: JobState) -> JobSummary {
+    let nar_hash: NarHash = SNAPSHOT.parse().unwrap();
+    JobSummary {
+        id: JobId(id),
+        order: bootstrap_order(&nar_hash, attempt),
+        state,
+        ..summary()
+    }
+}
+
+fn failed() -> JobState {
+    JobState::Finished(Outcome::Failed(Failure::new(Phase::Building, "no")))
+}
+
+#[test]
+fn bootstrap_orders_are_the_same_for_a_snapshot_and_differ_per_try() {
+    let nar_hash: NarHash = SNAPSHOT.parse().unwrap();
+    let other: NarHash = SNAPSHOT.replace('Q', "R").parse().unwrap();
+
+    assert_eq!(bootstrap_order(&nar_hash, 0), bootstrap_order(&nar_hash, 0));
+    assert_ne!(bootstrap_order(&nar_hash, 0), bootstrap_order(&nar_hash, 1));
+    assert_ne!(bootstrap_order(&nar_hash, 0), bootstrap_order(&other, 0));
+}
+
+#[test]
+fn a_snapshot_never_ordered_is_fresh_with_its_first_order() {
+    let nar_hash: NarHash = SNAPSHOT.parse().unwrap();
+    let unrelated = summary();
+
+    assert_eq!(
+        Attempt::of([&unrelated], &nar_hash),
+        Attempt::Fresh(bootstrap_order(&nar_hash, 0))
+    );
+}
+
+#[test]
+fn the_newest_try_of_a_snapshot_decides() {
+    let nar_hash: NarHash = SNAPSHOT.parse().unwrap();
+    let first = try_of(0, 1, failed());
+    let running = try_of(
+        1,
+        2,
+        JobState::Running {
+            phase: Phase::Building,
+        },
+    );
+    let done = try_of(1, 2, JobState::Finished(Outcome::Succeeded));
+
+    assert_eq!(
+        Attempt::of([&running, &first], &nar_hash),
+        Attempt::Running(running.clone())
+    );
+    assert_eq!(
+        Attempt::of([&first, &done], &nar_hash),
+        Attempt::Succeeded(done.clone())
+    );
+    assert_eq!(
+        Attempt::of([&first], &nar_hash),
+        Attempt::Failed {
+            last: first.clone(),
+            next: Some(bootstrap_order(&nar_hash, 1)),
+        }
+    );
+}
+
+#[test]
+fn a_superseded_try_did_not_switch_the_machine() {
+    let nar_hash: NarHash = SNAPSHOT.parse().unwrap();
+    let superseded = try_of(
+        0,
+        1,
+        JobState::Finished(Outcome::Superseded { by: JobId(2) }),
+    );
+
+    assert!(matches!(
+        Attempt::of([&superseded], &nar_hash),
+        Attempt::Failed { .. }
+    ));
+}
+
+#[test]
+fn the_last_try_failing_leaves_no_next_order() {
+    let nar_hash: NarHash = SNAPSHOT.parse().unwrap();
+    let last = try_of(ATTEMPTS - 1, 8, failed());
+
+    assert_eq!(
+        Attempt::of([&last], &nar_hash),
+        Attempt::Failed { last, next: None }
+    );
+}
