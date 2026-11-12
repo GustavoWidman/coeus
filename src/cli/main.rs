@@ -4,8 +4,8 @@ use clap::{ArgAction, Parser, Subcommand};
 use log::LevelFilter;
 
 use super::commands::{
-    AttachArgs, CancelArgs, CompletionsArgs, DeployArgs, GenerationsArgs, HistoryArgs, LogsArgs,
-    RebootArgs, RollbackArgs, StatusArgs, WatchArgs,
+    AttachArgs, CancelArgs, CompletionsArgs, DeployArgs, DoctorArgs, GenerationsArgs, HistoryArgs,
+    LogsArgs, RebootArgs, RollbackArgs, StatusArgs, WatchArgs,
 };
 
 #[derive(Parser, Debug)]
@@ -50,6 +50,8 @@ pub enum Command {
     Generations(GenerationsArgs),
     /// Reboot a machine
     Reboot(RebootArgs),
+    /// Check machines for problems and say how to fix them
+    Doctor(DoctorArgs),
     /// Generate a new fleet key
     Keygen,
     /// Print shell completions
