@@ -3,7 +3,7 @@ use eyre::{Result, bail};
 
 use crate::{
     cli::{Context, context::within, exit::Exit},
-    common::model::{CancelReport, JobId, JobSelector},
+    common::model::{CancelReport, Hostname, JobId, JobSelector},
     ui::{Theme, board::Verdict, say},
 };
 
@@ -33,26 +33,34 @@ impl CancelArgs {
 
         let mut verdicts = Vec::new();
         for (host, report) in reports {
-            let host = Theme::host(host.as_str());
             let line = match report {
-                Ok(CancelReport::Withdrawn(job)) => {
-                    say::success(format!("{host} withdrew the queued job {job}"))
-                }
-                Ok(CancelReport::Stopping(job)) => {
-                    say::success(format!("{host} is stopping job {job}"))
-                }
-                Ok(CancelReport::TooLate(job)) => say::warn(format!(
-                    "{host} is activating job {job}, which has to finish"
-                )),
-                Ok(CancelReport::Nothing) => say::aside(format!("{host} has nothing to cancel")),
+                Ok(report) => answer(&host, report),
                 Err(error) => {
                     verdicts.push(Verdict::Unreachable);
-                    say::error(format!("{host} is unreachable: {error}"))
+                    say::error(format!(
+                        "{} is unreachable: {error}",
+                        Theme::host(host.as_str())
+                    ))
                 }
             };
             println!("{line}");
         }
 
         Ok(Exit::of(verdicts, false))
+    }
+}
+
+/// `[✓] altar is stopping job #12`
+pub fn answer(host: &Hostname, report: CancelReport) -> String {
+    let host = Theme::host(host.as_str());
+    match report {
+        CancelReport::Withdrawn(job) => {
+            say::success(format!("{host} withdrew the queued job {job}"))
+        }
+        CancelReport::Stopping(job) => say::success(format!("{host} is stopping job {job}")),
+        CancelReport::TooLate(job) => say::warn(format!(
+            "{host} is activating job {job}, which has to finish"
+        )),
+        CancelReport::Nothing => say::aside(format!("{host} has nothing to cancel")),
     }
 }

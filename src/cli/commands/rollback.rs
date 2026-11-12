@@ -74,19 +74,9 @@ impl RollbackArgs {
         .await
     }
 
-    /// the newest generation older than the running one
     async fn previous(&self, fleet: &Fleet) -> Result<u32> {
         let generations = within(fleet.connect(&self.host).await?.generations()).await?;
-        let current = generations
-            .iter()
-            .find(|generation| generation.current)
-            .ok_or_else(|| eyre!("{} does not report which generation runs", self.host))?;
-
-        let previous: &Generation = generations
-            .iter()
-            .filter(|generation| generation.number < current.number)
-            .max_by_key(|generation| generation.number)
-            .ok_or_else(|| eyre!("{} has no generation before {}", self.host, current.number))?;
+        let previous = previous(&self.host, &generations)?;
 
         println!(
             "{}",
@@ -98,4 +88,18 @@ impl RollbackArgs {
         );
         Ok(previous.number)
     }
+}
+
+/// the newest generation older than the running one
+pub fn previous<'a>(host: &Hostname, generations: &'a [Generation]) -> Result<&'a Generation> {
+    let current = generations
+        .iter()
+        .find(|generation| generation.current)
+        .ok_or_else(|| eyre!("{host} does not report which generation runs"))?;
+
+    generations
+        .iter()
+        .filter(|generation| generation.number < current.number)
+        .max_by_key(|generation| generation.number)
+        .ok_or_else(|| eyre!("{host} has no generation before {}", current.number))
 }
