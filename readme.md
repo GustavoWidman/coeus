@@ -101,3 +101,5 @@ a newer order replaces one that is still waiting, `--now` replaces one that hasn
 nix develop -c cargo test   # unit and end-to-end tests over the real protocol
 nix flake check             # the package and clippy, plus a nixos vm running coeusd on linux
 ```
+
+every pull request checks the flake on every system the fleet runs: `nix flake check` on x86_64-linux, the vm test included, and on aarch64-darwin, and every check but the vm test on aarch64-linux. its commits must follow conventional commits. the version lives in `Cargo.toml`, with `Cargo.lock` agreeing, and a pull request must raise it unless labeled `no-release`. a push to `main` that brings a version with no release yet builds coeus for x86_64-linux, aarch64-linux and aarch64-darwin, pushes it to `https://cache.r3dlust.com` (key `cache.r3dlust.com-1:Wdkf9mes2ued0P7C7CL3Jax1b4KPuJwQpM3h4G/Z+yI=`) pinned as `coeus-<system>`, then tags it `v<version>` and releases it. a push that releases nothing builds nothing. keep the input's own `nixpkgs` (no `follows`) and a machine gets that exact build from the cache.
