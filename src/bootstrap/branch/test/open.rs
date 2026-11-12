@@ -138,3 +138,48 @@ async fn a_named_base_cuts_the_branch_from_it_and_rebases_onto_it() {
     let missing = Branch::open(&state, &fleet.checkout, &host(), Some("nowhere")).await;
     assert!(missing.is_err());
 }
+
+/// git's environment is the process's, so this test runs itself again as a
+/// child process with `GIT_DIR` and `GIT_WORK_TREE` pointing at a decoy
+#[tokio::test]
+async fn an_inherited_git_environment_redirects_nothing() {
+    const DECOY: &str = "COEUS_TEST_DECOY_REPOSITORY";
+    let Some(decoy) = std::env::var_os(DECOY) else {
+        let decoy = tempfile::tempdir().unwrap();
+        git(decoy.path(), &["init", "--quiet"]);
+        let name = "bootstrap::branch::test::open::an_inherited_git_environment_redirects_nothing";
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([name, "--exact", "--test-threads=1"])
+            .env(DECOY, decoy.path())
+            .output()
+            .unwrap();
+        assert!(
+            child.status.success(),
+            "{}",
+            String::from_utf8_lossy(&child.stdout)
+        );
+        assert!(String::from_utf8_lossy(&child.stdout).contains("1 passed"));
+        return;
+    };
+
+    let fleet = Fleet::new();
+    let decoy = std::path::PathBuf::from(decoy);
+    // SAFETY: this process runs this one test on one thread
+    unsafe {
+        std::env::set_var("GIT_DIR", decoy.join(".git"));
+        std::env::set_var("GIT_WORK_TREE", &decoy);
+    }
+    let branch = Branch::open(&fleet.state("altar"), &fleet.checkout, &host(), None)
+        .await
+        .unwrap();
+    unsafe {
+        std::env::remove_var("GIT_DIR");
+        std::env::remove_var("GIT_WORK_TREE");
+    }
+
+    assert_eq!(
+        branch.head().await.unwrap().to_string(),
+        git(&fleet.checkout, &["rev-parse", "HEAD"])
+    );
+    assert_eq!(git(&decoy, &["branch", "--list", "coeus/*"]), "");
+}

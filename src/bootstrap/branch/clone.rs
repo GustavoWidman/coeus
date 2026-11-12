@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use eyre::{Result, WrapErr, eyre};
 
-use super::git::{Git, check};
+use super::git::{Git, check, command};
 use crate::common::model::CommitSha;
 
 /// the clone at `dir`, cloned from the checkout's origin when it is missing
@@ -64,9 +64,8 @@ async fn clone(dir: &Path, checkout: &Path, origin: &str) -> Result<()> {
         origin.as_ref(),
         partial.as_os_str(),
     ];
-    let output = tokio::process::Command::new("git")
+    let output = command()
         .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0")
         .output()
         .await
         .wrap_err("failed to run git, is it installed?")?;
