@@ -6,7 +6,7 @@ use futures_util::future::join_all;
 
 use super::{
     attach::{Attach, Mode},
-    dispatch::{Answer, Dispatch, place},
+    dispatch::{Answer, Dispatch, Shipment},
     exit::Exit,
     follow::{Ending, Follow, View},
     notify::notify,
@@ -14,7 +14,7 @@ use super::{
 };
 use crate::{
     client::Fleet,
-    common::model::{Action, Admission, Hostname, JobSelector, Order, Placement, Timestamp},
+    common::model::{Action, Admission, Hostname, JobSelector, Placement, Timestamp},
     nix::strip_ansi,
     ui::{Board, Heading, Summary, Theme, board::Verdict, describe, diff, say},
 };
@@ -22,7 +22,7 @@ use crate::{
 /// one order, sent to its machines and followed the way the command asked
 pub struct Deployment {
     pub fleet: Fleet,
-    pub order: Order,
+    pub shipment: Shipment,
     pub rollout: Rollout,
     pub following: Following,
     pub notify: bool,
@@ -49,12 +49,12 @@ impl Deployment {
     }
 
     async fn detach(self) -> Exit {
-        let (fleet, order) = (&self.fleet, &self.order);
+        let (fleet, shipment) = (&self.fleet, &self.shipment);
         let placements = join_all(
             fleet
                 .hosts()
                 .iter()
-                .map(|host| async move { (host, place(fleet, host, order.clone()).await) }),
+                .map(|host| async move { (host, shipment.place(fleet, host).await) }),
         )
         .await;
 
@@ -77,7 +77,7 @@ impl Deployment {
 
     async fn attach(self) -> Result<Exit> {
         let host = &self.fleet.hosts()[0];
-        let answer = place(&self.fleet, host, self.order.clone()).await;
+        let answer = self.shipment.place(&self.fleet, host).await;
         println!("{}", placement(host, &answer));
 
         let admission = match answer {
@@ -103,7 +103,7 @@ impl Deployment {
 
         if self.notify {
             notify(
-                &format!("coeus {}", self.order.action),
+                &format!("coeus {}", self.shipment.order.action),
                 &format!("{host}: {}", Theme::outcome_label(&outcome)),
             );
         }
@@ -115,13 +115,17 @@ impl Deployment {
 
     async fn follow(self, live: bool) -> Result<Exit> {
         let heading = Heading::Order {
-            id: self.order.id,
-            source: self.order.source.clone(),
-            action: self.order.action,
+            id: self.shipment.order.id,
+            source: self.shipment.order.source.clone(),
+            action: self.shipment.order.action,
             since: Timestamp::now(),
         };
         let board = Board::new(heading, self.fleet.hosts());
-        let dispatch = Dispatch::new(self.fleet.clone(), self.order.clone(), self.rollout.clone());
+        let dispatch = Dispatch::new(
+            self.fleet.clone(),
+            self.shipment.clone(),
+            self.rollout.clone(),
+        );
 
         let mut follow = Follow::new(board, live, View::Board)?;
         let ending = follow.run(&self.fleet, Some(dispatch)).await?;
@@ -146,14 +150,14 @@ impl Deployment {
         }
         step_summary(&summary);
 
-        if self.order.action == Action::Build {
+        if self.shipment.order.action == Action::Build {
             self.previews(&board).await;
         }
         if self.notify {
             let verdict = summary.verdict();
             let verdict = strip_ansi(&verdict);
             notify(
-                &format!("coeus {}", self.order.action),
+                &format!("coeus {}", self.shipment.order.action),
                 verdict.trim_start_matches(['✓', '✗', ' ']),
             );
         }
@@ -201,7 +205,7 @@ impl Deployment {
     }
 
     const fn diff_limit(&self) -> Option<usize> {
-        match self.order.action {
+        match self.shipment.order.action {
             Action::Build => None,
             _ => Some(12),
         }

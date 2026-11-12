@@ -5,6 +5,7 @@ use crate::{
     cli::{
         Context,
         deployment::{Deployment, Following},
+        dispatch::Shipment,
         exit::Exit,
         rollout::Rollout,
     },
@@ -56,14 +57,14 @@ impl RollbackArgs {
         Deployment {
             rollout: Rollout::plan(fleet.hosts(), &[], None, 0, false)?,
             fleet,
-            order: Order {
+            shipment: Shipment::order(Order {
                 id: OrderId::random(),
                 source: Source::Generation(generation),
                 action: Action::Switch,
                 options: NixOptions::default(),
                 origin: detect_origin(),
                 now: false,
-            },
+            }),
             following,
             notify: self.notify,
             skip_unreachable: false,

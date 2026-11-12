@@ -1,4 +1,4 @@
-use std::num::NonZeroUsize;
+use std::{num::NonZeroUsize, path::PathBuf, sync::Arc};
 
 use clap::Args;
 use eyre::{Result, bail};
@@ -8,12 +8,13 @@ use crate::{
         Context,
         context::local_hostname,
         deployment::{Deployment, Following},
+        dispatch::Shipment,
         exit::Exit,
         rollout::Rollout,
     },
-    client::{Fleet, detect_origin},
+    client::{Fleet, Snapshot, detect_origin},
     common::model::{Action, CommitSha, NixOptions, Order, OrderId, Source},
-    ui::{board::Verdict, say},
+    ui::{board::Verdict, format, say},
 };
 
 #[derive(Args, Debug)]
@@ -29,6 +30,16 @@ pub struct DeployArgs {
     /// Deploy the commit this ref points to now, the same on every machine
     #[arg(long = "ref", value_name = "REF", default_value = "main")]
     pub git_ref: String,
+
+    /// Deploy a working tree as it is, uncommitted changes included
+    #[arg(
+        long,
+        value_name = "DIR",
+        num_args = 0..=1,
+        default_missing_value = ".",
+        conflicts_with_all = ["rev", "git_ref"]
+    )]
+    pub local: Option<PathBuf>,
 
     #[command(flatten)]
     pub action: ActionArgs,
@@ -114,8 +125,16 @@ impl DeployArgs {
         };
         let fleet = context.fleet(targets)?;
 
-        let Some(source) = self.source(&fleet).await? else {
-            return Ok(Exit::of([Verdict::Unreachable], self.skip_unreachable));
+        let snapshot = match &self.local {
+            Some(dir) => Some(Arc::new(pack(dir).await?)),
+            None => None,
+        };
+        let source = match &snapshot {
+            Some(snapshot) => snapshot.source(),
+            None => match self.pin(&fleet).await? {
+                Some(source) => source,
+                None => return Ok(Exit::of([Verdict::Unreachable], self.skip_unreachable)),
+            },
         };
 
         let rollout = Rollout::plan(
@@ -149,7 +168,7 @@ impl DeployArgs {
 
         Deployment {
             fleet,
-            order,
+            shipment: Shipment { order, snapshot },
             rollout,
             following,
             notify: self.notify,
@@ -161,7 +180,7 @@ impl DeployArgs {
 
     /// the commit to deploy, pinned once on the first machine that answers
     /// so the whole order builds the same thing; `None` when none answered
-    async fn source(&self, fleet: &Fleet) -> Result<Option<Source>> {
+    async fn pin(&self, fleet: &Fleet) -> Result<Option<Source>> {
         if let Some(rev) = self.rev {
             return Ok(Some(Source::Git { rev, git_ref: None }));
         }
@@ -190,4 +209,18 @@ impl DeployArgs {
         }
         Ok(None)
     }
+}
+
+/// the working tree at `dir`, ready to upload
+async fn pack(dir: &std::path::Path) -> Result<Snapshot> {
+    let snapshot = Snapshot::capture(dir).await?;
+    eprintln!(
+        "{}",
+        say::info(format!(
+            "packed {} ({})",
+            snapshot.label,
+            format::bytes(snapshot.nar.len() as u64)
+        ))
+    );
+    Ok(snapshot)
 }
