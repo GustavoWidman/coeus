@@ -62,6 +62,7 @@ impl Daemon {
     /// coeusd answering as `host` within a few seconds, or `None`; a coeusd
     /// answering as another name is an error, not an absence
     pub async fn connect(settings: &ClientSettings, host: &Hostname) -> Result<Option<Self>> {
+        let settings = &at_tailnet_address(settings, host).await;
         let key = settings.key.load()?;
         let targets = Targets::select(&[host.to_string()], settings)?;
         let fleet = Fleet::new(settings.clone(), key, targets);
@@ -271,4 +272,54 @@ async fn pause(console: &Console) {
         () = tokio::time::sleep(POLL) => {}
         () = console.cancelled.cancelled() => {}
     }
+}
+
+/// `settings` reaching `host` at its tailnet address when the inventory names
+/// none. a machine that just joined is in the local tailscale's peer list at
+/// once, while the system resolver may still remember that its name did not
+/// exist moments ago (macOS caches that answer).
+async fn at_tailnet_address(settings: &ClientSettings, host: &Hostname) -> ClientSettings {
+    let mut settings = settings.clone();
+    if settings
+        .hosts
+        .get(host)
+        .is_some_and(|entry| entry.address.is_some())
+    {
+        return settings;
+    }
+    for program in [
+        "tailscale",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    ] {
+        let status = tokio::process::Command::new(program)
+            .args(["status", "--json"])
+            .kill_on_drop(true)
+            .output();
+        let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), status).await else {
+            continue;
+        };
+        if let Some(address) = peer_address(&output.stdout, host.as_str()) {
+            settings.hosts.entry(host.clone()).or_default().address = Some(address);
+        }
+        break;
+    }
+    settings
+}
+
+/// the first tailnet address of the peer MagicDNS names `host`, from
+/// `tailscale status --json`
+pub(crate) fn peer_address(status: &[u8], host: &str) -> Option<String> {
+    let status: serde_json::Value = serde_json::from_slice(status).ok()?;
+    let named = |peer: &&serde_json::Value| {
+        peer["DNSName"]
+            .as_str()
+            .and_then(|name| name.split('.').next())
+            .is_some_and(|label| label.eq_ignore_ascii_case(host))
+    };
+    let peer = status["Peer"].as_object()?.values().find(named)?;
+    peer["TailscaleIPs"]
+        .as_array()?
+        .first()?
+        .as_str()
+        .map(str::to_owned)
 }
