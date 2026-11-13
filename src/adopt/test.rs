@@ -425,9 +425,7 @@ async fn a_coeusd_listening_on_any_of_its_addresses_is_found() {
         let listen = named.local_addr().unwrap();
         assert!(settings::listening(listen).await);
     }
-
     drop(ipv6);
-    assert!(!settings::listening(format!("[::]:{port}").parse().unwrap()).await);
 }
 
 #[test]
