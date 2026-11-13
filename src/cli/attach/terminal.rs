@@ -18,8 +18,9 @@ pub fn size() -> Option<TerminalSize> {
 }
 
 /// the terminal showing another machine's terminal output as it comes, the
-/// way `ssh -tt` sets it: output passed through untouched and keys not
-/// echoed over it. ctrl-c still interrupts. dropping it restores the terminal
+/// way `ssh -tt` sets it: output passed through untouched and keys neither
+/// echoed over it nor read as lines. ctrl-c still interrupts. dropping it
+/// restores the terminal
 pub struct Passthrough {
     saved: Termios,
     /// whether the output so far ends a line
@@ -35,7 +36,12 @@ impl Passthrough {
         let stdout = io::stdout();
         let saved = rustix::termios::tcgetattr(&stdout)?;
         let mut passing = saved.clone();
-        passing.local_modes.remove(LocalModes::ECHO);
+        // nothing reads the keys, but echo off in canonical mode is how
+        // terminals spot a password prompt: Ghostty swaps the cursor for a
+        // lock and turns on macOS's secure keyboard entry
+        passing
+            .local_modes
+            .remove(LocalModes::ECHO | LocalModes::ICANON);
         passing.output_modes.remove(OutputModes::OPOST);
         rustix::termios::tcsetattr(&stdout, OptionalActions::Now, &passing)?;
         Ok(Self {
