@@ -118,3 +118,23 @@ async fn sources_placed_at_once_each_unpack_on_their_own() {
         .collect();
     assert_eq!(entries, [hash.file_name()], "nothing is left half placed");
 }
+
+#[test]
+fn a_tree_left_by_a_killed_placing_is_abandoned() {
+    let mut gone = Command::new("true").spawn().unwrap();
+    let dead = gone.id();
+    gone.wait().unwrap();
+    let alive = std::process::id();
+    let name = |pid: u32| format!(".sha256-abc_def-=.{pid}.0.tree");
+
+    assert!(crate::engine::snapshots::abandoned(&name(dead)));
+    assert!(!crate::engine::snapshots::abandoned(&name(alive)));
+    assert!(
+        !crate::engine::snapshots::abandoned("sha256-abc_def-="),
+        "a snapshot itself"
+    );
+    assert!(
+        !crate::engine::snapshots::abandoned(".sha256-abc.nar"),
+        "an upload being received"
+    );
+}
