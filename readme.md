@@ -73,7 +73,7 @@ run from your checkout of the configuration repository on an admin machine (one 
 3. **enroll**: ask the repository's questions, write the machine's files and make its own secrets in a private clone (`~/.local/state/coeus/bootstrap/<host>/repo`, so your checkout is never touched), and commit them on `coeus/bootstrap/<host>`
 4. **rekey**: move the branch onto the base branch's head and re-encrypt every secret whose recipients changed, reading the admin's identity once through `sudo`
 5. **push**: push the branch and open a draft pull request
-6. **switch**: ship the clone and its inputs into the machine's store and switch it with the coeus its own configuration pins, as an ordinary job guarded like any deployment: a switch that leaves the machine unreachable rolls itself back
+6. **switch**: ship the clone, and the inputs only the admin can reach, into the machine's store and switch it with the coeus its own configuration pins, as an ordinary job guarded like any deployment: a switch that fails or leaves the machine unreachable rolls itself back. when nixos refuses to switch live (a pre-switch check, such as a new dbus implementation), the run boots the system instead and reboots into it, as nixos asks. on a mac, nix-darwin's first activation writes where only full disk access may, which only a person at the mac can grant: the run opens system settings on its screen and waits for the grant
 7. **answer**: wait for its `coeusd` on the tailnet
 8. **reboot**: offer one when it runs a kernel it did not boot
 9. **review**: write what happened into the pull request and mark it ready
