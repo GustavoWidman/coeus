@@ -146,8 +146,15 @@ impl Snapshots {
         self.prune()
     }
 
-    /// keeps the newest snapshots only
+    /// keeps the newest snapshots only, and drops the trees placings that
+    /// were killed before renaming them left behind
     fn prune(&self) -> Result<()> {
+        for entry in std::fs::read_dir(&self.root)?.filter_map(Result::ok) {
+            if abandoned(&entry.file_name().to_string_lossy()) {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+
         let mut snapshots: Vec<(std::time::SystemTime, PathBuf)> = std::fs::read_dir(&self.root)?
             .filter_map(Result::ok)
             .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
@@ -211,4 +218,21 @@ async fn restore(path: &Path, nar: Stdio) -> Result<()> {
         );
     }
     Ok(())
+}
+
+/// a staging tree (`.<hash>.<pid>.<n>.tree`) whose process is gone: a placing
+/// killed before it renamed its tree into place
+pub(crate) fn abandoned(name: &str) -> bool {
+    let mut parts = name.trim_start_matches('.').rsplit('.');
+    let (Some("tree"), Some(_), Some(pid)) = (parts.next(), parts.next(), parts.next()) else {
+        return false;
+    };
+    let Some(pid) = pid.parse().ok().and_then(rustix::process::Pid::from_raw) else {
+        return false;
+    };
+    // a process that exists but is not ours to signal is still placing
+    !matches!(
+        rustix::process::test_kill_process(pid),
+        Ok(()) | Err(rustix::io::Errno::PERM)
+    )
 }
