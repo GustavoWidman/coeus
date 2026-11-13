@@ -266,3 +266,28 @@ fn plutil_accepts_the_plist() {
         .unwrap();
     assert!(status.success());
 }
+
+#[test]
+fn only_a_refused_write_blames_full_disk_access() {
+    use crate::{
+        common::model::{Failure, Phase},
+        platform::darwin::refused_for_full_disk_access,
+    };
+
+    let failure = |tail: &[&str]| Failure {
+        phase: Phase::Activating,
+        message: "activate failed with exit status: 1".into(),
+        tail: tail.iter().map(|line| (*line).to_owned()).collect(),
+    };
+    assert!(refused_for_full_disk_access(&failure(&[
+        "setting up /etc...",
+        "ln: failed to create symbolic link '/etc/pam.d/sudo_local': Operation not permitted",
+    ])));
+    assert!(!refused_for_full_disk_access(&failure(&[
+        "error: Unexpected files in /etc, aborting activation",
+        "  /etc/nix/nix.custom.conf",
+    ])));
+    assert!(!refused_for_full_disk_access(&failure(&[
+        "Error: An existing /opt/homebrew/Library/Taps is in the way",
+    ])));
+}
