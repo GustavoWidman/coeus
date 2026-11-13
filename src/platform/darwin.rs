@@ -9,6 +9,8 @@ use std::{
 use eyre::{Result, WrapErr};
 use log::info;
 
+use crate::common::model::Failure;
+
 /// the system TCC database: only a process with Full Disk Access can read it
 const TCC_DB: &str = "/Library/Application Support/com.apple.TCC/TCC.db";
 
@@ -29,6 +31,14 @@ pub fn launcher() -> String {
         .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
         .filter(|name| !name.is_empty())
         .unwrap_or_else(|| "coeus-launcher".to_owned())
+}
+
+/// whether an activation's failure reads like macOS refusing what only Full
+/// Disk Access allows: a write it does not permit, or nix-darwin saying so
+pub fn refused_for_full_disk_access(failure: &Failure) -> bool {
+    std::iter::once(&failure.message)
+        .chain(&failure.tail)
+        .any(|line| line.contains("Operation not permitted") || line.contains("Full Disk Access"))
 }
 
 /// what to tell people when activation needs Full Disk Access it lacks

@@ -351,14 +351,18 @@ impl Runner {
             .flatten()
     }
 
-    /// names the missing grant when a darwin activation fails without it,
-    /// since nix-darwin then aborts on user changes
+    /// names the missing grant when a darwin activation failed for want of
+    /// it: macOS refused a write only Full Disk Access allows. any other
+    /// failure keeps its own words, grant or not
     fn without_full_disk_access(&self, platform: Platform, error: Report) -> Report {
-        if platform != Platform::Darwin || darwin::has_full_disk_access() {
+        if platform != Platform::Darwin {
             return error;
         }
-
         let mut failure = self.failure(error);
+        if !darwin::refused_for_full_disk_access(&failure) || darwin::has_full_disk_access() {
+            return Failed(failure).into();
+        }
+
         failure.message = format!(
             "{}; {}",
             failure.message,
