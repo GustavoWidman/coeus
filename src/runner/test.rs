@@ -467,8 +467,14 @@ async fn the_guard_passes_once_coeusd_answers() {
 
     assert_eq!(guard(port).verify().await, Ok(()));
     drop(listener);
+
+    // a port held without listening refuses every connection, and no other
+    // test can start listening on it meanwhile
+    let held = tokio::net::TcpSocket::new_v4().unwrap();
+    held.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let silent = held.local_addr().unwrap().port();
     assert_eq!(
-        guard(port).verify().await,
+        guard(silent).verify().await,
         Err("coeusd does not answer 1s after activating".to_owned())
     );
 }
