@@ -108,8 +108,17 @@ fn a_log_has_one_writer_at_a_time() {
         "a second writer must be refused"
     );
 
+    // a child another test forks shares the log's open file until it execs,
+    // so the lock goes a moment after the writer does
     drop(writer);
-    assert!(!log.is_held().unwrap());
+    let released = (0..40).any(|_| {
+        let held = log.is_held().unwrap();
+        if held {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        !held
+    });
+    assert!(released, "the log stayed held after its writer went");
     assert!(log.writer().unwrap().is_some());
 }
 
