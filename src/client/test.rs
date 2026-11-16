@@ -3,6 +3,25 @@ use crate::{
     config::{ClientSettings, HostEntry},
 };
 
+#[tokio::test]
+async fn stages_a_snapshot_beneath_no_symlink() {
+    let tree = tempfile::tempdir().unwrap();
+    let status = std::process::Command::new("git")
+        .arg("-C")
+        .arg(tree.path())
+        .args(["init", "--quiet"])
+        .status()
+        .unwrap();
+    assert!(status.success());
+
+    let stage = crate::client::Snapshot::stage(tree.path()).await.unwrap();
+    assert_eq!(
+        stage.path(),
+        std::fs::canonicalize(stage.path()).unwrap(),
+        "nix 2.34 will not pack a path beneath a symlink"
+    );
+}
+
 fn inventory() -> ClientSettings {
     let mut settings = ClientSettings::default();
     for (name, tags) in [
