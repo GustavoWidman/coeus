@@ -30,9 +30,9 @@ use crate::{
             Order, Pinned, Rejection,
         },
         proto::{
-            AttachRequest, CancelRequest, DeployRequest, GenerationsRequest, HistoryRequest,
-            Packet, RebootRequest, ResolveRequest, TerminalSize, UploadBegin, UploadChunk,
-            WatchRequest,
+            AttachRequest, CancelRequest, CatchUpRequest, DeployRequest, GenerationsRequest,
+            HistoryRequest, Packet, RebootRequest, ResolveRequest, TerminalSize, UploadBegin,
+            UploadChunk, WatchRequest,
         },
         stream::EncryptedStream,
     },
@@ -98,6 +98,15 @@ impl CoeusClient {
         };
         match self.ask(request).await? {
             Packet::ResolveResponse(response) => Ok(response.pinned),
+            other => unexpected(other),
+        }
+    }
+
+    /// has the machine look up the ref it follows now, for where it points.
+    /// the machine catches up on its own if it is behind.
+    pub async fn catch_up(&mut self) -> Result<Pinned> {
+        match self.ask(CatchUpRequest {}).await? {
+            Packet::CatchUpResponse(response) => Ok(response.pinned),
             other => unexpected(other),
         }
     }

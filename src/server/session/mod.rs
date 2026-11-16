@@ -11,9 +11,9 @@ use crate::{
     common::{
         model::{AttachFrame, JobEvent, JobSelector, NarHash, Order, valid_ref},
         proto::{
-            Ack, AttachBatch, AttachEnded, AttachStarted, CancelResponse, DeployAccepted,
-            DeployRejected, Error, GenerationsResponse, HistoryResponse, MachineUpdate, Packet,
-            ResolveResponse, TerminalSize, UploadDone, UploadReady,
+            Ack, AttachBatch, AttachEnded, AttachStarted, CancelResponse, CatchUpResponse,
+            DeployAccepted, DeployRejected, Error, GenerationsResponse, HistoryResponse,
+            MachineUpdate, Packet, ResolveResponse, TerminalSize, UploadDone, UploadReady,
         },
         stream::EncryptedStream,
     },
@@ -59,6 +59,10 @@ impl<H: Host> Session<H> {
                         Err(error) => self.refuse(error.to_string()).await?,
                     }
                 }
+                Packet::CatchUpRequest(_) => match self.engine.catch_up().await? {
+                    Ok(pinned) => self.stream.send(CatchUpResponse { pinned }).await?,
+                    Err(error) => self.refuse(error).await?,
+                },
                 Packet::HistoryRequest(request) => {
                     let jobs = self.engine.history(request.limit as usize).await?;
                     let jobs = jobs.into_iter().map(Fit::fit).collect();

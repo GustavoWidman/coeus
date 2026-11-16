@@ -11,7 +11,7 @@ use crate::{
         Action, FdaStatus, Generation, HostInfo, JobEvent, JobId, MachineView, Outcome, Phase,
         Platform,
     },
-    config::{DaemonSettings, GuardSettings},
+    config::{DaemonSettings, FollowSettings, GuardSettings},
     engine::{Engine, EngineHandle, Host, SystemFacts},
     job::JobDir,
 };
@@ -112,6 +112,24 @@ impl Harness {
     /// an engine whose runners share `release` with an earlier engine's, as
     /// detached runners outlive the daemon that started them
     pub async fn start_with(state: tempfile::TempDir, release: std::sync::Arc<Notify>) -> Self {
+        Self::launch(state, release, "git+https://example.com/nix".into(), None).await
+    }
+
+    /// an engine that follows `git_ref` of the repository at `flake`
+    pub async fn following(state: tempfile::TempDir, flake: String, git_ref: &str) -> Self {
+        let follow = FollowSettings {
+            git_ref: git_ref.to_owned(),
+            interval: Duration::from_secs(15 * 60),
+        };
+        Self::launch(state, std::sync::Arc::default(), flake, Some(follow)).await
+    }
+
+    async fn launch(
+        state: tempfile::TempDir,
+        release: std::sync::Arc<Notify>,
+        flake: String,
+        follow: Option<FollowSettings>,
+    ) -> Self {
         let stillborn = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let host = FakeHost {
             info: HostInfo {
@@ -126,7 +144,8 @@ impl Harness {
         };
 
         let settings = DaemonSettings {
-            flake: "git+https://example.com/nix".into(),
+            flake,
+            follow,
             state_dir: state.path().to_owned(),
             guard: GuardSettings {
                 enable: false,

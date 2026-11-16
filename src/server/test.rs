@@ -22,7 +22,10 @@ struct Served {
 
 impl Served {
     async fn start() -> Self {
-        let harness = Harness::start(tempfile::tempdir().unwrap()).await;
+        Self::serve(Harness::start(tempfile::tempdir().unwrap()).await).await
+    }
+
+    async fn serve(harness: Harness) -> Self {
         let key = Key::generate();
         let server =
             CoeusServer::bind("127.0.0.1:0".parse().unwrap(), &key, harness.engine.clone())
@@ -207,5 +210,69 @@ async fn takes_a_working_tree_once() {
     assert!(!unpacked.join(".git").exists());
 
     served.client().await.upload(&snapshot).await.unwrap();
+    served.stop();
+}
+
+#[tokio::test]
+async fn a_machine_that_follows_nothing_cannot_catch_up() {
+    let served = Served::start().await;
+    let error = served.client().await.catch_up().await.unwrap_err();
+    assert!(error.to_string().contains("follows no ref"), "{error}");
+    served.stop();
+}
+
+#[tokio::test]
+async fn catching_up_looks_the_followed_ref_up_at_once() {
+    let repo = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(repo.path())
+            .args(["-c", "user.name=coeus", "-c", "user.email=coeus@localhost"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    };
+    git(&["init", "--quiet", "--initial-branch", "deployed"]);
+    std::fs::write(repo.path().join("flake.nix"), "{ outputs = _: { }; }").unwrap();
+    git(&["add", "flake.nix"]);
+    git(&["commit", "--quiet", "-m", "first"]);
+
+    let flake = format!("git+file://{}", repo.path().display());
+    let resolvable = std::process::Command::new("nix")
+        .args(["flake", "metadata", "--refresh"])
+        .args(["--extra-experimental-features", "nix-command flakes"])
+        .arg(format!("{flake}?ref=deployed"))
+        .env("NIX_REMOTE", "daemon")
+        .output()
+        .is_ok_and(|output| output.status.success());
+    if !resolvable {
+        eprintln!("skipped: no nix daemon to resolve a flake with");
+        return;
+    }
+
+    let harness = Harness::following(tempfile::tempdir().unwrap(), flake, "deployed").await;
+    let served = Served::serve(harness).await;
+
+    let first = served.client().await.catch_up().await.unwrap();
+    assert_eq!(first.rev.to_string(), git(&["rev-parse", "HEAD"]));
+
+    git(&["commit", "--quiet", "--allow-empty", "-m", "second"]);
+    let second = served.client().await.catch_up().await.unwrap();
+    let head = git(&["rev-parse", "HEAD"]);
+    assert_eq!(second.rev.to_string(), head, "a second ask looks again");
+
+    served
+        .harness
+        .until(|view| {
+            view.system
+                .follow
+                .as_ref()
+                .and_then(|follow| follow.latest.as_ref())
+                .is_some_and(|latest| latest.rev.to_string() == head)
+        })
+        .await;
     served.stop();
 }
