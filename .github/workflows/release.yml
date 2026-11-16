@@ -101,6 +101,8 @@ jobs:
           nix_conf: |
             substituters = https://cache.nixos.org/ https://cache.r3dlust.com
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= cache.r3dlust.com-1:Wdkf9mes2ued0P7C7CL3Jax1b4KPuJwQpM3h4G/Z+yI=
+            # nix builds one derivation at a time unless told otherwise
+            max-jobs = auto
       - name: Configure the niks3 cache
         id: cache
         uses: Mic92/niks3-action@v1
