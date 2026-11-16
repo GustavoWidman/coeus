@@ -71,6 +71,14 @@ impl<H: Host> EngineHandle<H> {
         Ok(answer.await?)
     }
 
+    /// looks the followed ref up now, for where it points or why it could
+    /// not be looked up; the machine catches up if it is behind
+    pub async fn catch_up(&self) -> Result<Result<Pinned, String>> {
+        let (reply, answer) = oneshot::channel();
+        self.send(Command::CatchUp { reply }).await?;
+        Ok(answer.await?)
+    }
+
     /// the machine's view, updated after every change
     pub fn watch(&self) -> watch::Receiver<MachineView> {
         self.view.clone()

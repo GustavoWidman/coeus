@@ -1,7 +1,10 @@
 use std::time::Duration;
 
 use log::warn;
-use tokio::{sync::watch, time};
+use tokio::{
+    sync::{mpsc, oneshot, watch},
+    time,
+};
 
 use crate::{
     common::model::{Pinned, Timestamp},
@@ -21,8 +24,9 @@ pub(super) struct Schedule {
 }
 
 impl Schedule {
-    /// waits this long after startup before the first look, so a daemon
-    /// restarting into a new version does not race the job that installed it
+    /// waits this long after startup before the first scheduled look, so a
+    /// daemon restarting into a new version does not race the job that
+    /// installed it
     pub const SETTLE: Duration = Duration::from_secs(30);
     /// the wait after the first failure, doubling after each one up to the
     /// interval
@@ -61,9 +65,14 @@ impl Schedule {
     }
 }
 
+/// someone waiting on a lookup that starts after they asked, for where the
+/// followed ref points or why it could not be looked up
+pub(super) type Ask = oneshot::Sender<Result<Pinned, String>>;
+
 /// looks up the followed ref on its own task, so a network that is down or
 /// slow never holds up the engine, and publishes every commit it resolves.
-/// it stops once nobody listens.
+/// it looks when its schedule says so and whenever someone asks, and stops
+/// once nobody listens.
 pub(super) struct Lookout {
     repo: FlakeRepo,
     settings: FollowSettings,
@@ -76,46 +85,71 @@ impl Lookout {
     /// the longest nap between glances at the wall clock
     const NAP: Duration = Duration::from_secs(5);
 
-    pub fn spawn(repo: FlakeRepo, settings: FollowSettings) -> watch::Receiver<Option<Pinned>> {
+    pub fn spawn(
+        repo: FlakeRepo,
+        settings: FollowSettings,
+    ) -> (watch::Receiver<Option<Pinned>>, mpsc::UnboundedSender<Ask>) {
         let (latest, receiver) = watch::channel(None);
+        let (asks, asked) = mpsc::unbounded_channel();
         let lookout = Self {
             schedule: Schedule::new(settings.interval, Timestamp::now()),
             repo,
             settings,
         };
 
-        tokio::spawn(lookout.run(latest));
-        receiver
+        tokio::spawn(lookout.run(latest, asked));
+        (receiver, asks)
     }
 
-    async fn run(mut self, latest: watch::Sender<Option<Pinned>>) {
+    async fn run(
+        mut self,
+        latest: watch::Sender<Option<Pinned>>,
+        mut asked: mpsc::UnboundedReceiver<Ask>,
+    ) {
         loop {
+            let mut waiting = Vec::new();
             let nap = self.schedule.until(Timestamp::now()).min(Self::NAP);
             tokio::select! {
                 _ = latest.closed() => return,
                 _ = time::sleep(nap) => {}
+                Some(ask) = asked.recv() => waiting.push(ask),
             }
 
-            if !self.schedule.due(Timestamp::now()) {
+            // asks sent while the last lookup ran get this one, which starts
+            // after them
+            while let Ok(ask) = asked.try_recv() {
+                waiting.push(ask);
+            }
+            if waiting.is_empty() && !self.schedule.due(Timestamp::now()) {
                 continue;
             }
 
-            let git_ref = &self.settings.git_ref;
-            let error = match time::timeout(Self::PATIENCE, self.repo.resolve(git_ref)).await {
-                Ok(Ok(pinned)) => {
-                    self.schedule.succeeded(Timestamp::now());
-                    latest.send_replace(Some(pinned));
-                    continue;
-                }
-                Ok(Err(error)) => format!("{error}"),
-                Err(_) => format!("gave up after {}s", Self::PATIENCE.as_secs()),
-            };
-
-            let wait = self.schedule.failed(Timestamp::now());
-            warn!(
-                "cannot follow {git_ref}: {error}; looking again in {}s",
-                wait.as_secs()
-            );
+            let found = self.look().await;
+            if let Ok(pinned) = &found {
+                latest.send_replace(Some(pinned.clone()));
+            }
+            for ask in waiting {
+                let _ = ask.send(found.clone());
+            }
         }
+    }
+
+    async fn look(&mut self) -> Result<Pinned, String> {
+        let git_ref = &self.settings.git_ref;
+        let error = match time::timeout(Self::PATIENCE, self.repo.resolve(git_ref)).await {
+            Ok(Ok(pinned)) => {
+                self.schedule.succeeded(Timestamp::now());
+                return Ok(pinned);
+            }
+            Ok(Err(error)) => format!("{error}"),
+            Err(_) => format!("gave up after {}s", Self::PATIENCE.as_secs()),
+        };
+
+        let wait = self.schedule.failed(Timestamp::now());
+        warn!(
+            "cannot follow {git_ref}: {error}; looking again in {}s",
+            wait.as_secs()
+        );
+        Err(error)
     }
 }

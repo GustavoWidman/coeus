@@ -12,6 +12,7 @@ use super::{
     Host, SystemFacts,
     follow::{Deployed, Follower},
     lane::Lane,
+    lookout::Ask,
     notify::Notifier,
     reconcile::{Observed, Plan, Resume},
     running::Running,
@@ -38,6 +39,9 @@ pub(super) enum Command {
         job: JobSelector,
         reply: oneshot::Sender<CancelReport>,
     },
+    /// look the followed ref up now; the machine catches up as it would
+    /// after any lookup
+    CatchUp { reply: Ask },
 }
 
 /// the one task that owns every job's lifecycle on this machine. it reacts
@@ -225,6 +229,12 @@ impl<H: Host> Actor<H> {
             Command::Cancel { job, reply } => {
                 let _ = reply.send(self.cancel(job));
             }
+            Command::CatchUp { reply } => match &self.follower {
+                Some(follower) => follower.ask(reply),
+                None => {
+                    let _ = reply.send(Err("this machine follows no ref".into()));
+                }
+            },
         }
     }
 
