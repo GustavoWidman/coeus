@@ -1,9 +1,9 @@
 use std::ops::Not;
 
 use eyre::{Result, bail};
-use tokio::sync::watch;
+use tokio::sync::{mpsc, watch};
 
-use super::lookout::Lookout;
+use super::lookout::{Ask, Lookout};
 use crate::{
     common::model::{Follow, Pinned, Source, Timestamp, valid_ref},
     config::FollowSettings,
@@ -20,6 +20,7 @@ pub(super) struct Follower {
     git_ref: String,
     /// what the ref pointed at when last looked up
     latest: watch::Receiver<Option<Pinned>>,
+    asks: mpsc::UnboundedSender<Ask>,
 }
 
 /// the machine's last successful deployment
@@ -37,10 +38,19 @@ impl Follower {
             bail!("cannot follow {:?}: not a branch or tag name", settings.git_ref);
         }
 
+        let git_ref = settings.git_ref.clone();
+        let (latest, asks) = Lookout::spawn(repo, settings);
         Ok(Self {
-            git_ref: settings.git_ref.clone(),
-            latest: Lookout::spawn(repo, settings),
+            git_ref,
+            latest,
+            asks,
         })
+    }
+
+    /// looks the ref up now rather than when the schedule says, answering
+    /// `ask` with what it finds
+    pub fn ask(&self, ask: Ask) {
+        let _ = self.asks.send(ask);
     }
 
     /// a follower that saw `latest` and looks no further, for tests
@@ -49,6 +59,7 @@ impl Follower {
         Self {
             git_ref: git_ref.to_owned(),
             latest: watch::channel(latest).1,
+            asks: mpsc::unbounded_channel().0,
         }
     }
 
