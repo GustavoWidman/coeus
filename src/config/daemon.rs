@@ -1,12 +1,13 @@
 use std::{
     net::SocketAddr,
+    os::unix::fs::DirBuilderExt,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
 
 use easy_config_store::ConfigStore;
-use eyre::Result;
+use eyre::{Result, WrapErr};
 use log::debug;
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +20,19 @@ pub fn daemon_config(path: &Path) -> Result<DaemonConfig> {
     let config = ConfigStore::<DaemonSettings>::read(path, "settings".to_owned())?;
     debug!("loaded configuration from {}", path.display());
     Ok(config.arc())
+}
+
+/// creates the state directory, private to its owner, and returns its real
+/// path, which every path coeusd hands nix starts with: nix 2.34 refuses to
+/// read beneath a symlink, and on macOS /var/lib/coeus sits beneath one, /var
+pub fn create_state_dir(dir: &Path) -> Result<PathBuf> {
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .wrap_err_with(|| format!("failed to create {}", dir.display()))?;
+    dir.canonicalize()
+        .wrap_err_with(|| format!("failed to resolve {}", dir.display()))
 }
 
 #[derive(Debug, PartialEq, Serialize, Deserialize, Clone)]

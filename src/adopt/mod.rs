@@ -20,7 +20,7 @@ mod settings;
 #[cfg(test)]
 mod test;
 
-use std::{fs, os::unix::fs::DirBuilderExt, path::PathBuf};
+use std::{fs, path::PathBuf};
 
 use eyre::{Result, WrapErr, bail, eyre};
 use log::{info, warn};
@@ -33,7 +33,7 @@ use crate::{
         Action, Attempt, Failure, FdaStatus, HostInfo, Hostname, JobId, NarHash, NixOptions, Order,
         OrderId, Origin, Outcome, Phase, Platform, Source, StorePath,
     },
-    config::DaemonSettings,
+    config::{DaemonSettings, create_state_dir},
     engine::{Host, Snapshots},
     job::{JobDir, JobSpec, JobStore},
     platform::{Launcher, Machine, SystemRoot},
@@ -54,8 +54,7 @@ const ORDERED_BY: &str = "bootstrap";
 /// the process's exit code
 pub async fn run(args: &AdoptArgs) -> Result<i32> {
     if args.status {
-        let state_dir = status_state_dir(args).await?;
-        create_private(&state_dir)?;
+        let state_dir = create_state_dir(&status_state_dir(args).await?)?;
         let store = JobStore::open(&state_dir)?;
         let attempt = Attempt::of(&admit::summaries(&store).await?, &args.nar_hash);
         println!("{}", serde_json::to_string(&attempt)?);
@@ -63,7 +62,8 @@ pub async fn run(args: &AdoptArgs) -> Result<i32> {
     }
 
     let request = Request::parse(args)?;
-    let settings = settings::of(&request.source, &request.hostname).await?;
+    let mut settings = settings::of(&request.source, &request.hostname).await?;
+    settings.state_dir = create_state_dir(&settings.state_dir)?;
     let daemon_here = settings::listening(settings.listen).await;
     request
         .carry_out(&settings, daemon_here, &mut tokio::io::stdout())
@@ -157,7 +157,6 @@ impl Request {
         if Platform::current() != Platform::Darwin {
             return Ok(false);
         }
-        create_private(&settings.state_dir)?;
         if JobStore::open(&settings.state_dir)?
             .find(self.order)?
             .is_some()
@@ -172,7 +171,6 @@ impl Request {
     /// a runner carries it out
     async fn admit(&self, settings: &DaemonSettings) -> Result<JobDir> {
         let state_dir = &settings.state_dir;
-        create_private(state_dir)?;
 
         // one adopt at a time places the snapshot and decides what the
         // order's job is; one a killed run left behind may still be at it
@@ -258,12 +256,4 @@ async fn status_state_dir(args: &AdoptArgs) -> Result<PathBuf> {
 /// the state directory `--status` reads when nothing says another, coeusd's
 fn default_state_dir() -> PathBuf {
     DaemonSettings::default().state_dir
-}
-
-fn create_private(dir: &std::path::Path) -> Result<()> {
-    fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(dir)
-        .wrap_err_with(|| format!("failed to create {}", dir.display()))
 }
