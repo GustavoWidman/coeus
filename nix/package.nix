@@ -23,7 +23,55 @@ let
     strictDeps = true;
   };
 
-  cargoArtifacts = craneLib.buildDepsOnly args;
+  cargoVendorDir = craneLib.vendorCargoDeps args;
+
+  # the dependencies build against coeus and its workspace's crates without
+  # their versions, so a release, which bumps only those, keeps the dependency
+  # build CI cached for the last
+  locked = builtins.readFile ../Cargo.lock;
+  # the packages the lock names no source for: the workspace's own
+  workspace = builtins.filter (package: !(package ? source)) (builtins.fromTOML locked).package;
+  entry = name: version: ''
+    name = "${name}"
+    version = "${version}"
+  '';
+  unversionedLock =
+    let
+      versioned = map (package: entry package.name package.version) workspace;
+      unversioned = map (package: entry package.name "0.0.0") workspace;
+    in
+    assert lib.assertMsg (lib.all (lib.flip lib.hasInfix locked) versioned)
+      "Cargo.lock lays out a workspace package differently than expected";
+    builtins.toFile "Cargo.lock" (builtins.replaceStrings versioned unversioned locked);
+
+  # its name, version and vendored sources are given, so crane never reads
+  # this generated source while evaluating
+  cargoArtifacts = craneLib.buildDepsOnly (
+    removeAttrs args [ "src" ]
+    // {
+      inherit cargoVendorDir;
+      pname = "coeus";
+      version = "0.0.0";
+      dummySrc = craneLib.mkDummySrc (
+        args
+        // {
+          src = lib.fileset.toSource {
+            inherit root;
+            fileset = lib.fileset.difference sources ../Cargo.lock;
+          };
+          cargoLock = unversionedLock;
+          cleanCargoTomlFilter =
+            path:
+            craneLib.filters.cargoTomlDefault path
+            &&
+              path != [
+                "package"
+                "version"
+              ];
+        }
+      );
+    }
+  );
 
   # the tests also read recorded nix output and sample contracts, which the
   # package itself never needs
