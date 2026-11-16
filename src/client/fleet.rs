@@ -1,11 +1,12 @@
 use std::{future::Future, sync::Arc, time::Duration};
 
+use eyre::eyre;
 use futures_util::future::join_all;
 use tokio::sync::mpsc;
 
-use super::{CoeusClient, Targets};
+use super::{CoeusClient, Tailnet, Targets};
 use crate::{
-    common::model::{Hostname, MachineView},
+    common::model::{Hostname, MachineView, Timestamp},
     config::{ClientSettings, Key},
 };
 
@@ -15,6 +16,8 @@ pub struct Fleet {
     settings: Arc<ClientSettings>,
     key: Arc<Key>,
     targets: Targets,
+    /// what tailscale said once, `None` to ask it before every connection
+    tailnet: Option<Arc<Tailnet>>,
 }
 
 /// how a watched machine's connection is doing
@@ -50,16 +53,37 @@ impl Fleet {
             settings: Arc::new(settings),
             key: Arc::new(key),
             targets,
+            tailnet: None,
         }
+    }
+
+    /// a fleet that takes `tailnet` as tailscale's word on every connection
+    #[cfg(test)]
+    pub fn seeing(mut self, tailnet: Tailnet) -> Self {
+        self.tailnet = Some(Arc::new(tailnet));
+        self
     }
 
     pub fn hosts(&self) -> &[Hostname] {
         self.targets.hosts()
     }
 
+    /// connects to `host`, or gives up on it as soon as tailscale sees it
+    /// offline. tailscale is asked alongside, so a machine that answers
+    /// waits for no word from it.
     pub async fn connect(&self, host: &Hostname) -> eyre::Result<CoeusClient> {
         let endpoint = self.settings.endpoint(host);
-        CoeusClient::connect(&self.settings, &endpoint, &self.key).await
+        let offline = async {
+            match &self.tailnet {
+                Some(tailnet) => tailnet.offline(&endpoint.host),
+                None => Tailnet::read().await?.offline(&endpoint.host),
+            }
+        };
+
+        tokio::select! {
+            connected = CoeusClient::connect(&self.settings, &endpoint, &self.key) => connected,
+            Some(offline) = offline => Err(eyre!(offline.describe(Timestamp::now()))),
+        }
     }
 
     /// runs `operation` against every machine at once, in target order

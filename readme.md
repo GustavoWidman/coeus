@@ -37,7 +37,7 @@ nobody has to babysit it. a push to `main` can roll out to the whole fleet, cana
 | `coeus keygen` | a new fleet key |
 | `coeus completions <shell>` | completions for bash, zsh, fish and nushell |
 
-targets are machine names, `@all`, `@<tag>` from the inventory, and `!name` or `!@tag` to leave some out. names outside the inventory are reached as tailnet hostnames. `status`, `history`, `generations` and `doctor` take `--json`, and `deploy` exits 0 when every job succeeded, 1 when one failed, and 2 when a machine could not be reached. `catch-up` exits 2 when a machine could not be reached or could not look its ref up.
+targets are machine names, `@all`, `@<tag>` from the inventory, and `!name` or `!@tag` to leave some out. names outside the inventory are reached as tailnet hostnames. a machine the local tailscale sees offline counts as unreachable at once, with the time tailscale last saw it, instead of after the connect timeout. `status`, `history`, `generations` and `doctor` take `--json`, and `deploy` exits 0 when every job succeeded, 1 when one failed, and 2 when a machine could not be reached. `catch-up` exits 2 when a machine could not be reached or could not look its ref up.
 
 ## setting a machine up
 
