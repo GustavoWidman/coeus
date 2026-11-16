@@ -14,7 +14,7 @@ use crate::{
         switch::{AdoptLine, Feed, Switched},
     },
     cli::{Console, within},
-    client::{AttachmentEvent, CoeusClient, Fleet, Targets},
+    client::{AttachmentEvent, CoeusClient, Fleet, Tailnet, Targets},
     common::model::{
         AttachFrame, HostInfo, Hostname, JobId, JobSelector, JobSummary, MachineView, OrderId,
         Timestamp,
@@ -287,39 +287,11 @@ async fn at_tailnet_address(settings: &ClientSettings, host: &Hostname) -> Clien
     {
         return settings;
     }
-    for program in [
-        "tailscale",
-        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-    ] {
-        let status = tokio::process::Command::new(program)
-            .args(["status", "--json"])
-            .kill_on_drop(true)
-            .output();
-        let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), status).await else {
-            continue;
-        };
-        if let Some(address) = peer_address(&output.stdout, host.as_str()) {
-            settings.hosts.entry(host.clone()).or_default().address = Some(address);
-        }
-        break;
+    let address = Tailnet::read()
+        .await
+        .and_then(|tailnet| tailnet.address(host.as_str()));
+    if let Some(address) = address {
+        settings.hosts.entry(host.clone()).or_default().address = Some(address);
     }
     settings
-}
-
-/// the first tailnet address of the peer MagicDNS names `host`, from
-/// `tailscale status --json`
-pub(crate) fn peer_address(status: &[u8], host: &str) -> Option<String> {
-    let status: serde_json::Value = serde_json::from_slice(status).ok()?;
-    let named = |peer: &&serde_json::Value| {
-        peer["DNSName"]
-            .as_str()
-            .and_then(|name| name.split('.').next())
-            .is_some_and(|label| label.eq_ignore_ascii_case(host))
-    };
-    let peer = status["Peer"].as_object()?.values().find(named)?;
-    peer["TailscaleIPs"]
-        .as_array()?
-        .first()?
-        .as_str()
-        .map(str::to_owned)
 }

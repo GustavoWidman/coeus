@@ -6,6 +6,7 @@ mod fleet;
 mod origin;
 mod snapshot;
 mod stream;
+mod tailnet;
 mod targets;
 
 #[cfg(test)]
@@ -21,6 +22,7 @@ pub use fleet::{Fleet, FleetEvent, Link};
 pub use origin::detect_origin;
 pub use snapshot::Snapshot;
 pub use stream::{Attachment, AttachmentEvent};
+pub use tailnet::{Offline, Tailnet};
 pub use targets::Targets;
 
 use crate::{
