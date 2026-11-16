@@ -1,6 +1,7 @@
 mod attach;
 mod bootstrap;
 mod cancel;
+mod catch_up;
 mod deploy;
 mod doctor;
 mod generations;
@@ -15,6 +16,7 @@ mod watch;
 pub use attach::{AttachArgs, LogsArgs};
 pub use bootstrap::BootstrapArgs;
 pub use cancel::CancelArgs;
+pub use catch_up::CatchUpArgs;
 pub use deploy::DeployArgs;
 pub use doctor::DoctorArgs;
 pub use generations::GenerationsArgs;
@@ -43,6 +45,7 @@ impl Command {
             Self::Logs(args) => args.run(&context()?).await,
             Self::History(args) => args.run(&context()?).await,
             Self::Cancel(args) => args.run(&context()?).await,
+            Self::CatchUp(args) => args.run(&context()?).await,
             Self::Rollback(args) => args.run(&context()?).await,
             Self::Generations(args) => args.run(&context()?).await,
             Self::Reboot(args) => args.run(&context()?).await,
