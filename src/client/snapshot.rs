@@ -38,9 +38,12 @@ impl Snapshot {
     /// directory, whose NAR hash is the snapshot's
     pub async fn stage(dir: &Path) -> Result<tempfile::TempDir> {
         let root = PathBuf::from(git(dir, &["rev-parse", "--show-toplevel"]).await?.trim());
+        // some nix versions, 2.34 among them, refuse to read a path beneath a
+        // symlink, and macOS keeps its temporary directory beneath one, /var
+        let temp = std::fs::canonicalize(std::env::temp_dir())?;
         let stage = tempfile::Builder::new()
             .prefix("coeus-snapshot")
-            .tempdir()?;
+            .tempdir_in(temp)?;
         for file in Self::files(&root).await? {
             copy(&root.join(&file), &stage.path().join(&file))?;
         }
