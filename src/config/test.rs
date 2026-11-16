@@ -59,3 +59,22 @@ fn keys_load_from_inline_values_and_files() {
     assert!("abc".parse::<Key>().is_err());
     assert_eq!(format!("{key:?}"), "Key(..)");
 }
+
+#[test]
+fn the_state_directory_is_created_private_and_named_by_its_real_path() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let real = root.path().join("private");
+    std::fs::create_dir(&real).unwrap();
+    std::os::unix::fs::symlink(&real, root.path().join("var")).unwrap();
+
+    let state_dir = create_state_dir(&root.path().join("var/lib/coeus")).unwrap();
+    assert_eq!(
+        state_dir,
+        real.canonicalize().unwrap().join("lib/coeus"),
+        "nix 2.34 will not read beneath a symlink"
+    );
+    let mode = std::fs::metadata(&state_dir).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o700);
+}

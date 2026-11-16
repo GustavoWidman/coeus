@@ -1,10 +1,8 @@
-use std::os::unix::fs::DirBuilderExt;
-
 use clap::Parser;
 use coeus::{
     adopt,
     cli::daemon::{DaemonCLIArgs, DaemonCommand},
-    config::daemon_config,
+    config::{create_state_dir, daemon_config},
     engine::Engine,
     platform::Machine,
     runner,
@@ -13,7 +11,7 @@ use coeus::{
 };
 use colored::Colorize;
 use env_logger::Target;
-use eyre::{Result, WrapErr};
+use eyre::Result;
 use log::{error, info};
 use tokio_util::sync::CancellationToken;
 
@@ -49,14 +47,9 @@ async fn serve(args: &DaemonCLIArgs) -> Result<()> {
     colored::control::set_override(true);
 
     let config = daemon_config(&args.config)?;
-    let settings = (**config).clone();
+    let mut settings = (**config).clone();
     let key = settings.key.load()?;
-
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(&settings.state_dir)
-        .wrap_err_with(|| format!("failed to create {}", settings.state_dir.display()))?;
+    settings.state_dir = create_state_dir(&settings.state_dir)?;
 
     let machine = Machine::new(&settings)?;
     let restart = CancellationToken::new();
