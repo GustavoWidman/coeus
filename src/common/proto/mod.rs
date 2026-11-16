@@ -37,6 +37,10 @@ pub enum Packet {
     ResolveRequest,
     #[packet(id = 0x0106, type = ResolveResponse)]
     ResolveResponse,
+    #[packet(id = 0x0107, type = CatchUpRequest)]
+    CatchUpRequest,
+    #[packet(id = 0x0108, type = CatchUpResponse)]
+    CatchUpResponse,
 
     #[packet(id = 0x0110, type = UploadBegin)]
     UploadBegin,

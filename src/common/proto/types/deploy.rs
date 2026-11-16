@@ -42,3 +42,14 @@ pub struct ResolveRequest {
 pub struct ResolveResponse {
     pub pinned: Pinned,
 }
+
+/// look the ref the machine follows up now, rather than on its schedule, so
+/// it catches up right away when the ref moved
+#[derive(Debug, Serialize, Deserialize, Packet)]
+pub struct CatchUpRequest {}
+
+#[derive(Debug, Serialize, Deserialize, Packet)]
+pub struct CatchUpResponse {
+    /// where the followed ref points
+    pub pinned: Pinned,
+}
