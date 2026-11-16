@@ -28,6 +28,7 @@ nobody has to babysit it. a push to `main` can roll out to the whole fleet, cana
 | `coeus logs <host> [job]` | a job's log as plain text; `-f` follows it |
 | `coeus history [targets]` | past jobs: who ordered what, how it ended, how long it took |
 | `coeus cancel <targets>` | stop queued or running jobs before they activate |
+| `coeus catch-up <targets>` | have machines look up the ref they follow now, and catch up if it moved; `--skip-unreachable` |
 | `coeus rollback <host> [--to n]` | switch back to an earlier generation, as a job like any other |
 | `coeus generations <host>` | the machine's system generations |
 | `coeus reboot <host>` | reboot, once nothing is activating |
@@ -36,7 +37,7 @@ nobody has to babysit it. a push to `main` can roll out to the whole fleet, cana
 | `coeus keygen` | a new fleet key |
 | `coeus completions <shell>` | completions for bash, zsh, fish and nushell |
 
-targets are machine names, `@all`, `@<tag>` from the inventory, and `!name` or `!@tag` to leave some out. names outside the inventory are reached as tailnet hostnames. `status`, `history`, `generations` and `doctor` take `--json`, and `deploy` exits 0 when every job succeeded, 1 when one failed, and 2 when a machine could not be reached.
+targets are machine names, `@all`, `@<tag>` from the inventory, and `!name` or `!@tag` to leave some out. names outside the inventory are reached as tailnet hostnames. `status`, `history`, `generations` and `doctor` take `--json`, and `deploy` exits 0 when every job succeeded, 1 when one failed, and 2 when a machine could not be reached. `catch-up` exits 2 when a machine could not be reached or could not look its ref up.
 
 ## setting a machine up
 
@@ -180,15 +181,17 @@ the workflow joins the tailnet as `tag:ci` through a tailscale oauth client, the
 
 ```sh
 coeus deploy @all --rev "$GITHUB_SHA" --ref main --canary @canary --skip-unreachable
+git push --force origin "$GITHUB_SHA:refs/heads/deployed"
+coeus catch-up @all --skip-unreachable
 ```
 
-canaries go first, and the rest only follow if they succeed. a failed machine fails the run. when everything that answered succeeded, the workflow moves a `deployed` branch to the commit, and machines following `deployed` catch up when they come back online. give `tag:ci` access to port 45729 and nothing else.
+canaries go first, and the rest only follow if they succeed. a failed machine fails the run. when everything that answered succeeded, the workflow moves a `deployed` branch to the commit, and machines following `deployed` catch up when they come back online. `coeus catch-up` has every machine that answers look `deployed` up at once: without it, a machine that took the commit by order shows it holding `deployed` until its next scheduled look. give `tag:ci` access to port 45729 and nothing else.
 
 ## machines that are mostly off
 
 `deployed` is the last commit the fleet took without a failure, so a machine that was off or asleep through any number of rollouts switches straight to it, without anyone ordering it:
 
-- 30 seconds after `coeusd` starts, and right after the machine wakes up, it looks `deployed` up. while it can't reach the repository it looks again after 30 seconds, doubling the wait up to the follow interval.
+- 30 seconds after `coeusd` starts, right after the machine wakes up, and whenever `coeus catch-up` asks, it looks `deployed` up. while it can't reach the repository it looks again after 30 seconds, doubling the wait up to the follow interval.
 - a catch-up that fails before building, which is where a network that comes and goes shows up, is tried again after 1 minute and then 2, three tries in all. one that fails while building or activating waits for `deployed` to move.
 - shutting the machine down while it fetches or builds only pauses the catch-up: the job runs again after the next boot, keeping whatever it already built.
 - a machine switched by hand after `deployed` last moved keeps what it runs until the fleet moves on.

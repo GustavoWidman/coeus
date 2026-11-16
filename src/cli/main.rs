@@ -4,7 +4,7 @@ use clap::{ArgAction, Parser, Subcommand};
 use log::LevelFilter;
 
 use super::commands::{
-    AttachArgs, BootstrapArgs, CancelArgs, CompletionsArgs, DeployArgs, DoctorArgs,
+    AttachArgs, BootstrapArgs, CancelArgs, CatchUpArgs, CompletionsArgs, DeployArgs, DoctorArgs,
     GenerationsArgs, HistoryArgs, LogsArgs, RebootArgs, RollbackArgs, StatusArgs, TopArgs,
     WatchArgs,
 };
@@ -47,6 +47,8 @@ pub enum Command {
     History(HistoryArgs),
     /// Cancel queued or running jobs before they activate
     Cancel(CancelArgs),
+    /// Have machines look up the ref they follow now, and catch up if it moved
+    CatchUp(CatchUpArgs),
     /// Switch a machine back to an earlier generation
     Rollback(RollbackArgs),
     /// List a machine's system generations
