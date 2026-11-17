@@ -45,6 +45,9 @@ jobs:
     name: nix ${{ matrix.system }}
     if: github.event_name == 'pull_request' || inputs.nix
     runs-on: ${{ matrix.runner }}
+    # a full check takes under 25 minutes; a hung one would otherwise hold the runner
+    # for GitHub's six-hour limit
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -74,6 +77,14 @@ jobs:
             # nix builds one derivation at a time unless told otherwise
             max-jobs = auto
             system-features = nixos-test benchmark big-parallel kvm
+      # The test suite evaluates with nixpkgs' nix against this unsandboxed single-user
+      # store, which the nix running the build holds open the whole time. A test nix whose
+      # store schema is newer than the store's waits forever for exclusive access to
+      # migrate it, so the build runs on that same nix, which migrates the store up front.
+      - name: Build with the nix the tests run
+        run: |
+          nix=$(nix build --inputs-from . --no-link --print-out-paths 'nixpkgs#nix^out')
+          echo "$nix/bin" >> "$GITHUB_PATH"
       # The Rust dependency build that release.yml saved on main, when it matches exactly.
       - name: Locate the Rust dependency build
         id: deps
