@@ -1,3 +1,4 @@
+// timing probe: changes the coeus crate and nothing it depends on
 extern crate self as coeus;
 
 pub mod adopt;
