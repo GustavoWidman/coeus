@@ -95,7 +95,10 @@ fn waits_a_moment_after_starting_before_the_first_look() {
     let start = Timestamp(1_000_000);
     let schedule = Schedule::new(INTERVAL, start);
 
-    assert!(!schedule.due(start), "the first look waits for coeusd to settle");
+    assert!(
+        !schedule.due(start),
+        "the first look waits for coeusd to settle"
+    );
     assert!(schedule.due(start.after(Schedule::SETTLE)));
 }
 
@@ -111,7 +114,11 @@ fn looks_again_sooner_after_a_failure_and_backs_off_up_to_the_interval() {
 
     schedule.succeeded(now);
     assert_eq!(schedule.until(now), INTERVAL);
-    assert_eq!(schedule.failed(now), Schedule::RETRY, "a success starts over");
+    assert_eq!(
+        schedule.failed(now),
+        Schedule::RETRY,
+        "a success starts over"
+    );
 }
 
 #[test]

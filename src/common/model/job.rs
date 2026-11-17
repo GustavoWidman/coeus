@@ -116,7 +116,11 @@ impl fmt::Display for Outcome {
             Self::Superseded { by } => write!(f, "superseded by {by}"),
             Self::Interrupted => f.write_str("interrupted"),
             Self::RolledBack(failure) => {
-                write!(f, "rolled back after {}: {}", failure.phase, failure.message)
+                write!(
+                    f,
+                    "rolled back after {}: {}",
+                    failure.phase, failure.message
+                )
             }
         }
     }

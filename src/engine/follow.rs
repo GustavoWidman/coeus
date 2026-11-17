@@ -35,7 +35,10 @@ impl Follower {
     /// follows `settings.git_ref`, looking it up on a task of its own
     pub fn spawn(repo: FlakeRepo, settings: FollowSettings) -> Result<Self> {
         if !valid_ref(&settings.git_ref) {
-            bail!("cannot follow {:?}: not a branch or tag name", settings.git_ref);
+            bail!(
+                "cannot follow {:?}: not a branch or tag name",
+                settings.git_ref
+            );
         }
 
         let git_ref = settings.git_ref.clone();
@@ -67,9 +70,7 @@ impl Follower {
     pub fn behind(&self, deployed: Option<&Deployed<'_>>) -> Option<Source> {
         let latest = self.latest.borrow();
         let latest = latest.as_ref()?;
-        holds(latest, deployed)
-            .not()
-            .then(|| latest.clone().into())
+        holds(latest, deployed).not().then(|| latest.clone().into())
     }
 
     pub fn state(&self, deployed: Option<&Deployed<'_>>) -> Follow {
@@ -86,9 +87,8 @@ impl Follower {
 }
 
 fn holds(latest: &Pinned, deployed: Option<&Deployed<'_>>) -> bool {
-    deployed.is_some_and(|deployed| {
-        runs(latest, deployed.source) || latest.committed_at <= deployed.at
-    })
+    deployed
+        .is_some_and(|deployed| runs(latest, deployed.source) || latest.committed_at <= deployed.at)
 }
 
 fn runs(latest: &Pinned, source: Option<&Source>) -> bool {
