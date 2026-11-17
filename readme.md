@@ -196,6 +196,14 @@ canaries go first, and the rest only follow if they succeed. a failed machine fa
 - shutting the machine down while it fetches or builds only pauses the catch-up: the job runs again after the next boot, keeping whatever it already built.
 - a machine switched by hand after `deployed` last moved keeps what it runs until the fleet moves on.
 
+every successful lookup, scheduled or asked for, rewrites `/run/coeus/follow.json` (`/var/run/coeus/follow.json` on macos, `follow.stateFile` in the module, `null` to turn it off), readable by every user and replaced whole, so a program on the machine can act on what the whole fleet has rolled out:
+
+```json
+{ "ref": "deployed", "rev": "<40 hex digits>", "committed": 1794942959, "checked": 1794943200 }
+```
+
+`committed` is the commit's time, exactly the flake's `lastModified`, and `checked` when the lookup succeeded, both in unix seconds. a failed lookup leaves the file as it was, so `checked` only ages while the repository is out of reach, and a reader should stop trusting a file it last checked long ago. a write that fails is logged and changes nothing else. a dns reconciler like norn, for example, deletes a record shared by the fleet only once `committed` is at least the `lastModified` of the configuration that dropped it.
+
 ## how a deployment runs
 
 each job is a directory under `/var/lib/coeus/jobs` holding its order, an append-only log and, once finished, a summary. `coeusd` hands the job to a runner it starts through the service manager, a transient systemd unit or a transient launchd job, so the runner survives `coeusd` restarting, crashing or replacing itself with a newer version in the middle of a switch. the runner:
