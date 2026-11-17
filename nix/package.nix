@@ -5,6 +5,7 @@
   git,
   nix,
   ps,
+  stdenv,
 }:
 let
   root = ../.;
@@ -114,6 +115,11 @@ craneLib.buildPackage (
             export HOME="$TMPDIR/home"
             mkdir -p "$HOME"
           '';
+          # the kill tests rerun the bootstrap from every point it can stop at, each
+          # starting thousands of git and nix processes, and a macOS runner starts a
+          # process about fifteen times as slowly as a Linux one. the bootstrap has no
+          # platform-specific code, so they run on Linux alone.
+          cargoTestExtraArgs = lib.optionalString stdenv.hostPlatform.isDarwin "-- --skip bootstrap::test::run::kill::";
         }
       );
       clippy = craneLib.cargoClippy (checkArgs // { cargoClippyExtraArgs = "--all-targets"; });
