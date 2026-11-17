@@ -18,12 +18,15 @@ let
     lib.recursiveUpdate {
       key_file = cfg.keyFile;
       ssh_key_file = cfg.sshKeyFile;
+      follow = lib.mapNullable (follow: {
+        inherit (follow) ref interval;
+        state_file = follow.stateFile;
+      }) cfg.follow;
       inherit (cfg)
         flake
         hostname
         listen
         history
-        follow
         guard
         notify
         ;
@@ -96,6 +99,23 @@ in
             interval = mkOption {
               type = types.str;
               default = "15m";
+            };
+            stateFile = mkOption {
+              type = types.nullOr types.str;
+              default =
+                if pkgs.stdenv.hostPlatform.isDarwin then
+                  "/var/run/coeus/follow.json"
+                else
+                  "/run/coeus/follow.json";
+              defaultText = lib.literalMD ''`"/run/coeus/follow.json"`, or `"/var/run/coeus/follow.json"` on darwin'';
+              description = ''
+                A JSON file coeusd rewrites after every successful lookup with
+                where the ref points (`ref`, `rev`), its commit time
+                (`committed`, the flake's `lastModified`) and when it was last
+                looked up (`checked`), both in unix seconds, for programs on
+                the machine. A failed lookup leaves it as it was. Nothing is
+                written when null.
+              '';
             };
           };
         }
