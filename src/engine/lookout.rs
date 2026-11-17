@@ -1,13 +1,21 @@
-use std::time::Duration;
+use std::{
+    fs::{self, Permissions},
+    io::Write,
+    os::unix::fs::PermissionsExt,
+    path::Path,
+    time::Duration,
+};
 
+use eyre::Result;
 use log::warn;
+use serde::Serialize;
 use tokio::{
     sync::{mpsc, oneshot, watch},
     time,
 };
 
 use crate::{
-    common::model::{Pinned, Timestamp},
+    common::model::{CommitSha, Pinned, Timestamp},
     config::FollowSettings,
     nix::FlakeRepo,
 };
@@ -70,9 +78,9 @@ impl Schedule {
 pub(super) type Ask = oneshot::Sender<Result<Pinned, String>>;
 
 /// looks up the followed ref on its own task, so a network that is down or
-/// slow never holds up the engine, and publishes every commit it resolves.
-/// it looks when its schedule says so and whenever someone asks, and stops
-/// once nobody listens.
+/// slow never holds up the engine, and publishes every commit it resolves,
+/// to the engine and to the state file when one is set. it looks when its
+/// schedule says so and whenever someone asks, and stops once nobody listens.
 pub(super) struct Lookout {
     repo: FlakeRepo,
     settings: FollowSettings,
@@ -85,14 +93,16 @@ impl Lookout {
     /// the longest nap between glances at the wall clock
     const NAP: Duration = Duration::from_secs(5);
 
+    /// starts looking, on the schedule of a lookout that started at `started`
     pub fn spawn(
         repo: FlakeRepo,
         settings: FollowSettings,
+        started: Timestamp,
     ) -> (watch::Receiver<Option<Pinned>>, mpsc::UnboundedSender<Ask>) {
         let (latest, receiver) = watch::channel(None);
         let (asks, asked) = mpsc::unbounded_channel();
         let lookout = Self {
-            schedule: Schedule::new(settings.interval, Timestamp::now()),
+            schedule: Schedule::new(settings.interval, started),
             repo,
             settings,
         };
@@ -126,6 +136,9 @@ impl Lookout {
 
             let found = self.look().await;
             if let Ok(pinned) = &found {
+                if let Some(path) = &self.settings.state_file {
+                    publish(path, pinned, Timestamp::now());
+                }
                 latest.send_replace(Some(pinned.clone()));
             }
             for ask in waiting {
@@ -152,4 +165,48 @@ impl Lookout {
         );
         Err(error)
     }
+}
+
+/// what the state file holds: where the followed ref points and when that
+/// was last confirmed
+#[derive(Serialize)]
+struct Published<'a> {
+    #[serde(rename = "ref")]
+    git_ref: &'a str,
+    rev: CommitSha,
+    /// the commit time in unix seconds, exactly the flake's `lastModified`
+    committed: i64,
+    /// when the lookup succeeded, in unix seconds
+    checked: i64,
+}
+
+/// writes where `pinned` points to `path`, replacing it whole so a reader
+/// never sees half a file. a failure only warns: the file goes stale and
+/// readers stop trusting it.
+pub(super) fn publish(path: &Path, pinned: &Pinned, checked: Timestamp) {
+    let published = Published {
+        git_ref: &pinned.git_ref,
+        rev: pinned.rev,
+        committed: pinned.committed_at.as_secs(),
+        checked: checked.as_secs(),
+    };
+    if let Err(error) = replace(path, &published) {
+        warn!("cannot write {}: {error}", path.display());
+    }
+}
+
+fn replace(path: &Path, published: &Published<'_>) -> Result<()> {
+    let dir = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        _ => Path::new("."),
+    };
+    fs::create_dir_all(dir)?;
+
+    let mut file = tempfile::Builder::new().tempfile_in(dir)?;
+    serde_json::to_writer(&mut file, published)?;
+    file.write_all(b"\n")?;
+    file.as_file()
+        .set_permissions(Permissions::from_mode(0o644))?;
+    file.persist(path)?;
+    Ok(())
 }

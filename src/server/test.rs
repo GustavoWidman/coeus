@@ -9,7 +9,7 @@ use crate::{
         Action, AttachFrame, JobEvent, JobId, JobSelector, JobState, NixOptions, Order, OrderId,
         Origin, Outcome, Placement, Source,
     },
-    config::{ClientSettings, Endpoint, Key},
+    config::{ClientSettings, Endpoint, FollowSettings, Key},
     testing::{GitFlake, Harness},
 };
 
@@ -228,7 +228,12 @@ async fn catching_up_looks_the_followed_ref_up_at_once() {
         return;
     }
 
-    let harness = Harness::following(tempfile::tempdir().unwrap(), repo.url(), "deployed").await;
+    let follow = FollowSettings {
+        git_ref: "deployed".into(),
+        interval: Duration::from_secs(15 * 60),
+        state_file: None,
+    };
+    let harness = Harness::following(tempfile::tempdir().unwrap(), repo.url(), follow).await;
     let served = Served::serve(harness).await;
 
     let first = served.client().await.catch_up().await.unwrap();

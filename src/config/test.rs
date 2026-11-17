@@ -19,9 +19,20 @@ fn the_daemon_example_parses() {
 
     assert_eq!(settings.flake, "git+https://github.com/GustavoWidman/nix");
     assert_eq!(settings.listen.port(), DEFAULT_PORT);
-    assert_eq!(settings.follow.unwrap().git_ref, "deployed");
+    let follow = settings.follow.unwrap();
+    assert_eq!(follow.git_ref, "deployed");
+    assert_eq!(
+        follow.state_file.unwrap(),
+        Path::new("/run/coeus/follow.json")
+    );
     assert_eq!(settings.guard.timeout.as_secs(), 120);
     assert!(settings.notify.is_none());
+}
+
+#[test]
+fn a_follow_without_a_state_file_publishes_nothing() {
+    let follow: FollowSettings = toml::from_str(r#"ref = "deployed""#).unwrap();
+    assert_eq!(follow.state_file, None);
 }
 
 #[test]

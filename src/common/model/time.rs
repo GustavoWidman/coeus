@@ -22,6 +22,11 @@ impl Timestamp {
         Self(self.0.saturating_add(duration.as_millis() as i64))
     }
 
+    /// whole unix seconds, rounded down
+    pub fn as_secs(self) -> i64 {
+        self.0.div_euclid(1000)
+    }
+
     pub fn elapsed(self) -> Duration {
         self.until(Self::now())
     }
