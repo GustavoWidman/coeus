@@ -40,7 +40,10 @@ jobs:
   # Every system the fleet runs. macOS compiles the platform code Linux never does:
   # launchd runners, the launcher that holds Full Disk Access, and its probe. The NixOS
   # VM test boots on x86_64-linux; the module and the daemon it boots are the same on
-  # aarch64-linux, which builds every other check.
+  # aarch64-linux, which builds every other check. macOS skips the package: beside the
+  # tests and clippy it would compile coeus a third time on a three-core runner, while
+  # the tests compile and link the same crate, clippy checks every target, and the
+  # release builds the package before it publishes it.
   nix:
     name: nix ${{ matrix.system }}
     if: github.event_name == 'pull_request' || inputs.nix
@@ -58,9 +61,11 @@ jobs:
           - system: aarch64-linux
             runner: ubuntu-24.04-arm
             vm: false
+            skip: '[ "nixos" ]'
           - system: aarch64-darwin
             runner: macos-15
             vm: false
+            skip: '[ "coeus" ]'
     steps:
       - uses: actions/checkout@v5
       - name: Enable KVM
@@ -99,18 +104,19 @@ jobs:
           save: false
       - if: steps.deps-cache.outputs.hit-primary-key == 'true'
         run: .github/scripts/deps-cache import "${{ steps.deps.outputs.path }}"
-      - if: matrix.vm || runner.os != 'Linux'
+      - if: matrix.vm
         run: nix flake check --print-build-logs
-      - name: Build every check but the VM test
-        if: ${{ !matrix.vm && runner.os == 'Linux' }}
+      - name: Build every check but the skipped ones
+        if: ${{ !matrix.vm }}
         env:
           SYSTEM: ${{ matrix.system }}
+          SKIP: ${{ matrix.skip }}
         run: |
-          names=$(nix eval --json ".#checks.$SYSTEM" \
-            --apply 'checks: builtins.attrNames (removeAttrs checks [ "nixos" ])' |
-            jq -r --arg system "$SYSTEM" '.[] | ".#checks.\($system).\(.)"')
-          mapfile -t checks <<< "$names"
-          nix build --print-build-logs "${checks[@]}"
+          names=$(nix eval --raw ".#checks.$SYSTEM" \
+            --apply "checks: toString (builtins.attrNames (removeAttrs checks $SKIP))")
+          set --
+          for name in $names; do set -- "$@" ".#checks.$SYSTEM.$name"; done
+          nix build --print-build-logs "$@"
       # Records the tree that passed, so the release run of the same tree on main can reuse
       # this check (see .github/scripts/checked-tree). On a pull request this is the merge
       # of the head into the base. The run must succeed as a whole, every system included,
