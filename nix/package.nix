@@ -21,6 +21,8 @@ let
       fileset = sources;
     };
     strictDeps = true;
+    # changes every derivation, so CI builds them all instead of fetching them
+    COEUS_TIMING_PROBE = "2026-11-17";
   };
 
   cargoVendorDir = craneLib.vendorCargoDeps args;
