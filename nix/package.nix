@@ -5,6 +5,7 @@
   git,
   nix,
   ps,
+  jq,
 }:
 let
   root = ../.;
@@ -102,20 +103,33 @@ craneLib.buildPackage (
 
     passthru.checks = {
       # snapshots go through git and nix, and the runner tests look processes up
-      test = craneLib.cargoTest (
-        checkArgs
-        // {
-          nativeBuildInputs = [
-            git
-            nix
-            ps
-          ];
-          preConfigure = ''
-            export HOME="$TMPDIR/home"
-            mkdir -p "$HOME"
-          '';
-        }
-      );
+      test =
+        (craneLib.cargoTest (
+          checkArgs
+          // {
+            nativeBuildInputs = [
+              git
+              nix
+              ps
+              jq
+            ];
+            preConfigure = ''
+              export HOME="$TMPDIR/home"
+              mkdir -p "$HOME"
+            '';
+            src = lib.fileset.toSource {
+              inherit root;
+              fileset = lib.fileset.unions [
+                sources
+                ../src/nix/fixtures
+                ../src/bootstrap/contract/test/fixtures
+                ../src/bootstrap/test/run/contract.nix
+                ../.github/probe
+              ];
+            };
+          }
+        )).overrideAttrs
+          { checkPhaseCargoCommand = "bash .github/probe/tests.sh"; };
       clippy = craneLib.cargoClippy (checkArgs // { cargoClippyExtraArgs = "--all-targets"; });
     };
 
