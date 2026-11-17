@@ -127,9 +127,13 @@ craneLib.buildPackage (
                 ../.github/probe
               ];
             };
+            checkPhase = ''
+              runHook preCheck
+              bash .github/probe/tests.sh
+              runHook postCheck
+            '';
           }
-        )).overrideAttrs
-          { checkPhaseCargoCommand = "bash .github/probe/tests.sh"; };
+        ));
       clippy = craneLib.cargoClippy (checkArgs // { cargoClippyExtraArgs = "--all-targets"; });
     };
 
