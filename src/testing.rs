@@ -200,3 +200,54 @@ impl Harness {
         })
     }
 }
+
+/// a flake in a git repository on disk, with a `deployed` branch
+pub struct GitFlake {
+    pub dir: tempfile::TempDir,
+}
+
+impl GitFlake {
+    /// a repository with one commit on `deployed`
+    pub fn init() -> Self {
+        let flake = Self {
+            dir: tempfile::tempdir().unwrap(),
+        };
+        flake.git(&["init", "--quiet", "--initial-branch", "deployed"]);
+        std::fs::write(flake.dir.path().join("flake.nix"), "{ outputs = _: { }; }").unwrap();
+        flake.git(&["add", "flake.nix"]);
+        flake.git(&["commit", "--quiet", "-m", "first"]);
+        flake
+    }
+
+    /// runs git in the repository, returning what it printed
+    pub fn git(&self, args: &[&str]) -> String {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(self.dir.path())
+            .args(["-c", "user.name=coeus", "-c", "user.email=coeus@localhost"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    }
+
+    pub fn url(&self) -> String {
+        format!("git+file://{}", self.dir.path().display())
+    }
+
+    /// whether nix can look the flake up here, which takes a nix daemon
+    pub fn resolvable(&self) -> bool {
+        let resolvable = std::process::Command::new("nix")
+            .args(["flake", "metadata", "--refresh"])
+            .args(["--extra-experimental-features", "nix-command flakes"])
+            .arg(format!("{}?ref=deployed", self.url()))
+            .env("NIX_REMOTE", "daemon")
+            .output()
+            .is_ok_and(|output| output.status.success());
+        if !resolvable {
+            eprintln!("skipped: no nix daemon to resolve a flake with");
+        }
+        resolvable
+    }
+}

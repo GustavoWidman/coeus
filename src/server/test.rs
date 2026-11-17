@@ -10,7 +10,7 @@ use crate::{
         Origin, Outcome, Placement, Source,
     },
     config::{ClientSettings, Endpoint, Key},
-    testing::Harness,
+    testing::{GitFlake, Harness},
 };
 
 struct Served {
@@ -223,45 +223,20 @@ async fn a_machine_that_follows_nothing_cannot_catch_up() {
 
 #[tokio::test]
 async fn catching_up_looks_the_followed_ref_up_at_once() {
-    let repo = tempfile::tempdir().unwrap();
-    let git = |args: &[&str]| {
-        let output = std::process::Command::new("git")
-            .arg("-C")
-            .arg(repo.path())
-            .args(["-c", "user.name=coeus", "-c", "user.email=coeus@localhost"])
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{output:?}");
-        String::from_utf8(output.stdout).unwrap().trim().to_owned()
-    };
-    git(&["init", "--quiet", "--initial-branch", "deployed"]);
-    std::fs::write(repo.path().join("flake.nix"), "{ outputs = _: { }; }").unwrap();
-    git(&["add", "flake.nix"]);
-    git(&["commit", "--quiet", "-m", "first"]);
-
-    let flake = format!("git+file://{}", repo.path().display());
-    let resolvable = std::process::Command::new("nix")
-        .args(["flake", "metadata", "--refresh"])
-        .args(["--extra-experimental-features", "nix-command flakes"])
-        .arg(format!("{flake}?ref=deployed"))
-        .env("NIX_REMOTE", "daemon")
-        .output()
-        .is_ok_and(|output| output.status.success());
-    if !resolvable {
-        eprintln!("skipped: no nix daemon to resolve a flake with");
+    let repo = GitFlake::init();
+    if !repo.resolvable() {
         return;
     }
 
-    let harness = Harness::following(tempfile::tempdir().unwrap(), flake, "deployed").await;
+    let harness = Harness::following(tempfile::tempdir().unwrap(), repo.url(), "deployed").await;
     let served = Served::serve(harness).await;
 
     let first = served.client().await.catch_up().await.unwrap();
-    assert_eq!(first.rev.to_string(), git(&["rev-parse", "HEAD"]));
+    assert_eq!(first.rev.to_string(), repo.git(&["rev-parse", "HEAD"]));
 
-    git(&["commit", "--quiet", "--allow-empty", "-m", "second"]);
+    repo.git(&["commit", "--quiet", "--allow-empty", "-m", "second"]);
     let second = served.client().await.catch_up().await.unwrap();
-    let head = git(&["rev-parse", "HEAD"]);
+    let head = repo.git(&["rev-parse", "HEAD"]);
     assert_eq!(second.rev.to_string(), head, "a second ask looks again");
 
     served
