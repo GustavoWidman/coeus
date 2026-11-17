@@ -124,6 +124,11 @@ pub struct FollowSettings {
     /// how often to look for a newer commit
     #[serde(with = "humantime_serde", default = "FollowSettings::default_interval")]
     pub interval: Duration,
+
+    /// a file rewritten after every successful lookup with where the ref
+    /// points, for programs on the machine; none is written when unset
+    #[serde(default)]
+    pub state_file: Option<PathBuf>,
 }
 
 impl FollowSettings {

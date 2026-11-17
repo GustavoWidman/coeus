@@ -115,12 +115,12 @@ impl Harness {
         Self::launch(state, release, "git+https://example.com/nix".into(), None).await
     }
 
-    /// an engine that follows `git_ref` of the repository at `flake`
-    pub async fn following(state: tempfile::TempDir, flake: String, git_ref: &str) -> Self {
-        let follow = FollowSettings {
-            git_ref: git_ref.to_owned(),
-            interval: Duration::from_secs(15 * 60),
-        };
+    /// an engine that follows a ref of the repository at `flake`
+    pub async fn following(
+        state: tempfile::TempDir,
+        flake: String,
+        follow: FollowSettings,
+    ) -> Self {
         Self::launch(state, std::sync::Arc::default(), flake, Some(follow)).await
     }
 

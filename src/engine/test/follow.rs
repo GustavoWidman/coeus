@@ -137,6 +137,7 @@ async fn refuses_to_follow_what_is_not_a_branch_or_tag() {
     let settings = |git_ref: &str| FollowSettings {
         git_ref: git_ref.into(),
         interval: INTERVAL,
+        state_file: None,
     };
     let repo = || FlakeRepo::new("git+https://example.com/nix");
 

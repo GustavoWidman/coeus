@@ -42,7 +42,7 @@ impl Follower {
         }
 
         let git_ref = settings.git_ref.clone();
-        let (latest, asks) = Lookout::spawn(repo, settings);
+        let (latest, asks) = Lookout::spawn(repo, settings, Timestamp::now());
         Ok(Self {
             git_ref,
             latest,

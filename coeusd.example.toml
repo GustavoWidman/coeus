@@ -33,6 +33,12 @@ launcher = "/Library/Application Support/coeus/coeus-launcher"
 [settings.follow]
 ref = "deployed"
 interval = "15m"
+# rewritten after every successful lookup, for programs on the machine:
+# { "ref": "deployed", "rev": "<commit>", "committed": <unix seconds>,
+#   "checked": <unix seconds> }, `committed` being the flake's `lastModified`
+# and `checked` when the lookup succeeded. a failed lookup leaves it as it
+# was, so `checked` ages. unset, nothing is written
+state_file = "/run/coeus/follow.json"
 
 # after activating, require the machine to stay reachable or roll back
 [settings.guard]
