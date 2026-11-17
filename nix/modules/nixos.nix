@@ -8,6 +8,7 @@ let
   cfg = config.services.coeus;
   port = lib.toInt (lib.last (lib.splitString ":" cfg.listen));
   tailscale = lib.optional config.services.tailscale.enable "tailscaled.service";
+  stateFile = if cfg.follow == null then null else cfg.follow.stateFile;
 in
 {
   options.services.coeus.openFirewall = lib.mkOption {
@@ -41,6 +42,13 @@ in
         RestartSec = 2;
         StateDirectory = "coeus";
         StateDirectoryMode = "0700";
+      }
+      // lib.optionalAttrs (stateFile != null && lib.hasPrefix "/run/coeus/" stateFile) {
+        # readable by every user, and kept across restarts: coeusd restarts
+        # within the switch that upgrades it, while the file's readers may run
+        RuntimeDirectory = "coeus";
+        RuntimeDirectoryMode = "0755";
+        RuntimeDirectoryPreserve = "yes";
       };
     };
 

@@ -4,6 +4,7 @@
 
   nodes.machine = {
     imports = [ self.nixosModules.default ];
+    programs.git.enable = true;
 
     environment.etc = {
       "coeus-test/key".text = "4c1f0e3b8a2d5c7e9f6a1b3d5e7f9a2c4e6b8d0f1a3c5e7b9d2f4a6c8e0b1d3f";
@@ -19,7 +20,8 @@
     services.coeus = {
       enable = true;
       keyFile = "/etc/coeus-test/key";
-      flake = "git+https://example.invalid/nix";
+      flake = "git+file:///var/fleet";
+      follow.ref = "deployed";
       hosts.loopback = {
         address = "127.0.0.1";
         tags = [ "test" ];
@@ -38,6 +40,26 @@
     assert status[0]["view"]["host"]["hostname"] == "machine", status
     machine.succeed("coeus status @test")
     machine.succeed("coeus doctor loopback")
+
+    # a lookup publishes where the followed ref points, readable by everyone
+    machine.succeed(
+        "git init --quiet --initial-branch deployed /var/fleet",
+        "echo '{ outputs = _: { }; }' > /var/fleet/flake.nix",
+        "git -C /var/fleet add flake.nix",
+        "git -C /var/fleet -c user.name=coeus -c user.email=coeus@localhost commit --quiet -m first",
+    )
+    machine.succeed("coeus catch-up loopback")
+    published = json.loads(machine.succeed("cat /run/coeus/follow.json"))
+    assert published["ref"] == "deployed", published
+    assert published["rev"] == machine.succeed("git -C /var/fleet rev-parse HEAD").strip(), published
+    assert published["committed"] == int(machine.succeed("git -C /var/fleet log -1 --format=%ct")), published
+    assert machine.succeed("stat -c %a /run/coeus /run/coeus/follow.json").split() == ["755", "644"]
+    machine.succeed("su nobody -s /bin/sh -c 'cat /run/coeus/follow.json'")
+
+    # a restart, as in the switch that upgrades coeus, keeps it
+    machine.succeed("systemctl restart coeusd.service")
+    machine.succeed("test -f /run/coeus/follow.json")
+    machine.wait_for_open_port(45729)
 
     # another fleet key never gets past the handshake
     refused = machine.fail("coeus --config /etc/coeus-test/wrong-key.toml status loopback 2>&1")
