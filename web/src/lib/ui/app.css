@@ -1162,6 +1162,22 @@ button.vrow {
 .ln.k .tx {
 	color: var(--ok);
 }
+.logbody {
+	overflow-anchor: none;
+}
+.logbody > .empty {
+	padding: 4px 20px;
+	font-family: var(--f);
+}
+/* a phase's space is padding rather than margin, so each line measures what it takes */
+.logbody .ln.p {
+	margin: 0;
+	padding-top: 8px;
+	padding-bottom: 8px;
+}
+.logbody .ln.pp {
+	padding-top: 0;
+}
 .jump {
 	position: absolute;
 	left: 50%;
