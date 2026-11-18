@@ -20,7 +20,7 @@
 
 <a class="dep tap" href={href({ screen: 'deployment', order: d.order })}>
 	<Label a="Deployment">
-		{#if d.settled_at}done{:else}<Tick v={clk(now.ms - d.ordered_at)} />{/if}
+		{#if d.settled_at}done{:else}<Tick still v={clk(now.ms - d.ordered_at)} />{/if}
 	</Label>
 	<div class="dep-h">
 		<span class="src">{source(d.source)}</span><span class="st">

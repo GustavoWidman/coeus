@@ -52,6 +52,7 @@
 <section class="sec" data-key="run-{job.id}" in:enter out:ghost>
 	<Label a={running ? 'Running' : 'Starting'}>
 		#{job.id} · {#if running && job.started_at !== null}<Tick
+				still
 				v={clk(now.ms - job.started_at)}
 			/>{:else}queued{/if}
 	</Label>
@@ -72,6 +73,7 @@
 				<li class="ph {cl}" data-s={cl || 'todo'} {@attach pulse(cl)}>
 					<i><b></b></i><span>{name}</span><span class="mono">
 						{#if cl === 'cur' && job.phase_started_at !== null}<Tick
+								still
 								v={clk(now.ms - job.phase_started_at)}
 							/>{:else if cl === ''}—{/if}
 					</span>
