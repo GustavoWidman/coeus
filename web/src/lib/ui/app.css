@@ -629,6 +629,10 @@ code {
 .offline .rule > i {
 	background: var(--mute);
 }
+/* nothing is coming while every host is down, so the skeleton stops sweeping */
+.offline .sk::after {
+	animation: none;
+}
 
 /* machine screen */
 .sec {

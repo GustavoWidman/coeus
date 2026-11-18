@@ -1,7 +1,8 @@
 /**
  * The fleet's lifetime in the page: the kept fleet first, then the stream, which signs each
- * request with this device's session. A refused session sends the page to sign in and waits there until it does; a
- * session past a day old renews itself in the background whenever the page shows.
+ * request with this device's session. A refused session sends the page to sign in and waits
+ * there until it does; a session past a day old renews itself in the background whenever the
+ * page shows.
  */
 import { device, due } from '#lib/auth/device.ts';
 import { withFlip } from '#lib/motion/flip.ts';
@@ -12,7 +13,7 @@ import { keep, load } from './kept.ts';
 
 const changed = keep(() => (fleet.cached ? null : fleet.snapshot()));
 
-load().then((kept) => kept && fleet.restore(kept.snapshot));
+load().then((kept) => kept && fleet.restore(kept.snapshot, kept.savedAt));
 
 connect('/api/stream', {
 	events(events) {
@@ -21,8 +22,11 @@ connect('/api/stream', {
 		else apply();
 		changed();
 	},
-	link(state) {
-		fleet.link = state;
+	link(state, status) {
+		// the banner that says every host is down comes and goes between the rows it moves
+		if (fleet.ready && (state === 'down') !== (fleet.link === 'down'))
+			withFlip(() => fleet.setLink(state, status));
+		else fleet.setLink(state, status);
 	},
 	sign: (path) => device.headers('GET', path),
 	async refused() {

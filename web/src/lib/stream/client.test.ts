@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { split } from './client.ts';
+import { answer, split } from './client.ts';
 
 describe('split', () => {
 	test('reads each message with its id and data', () => {
@@ -26,5 +26,24 @@ describe('split', () => {
 
 	test('joins data lines, takes CRLF, and leaves a message without an id unnamed', () => {
 		expect(split('data: a\r\ndata: b\r\n\r\n').messages).toEqual([{ id: null, data: 'a\nb' }]);
+	});
+});
+
+describe('answer', () => {
+	const h = (o: Record<string, string> = {}) => new Headers(o);
+
+	test('opens on success and sends a refused session to sign in', () => {
+		expect(answer(200, h())).toBe('open');
+		expect(answer(401, h())).toBe('refused');
+	});
+
+	test('reads a 530, or the offline Worker marked 503, as every host down', () => {
+		expect(answer(530, h())).toBe('down');
+		expect(answer(503, h({ 'coeus-offline': '1' }))).toBe('down');
+	});
+
+	test('takes any other failure for this request alone', () => {
+		expect(answer(503, h())).toBe('failed');
+		expect(answer(502, h())).toBe('failed');
 	});
 });

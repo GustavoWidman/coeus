@@ -2,9 +2,13 @@
 	import { fleet } from '#lib/stream/fleet.svelte.ts';
 	import Dot from './Dot.svelte';
 
-	const live = $derived(fleet.link === 'live');
+	const tag = $derived(
+		fleet.link === 'live'
+			? ({ s: 'run', t: 'live' } as const)
+			: fleet.link === 'down'
+				? ({ s: 'stale', t: 'cached' } as const)
+				: ({ s: 'wait', t: 'connecting' } as const)
+	);
 </script>
 
-<span class="live">
-	<Dot s={live ? 'run' : 'wait'} beat={fleet.beat} />{live ? 'live' : 'connecting'}
-</span>
+<span class="live"><Dot s={tag.s} beat={fleet.beat} />{tag.t}</span>

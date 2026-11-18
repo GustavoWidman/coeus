@@ -6,6 +6,7 @@
 	import { fleet } from '#lib/stream/fleet.svelte.ts';
 	import { now } from '#lib/time/now.svelte.ts';
 	import Label from '#lib/ui/Label.svelte';
+	import Banner from './Banner.svelte';
 	import { boot } from './boot.svelte.ts';
 	import DeployStrip from './DeployStrip.svelte';
 	import MachineRow from './MachineRow.svelte';
@@ -38,6 +39,8 @@
 		return { asleep, lost };
 	});
 
+	const down = $derived(fleet.link === 'down');
+
 	const fade = (el: HTMLElement) => {
 		if (boot.faded && !reduced())
 			el.animate([{ opacity: 0.3 }, { opacity: 1 }], { duration: 200, easing: E });
@@ -48,11 +51,16 @@
 	<div class="lt">
 		<h1>Fleet</h1>
 		<p class="sub mono">
-			{fleet.machines.length} machines · {running} running{away.asleep
-				? ` · ${away.asleep} asleep`
-				: ''}{away.lost ? ` · ${away.lost} unreachable` : ''}
+			{#if down}
+				{fleet.machines.length} machines · last known state
+			{:else}
+				{fleet.machines.length} machines · {running} running{away.asleep
+					? ` · ${away.asleep} asleep`
+					: ''}{away.lost ? ` · ${away.lost} unreachable` : ''}
+			{/if}
 		</p>
 	</div>
+	{#if down}<Banner />{/if}
 	{#if deployment}<DeployStrip d={deployment} />{/if}
 	<Label a="Machines">{fleet.machines.length}</Label>
 	<ul class="rows" {@attach fade}>
@@ -62,14 +70,17 @@
 	</ul>
 	{#if !wide}
 		<div class="foot">
-			<span>served by {fleet.servedBy}</span><span>stream · {hms(now.ms)}</span>
+			<span>served by {fleet.servedBy}</span><span>
+				{down ? 'cached' : 'stream'} · {hms(now.ms)}
+			</span>
 		</div>
 	{/if}
 {:else if boot.view === 'skeleton'}
 	<div class="lt">
 		<h1>Fleet</h1>
-		<p class="sub mono">connecting…</p>
+		<p class="sub mono">{down ? 'no host answered' : 'connecting…'}</p>
 	</div>
+	{#if down}<Banner />{/if}
 	<Label a="Machines" />
 	<ul class="rows">
 		{#each SKELETON as [a, b], i (i)}

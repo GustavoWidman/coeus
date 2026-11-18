@@ -26,7 +26,12 @@ export type Engine = 'chromium' | 'webkit';
 export type Net =
 	| { url: string; hold: true }
 	| { url: string; abort: true }
-	| { url: string; status: number; headers?: Record<string, string>; body?: string };
+	| {
+			url: string;
+			status: number;
+			headers?: Record<string, string>;
+			body?: string;
+	  };
 
 /** A change to what the server streams, for states the simulated fleet never reaches. */
 export type Rewrite =
@@ -87,6 +92,7 @@ const worker: Net = {
 	headers: { 'content-type': 'application/json', 'coeus-offline': '1', 'retry-after': '15' },
 	body: '{"offline":true}'
 };
+
 // Signing in. A simulated fleet that lets anyone read it offers no sign-in address, so these
 // answer for one: lab's, on the tailnet.
 const START = 1_794_927_600_000;
@@ -393,13 +399,13 @@ export const STATES: State[] = [
 		reference: null
 	},
 
-	// all hosts down, over any screen
+	// all hosts down, over any screen, once this device has seen the fleet
 	{
 		screen: 'down',
 		name: 'from cache',
 		path: '/',
 		t: 10,
-		net: [down],
+		steps: [{ wait: 1000 }, { net: down }, { reload: true }, { wait: 500 }],
 		reference: { s: 'offline' }
 	},
 	{
@@ -415,8 +421,14 @@ export const STATES: State[] = [
 		name: 'recovering',
 		path: '/',
 		t: 10,
-		net: [down],
-		steps: [{ wait: 500 }, { restore: API }, { wait: 16_000 }],
+		steps: [
+			{ wait: 1000 },
+			{ net: down },
+			{ reload: true },
+			{ wait: 500 },
+			{ restore: API },
+			{ wait: 16_000 }
+		],
 		reference: null
 	}
 ];
