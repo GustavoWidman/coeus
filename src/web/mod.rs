@@ -4,6 +4,7 @@
 //! [derive] builds them from the domain, which stays the only source of truth.
 
 pub mod derive;
+pub mod transcript;
 pub mod view;
 
 #[cfg(test)]
