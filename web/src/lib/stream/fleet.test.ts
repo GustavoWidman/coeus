@@ -81,3 +81,26 @@ describe('Fleet', () => {
 		expect(f.deployments.map((d) => d.order)).toEqual(['2d2eef4459f7ebbf', 'old']);
 	});
 });
+
+describe('Fleet kept on the device', () => {
+	const kept = (over = {}) => snapshot(over) as Extract<FleetEvent, { kind: 'snapshot' }>;
+
+	test('shows a kept snapshot until the stream sends its own', () => {
+		const f = new Fleet();
+		f.restore(kept({ served_by: host('oracle-1') }));
+		expect(f.ready).toBe(true);
+		expect(f.cached).toBe(true);
+		expect(f.snapshot()?.served_by).toBe('oracle-1');
+		f.apply([snapshot()]);
+		expect(f.cached).toBe(false);
+		expect(f.servedBy).toBe('lab');
+	});
+
+	test('a kept snapshot never replaces what the stream sent', () => {
+		const f = new Fleet();
+		f.apply([snapshot()]);
+		f.restore(kept({ served_by: host('oracle-1') }));
+		expect(f.servedBy).toBe('lab');
+		expect(f.cached).toBe(false);
+	});
+});
