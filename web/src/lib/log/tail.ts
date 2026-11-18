@@ -10,6 +10,9 @@
  *
  * Each frame reads what the last one drew before it writes, while the layout still stands, so
  * following a log costs one layout per frame that adds lines.
+ *
+ * The list stands `aria-busy` while lines it was given wait to be drawn or the view glides to
+ * them, which is the only way anything outside can tell a log still settling from one at rest.
  */
 import { reduced } from '#lib/motion/reduced.ts';
 import { onScreen } from '#lib/motion/visible.ts';
@@ -53,6 +56,7 @@ export class Tail {
 	private unseen = 0;
 	private view = 0;
 	private scroll = 0;
+	private busy = false;
 	private resized: ResizeObserver;
 
 	constructor(
@@ -92,6 +96,7 @@ export class Tail {
 	grew(n: number, dropped: number) {
 		this.heights.splice(0, dropped);
 		this.added += n;
+		this.mark();
 		if (this.frame || this.timer) return;
 		// scrolled up, new lines only add to a count. Drawn here rather than in a frame
 		// callback, the lines are ready when the browser wakes to show them, not a frame later.
@@ -113,18 +118,29 @@ export class Tail {
 		if (reduced()) {
 			box.scrollTop = 1e9;
 			this.gliding = false;
+			this.mark();
 			return;
 		}
 		const end = box.scrollHeight - box.clientHeight;
 		// a long way is mostly skipped, so the smooth part only shows that it moved
 		if (end - box.scrollTop > 2 * box.clientHeight) box.scrollTop = end - box.clientHeight;
 		this.glide(end);
+		this.mark();
 	}
 
 	private glide(to: number) {
+		// a scroll to where the view already stands sends no scroll event to end the glide
+		if (Math.abs(this.box.scrollTop - to) < 1) return;
 		this.box.scrollTo({ top: to, behavior: 'smooth' });
 		this.target = to;
 		this.gliding = true;
+	}
+
+	private mark() {
+		const busy = this.added > 0 || this.gliding;
+		if (busy === this.busy) return;
+		this.busy = busy;
+		this.box.setAttribute('aria-busy', String(busy));
 	}
 
 	private see(n: number) {
@@ -136,6 +152,7 @@ export class Tail {
 	/** a person moving the log stops a glide */
 	private taken = () => {
 		this.gliding = false;
+		this.mark();
 	};
 
 	private scrolled = () => {
@@ -152,6 +169,11 @@ export class Tail {
 	}
 
 	private draw() {
+		this.layout();
+		this.mark();
+	}
+
+	private layout() {
 		const { box, list, log } = this;
 		const gone = log.gone;
 		const n = log.all.length;
