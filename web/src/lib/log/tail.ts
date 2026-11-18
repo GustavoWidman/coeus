@@ -21,8 +21,12 @@ const TOP = 10;
 const PAD = 8;
 /** how far from the end still counts as at the end */
 const NEAR = 48;
-/** new lines at the end show at most this often, as the fleet's progress does */
-const PACE = 250;
+/**
+ * New lines at the end show at most this often: often enough that while a log streams each
+ * glide runs into the next, so the compositor never stops between them only to start again a
+ * frame late.
+ */
+const PACE = 150;
 
 export class Tail {
 	/** each kept line's height: measured when positive, estimated when negative, unknown at 0 */
