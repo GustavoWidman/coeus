@@ -14,7 +14,7 @@ async function probe() {
 	clearTimeout(timer);
 	try {
 		const res = await fetch(location.href, { method: 'HEAD', cache: 'no-store' });
-		if (!res.headers.has('coeus-offline')) return location.reload();
+		if (res.ok && !res.headers.has('coeus-offline')) return location.reload();
 	} catch {}
 	probing = false;
 	checked = Date.now();

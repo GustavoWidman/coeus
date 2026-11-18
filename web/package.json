@@ -9,7 +9,7 @@
 		"dev": "vite",
 		"build": "vite build && bun scripts/compress.ts",
 		"preview": "vite preview",
-		"check": "svelte-check --tsconfig ./tsconfig.json",
+		"check": "svelte-check --tsconfig ./tsconfig.json && tsc -p src/service-worker",
 		"test": "vitest run",
 		"lint": "prettier --check .",
 		"format": "prettier --write ."

@@ -10,8 +10,6 @@
   mesa,
 }:
 let
-  root = ../web;
-
   sources = [
     ../web/package.json
     ../web/bun.lock
@@ -20,20 +18,27 @@ let
     ../web/vite.config.ts
     ../web/index.html
     ../web/scripts/compress.ts
+    ../web/scripts/service-worker.ts
     ../web/src
     ../web/static
+    # the offline page, which the service worker keeps a copy of
+    ../worker/offline.html
+    ../worker/offline.css
+    ../worker/offline.js
   ];
 
+  # the web sources sit beside the rest of the repository, and every build runs in web/
   source =
     extra:
     lib.fileset.toSource {
-      inherit root;
+      root = ../.;
       fileset = lib.fileset.unions (sources ++ extra);
     };
 
   common = {
     inherit version;
     bunDeps = bun2nix.fetchBunDeps { bunNix = ../web/.bun.nix; };
+    sourceRoot = "source/web";
     dontFixup = true;
   };
 
@@ -118,11 +123,7 @@ let
           common
           // {
             pname = "coeus-web-unit";
-            src = lib.fileset.toSource {
-              root = ../.;
-              fileset = lib.fileset.unions (sources ++ [ ../contract/web.json ]);
-            };
-            sourceRoot = "source/web";
+            src = source [ ../contract/web.json ];
             buildPhase = ''
               runHook preBuild
               bun --bun run test

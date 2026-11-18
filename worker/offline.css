@@ -116,6 +116,11 @@ h1 {
 	letter-spacing: 0.02em;
 	color: var(--ink2);
 }
+/* the copy the app's service worker keeps knows no hosts */
+.lbl:has(+ .hosts:empty),
+.hosts:empty {
+	display: none;
+}
 .hosts li {
 	display: flex;
 	align-items: center;
