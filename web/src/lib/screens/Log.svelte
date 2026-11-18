@@ -3,6 +3,7 @@
 	outside Svelte's reactivity: `Tail` draws the few on screen straight into the list.
 -->
 <script lang="ts">
+	import { device } from '#lib/auth/device.ts';
 	import { clk, dur, source } from '#lib/derive/format.ts';
 	import { OUTCOME_DOT, outcome } from '#lib/derive/status.ts';
 	import { Lines } from '#lib/log/lines.ts';
@@ -77,7 +78,8 @@
 				if (add.length) empty = false;
 			},
 			ended: (o) => (ended = o),
-			failed: (why) => (failed = why)
+			failed: (why) => (failed = why),
+			sign: (path) => device.headers('GET', path)
 		});
 		return () => {
 			stop();

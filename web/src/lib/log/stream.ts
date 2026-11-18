@@ -14,12 +14,15 @@ export interface LogListener {
 	ended(outcome: OutcomeView): void;
 	/** why the log cannot be read right now, or null once it can again */
 	failed(why: string | null): void;
+	/** the headers that prove this request's session */
+	sign(path: string): Promise<Record<string, string>>;
 }
 
 const DELAYS = [500, 1000, 2000, 5000, 10000];
 
 /** follows the log at `url` until the job ends; the answer stops following it */
 export function follow(url: string, on: LogListener): () => void {
+	const path = new URL(url, location.href);
 	let offset: string | null = null;
 	let stopped = false;
 	let failures = 0;
@@ -71,11 +74,9 @@ export function follow(url: string, on: LogListener): () => void {
 			if (stopped) return;
 			abort = new AbortController();
 			try {
-				const res = await fetch(url, {
-					headers: offset ? { 'Last-Event-ID': offset } : {},
-					cache: 'no-store',
-					signal: abort.signal
-				});
+				const headers = await on.sign(path.pathname + path.search);
+				if (offset) headers['last-event-id'] = offset;
+				const res = await fetch(url, { headers, cache: 'no-store', signal: abort.signal });
 				if (res.ok && res.body) {
 					failures = 0;
 					on.failed(null);
