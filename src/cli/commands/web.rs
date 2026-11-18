@@ -1,4 +1,5 @@
 use std::{
+    net::SocketAddr,
     os::unix::fs::{FileTypeExt, PermissionsExt},
     path::{Path, PathBuf},
 };
@@ -8,7 +9,7 @@ use clap::Args;
 use eyre::{Result, WrapErr, bail};
 use log::info;
 use tokio::{
-    net::UnixListener,
+    net::{TcpListener, UnixListener},
     signal::unix::{SignalKind, signal},
 };
 
@@ -18,6 +19,7 @@ use crate::{
     common::model::Hostname,
     config::WebSettings,
     web::{
+        fixture::{Fixture, Scenario},
         site::{Access, Settings, Site},
         source::Source,
     },
@@ -28,12 +30,34 @@ pub struct WebArgs {
     /// The built web app, served for every path outside /api
     #[arg(long, value_name = "DIR", env = "COEUS_WEB_DIR")]
     pub web_dir: Option<PathBuf>,
+
+    /// Serve a simulated fleet, open to anyone, instead of the real one; POST
+    /// /fixture/seek?t=<seconds>[&speed=<x>] moves its clock
+    #[arg(long, value_name = "SCENARIO")]
+    pub fixture: Option<Scenario>,
+
+    /// Where a simulated fleet is served
+    #[arg(
+        long,
+        value_name = "ADDRESS",
+        default_value = "127.0.0.1:7979",
+        requires = "fixture"
+    )]
+    pub listen: SocketAddr,
+
+    /// How fast a simulated fleet's clock runs; 0 holds it
+    #[arg(long, default_value_t = 1.0, requires = "fixture")]
+    pub speed: f64,
 }
 
 impl WebArgs {
     /// serves the fleet named in `config`, or in /etc/coeus/web.toml, on its
-    /// origin socket
+    /// origin socket, or a simulated one on a local port
     pub async fn run(self, config: Option<&Path>) -> Result<Exit> {
+        if let Some(scenario) = self.fixture {
+            return self.simulate(scenario).await;
+        }
+
         let settings = WebSettings::load(config.unwrap_or(Path::new(WebSettings::PATH)))?;
         let key = settings.client.key.load()?;
         let targets = Targets::select(&["@all".to_owned()], &settings.client)?;
@@ -61,6 +85,29 @@ impl WebArgs {
         info!("serving on {}", socket.display());
         serve(listener, site.router).await?;
         let _ = std::fs::remove_file(socket);
+        Ok(Exit::Success)
+    }
+
+    /// serves a simulated fleet, which never dials a coeusd
+    async fn simulate(self, scenario: Scenario) -> Result<Exit> {
+        let fixture = Fixture::new(scenario, self.speed);
+        let source = Source::Fixture(fixture.clone());
+        let site = Site::start(
+            fixture.hosts(),
+            source.clone(),
+            Settings {
+                web_dir: self.web_dir,
+                served_by: "lab".parse()?,
+                access: Access::Open(Fixture::viewer()),
+            },
+        );
+        source.feed(site.inputs.clone());
+
+        let listener = TcpListener::bind(self.listen)
+            .await
+            .wrap_err_with(|| format!("failed to listen on {}", self.listen))?;
+        info!("serving the {scenario:?} fixture on http://{}", self.listen);
+        serve(listener, site.router.merge(fixture.routes())).await?;
         Ok(Exit::Success)
     }
 }

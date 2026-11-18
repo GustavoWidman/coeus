@@ -5,10 +5,12 @@
 //!
 //! `coeus web` keeps one live copy of the fleet ([fleet]), streams it to
 //! browsers ([stream]) with job logs ([logs]) and closure diffs ([diffs]),
-//! and serves the built web app beside them ([site]).
+//! and serves the built web app beside them ([site]), from the real fleet or a
+//! simulated one ([fixture]).
 
 pub mod derive;
 pub mod diffs;
+pub mod fixture;
 pub mod fleet;
 pub mod logs;
 pub mod site;

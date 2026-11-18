@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc, oneshot, watch};
 
 use super::{
     derive,
@@ -111,6 +111,8 @@ pub enum Input {
     },
     /// a closure diff was read into the cache
     Diffed,
+    /// answered once everything sent before is published
+    Settled(oneshot::Sender<()>),
 }
 
 /// the only writer of [FleetState]
@@ -144,13 +146,21 @@ impl Aggregator {
         mut inputs: mpsc::Receiver<Input>,
         published: watch::Sender<Arc<FleetState>>,
     ) {
-        while let Some(input) = inputs.recv().await {
-            let mut changed = self.apply(input);
-            while let Ok(input) = inputs.try_recv() {
-                changed |= self.apply(input);
+        while let Some(first) = inputs.recv().await {
+            let mut changed = false;
+            let mut settled = Vec::new();
+            let batch = std::iter::once(first).chain(std::iter::from_fn(|| inputs.try_recv().ok()));
+            for input in batch {
+                match input {
+                    Input::Settled(reply) => settled.push(reply),
+                    input => changed |= self.apply(input),
+                }
             }
             if changed {
                 published.send_replace(Arc::new(self.state.clone()));
+            }
+            for reply in settled {
+                let _ = reply.send(());
             }
         }
     }
@@ -170,6 +180,9 @@ impl Aggregator {
                 }
             }
             Input::Diffed => self.deployments(),
+            Input::Settled(reply) => {
+                let _ = reply.send(());
+            }
         }
         self.state.seq != seq
     }
