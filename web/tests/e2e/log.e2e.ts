@@ -66,14 +66,14 @@ test('scrolled up, new lines are counted until the pill takes the log to its end
 	const page = await open(LOG, 10);
 	await expect(page.locator('.ln').first()).toBeVisible();
 	await page.locator('.logbody').evaluate((b) => b.scrollTo({ top: 0 }));
-	await expect(page.locator('.jump')).not.toHaveClass(/\bon\b/);
+	await expect(page.locator('.jump')).toBeHidden();
 	await fleet.seek(10, 1);
-	await expect(page.locator('.jump')).toHaveClass(/\bon\b/, { timeout: 10_000 });
+	await expect(page.locator('.jump')).toBeVisible({ timeout: 10_000 });
 	expect(Number(await page.locator('.jump .jn').textContent())).toBeGreaterThan(0);
 	await fleet.seek(13);
 	await page.locator('.jump').click();
 	await expect.poll(() => fromEnd(page)).toBeLessThan(48);
-	await expect(page.locator('.jump')).not.toHaveClass(/\bon\b/);
+	await expect(page.locator('.jump')).toBeHidden();
 });
 
 test('a deployment row opens into its diff, read only then', async ({ open }) => {

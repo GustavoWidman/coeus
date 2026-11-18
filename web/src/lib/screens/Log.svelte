@@ -8,6 +8,7 @@
 	import { Lines } from '#lib/log/lines.ts';
 	import { follow } from '#lib/log/stream.ts';
 	import { Tail } from '#lib/log/tail.ts';
+	import { reduced } from '#lib/motion/reduced.ts';
 	import { fleet } from '#lib/stream/fleet.svelte.ts';
 	import { now } from '#lib/time/now.svelte.ts';
 	import Dot from '#lib/ui/Dot.svelte';
@@ -42,6 +43,20 @@
 			return outcome(done).split(':')[0] + (took ? ` · ${dur(took)}` : '');
 		}
 		return job?.state.kind === 'running' ? job.state.phase : 'queued';
+	});
+
+	// hidden, the pill would still cost the compositor a layer, so it leaves the page once it
+	// has faded out, and comes back a frame before it fades in
+	let pill = $state<'gone' | 'off' | 'on'>('gone');
+	$effect(() => {
+		if (!unseen) {
+			if (pill === 'on') pill = reduced() ? 'gone' : 'off';
+			return;
+		}
+		if (pill === 'gone') {
+			pill = 'off';
+			requestAnimationFrame(() => requestAnimationFrame(() => unseen && (pill = 'on')));
+		} else pill = 'on';
 	});
 
 	let box: HTMLElement;
@@ -105,7 +120,14 @@
 		{/if}
 		<div class="lns" bind:this={list}></div>
 	</div>
-	<button type="button" class="jump" class:on={unseen > 0} onclick={() => tail?.jump()}>
+	<button
+		type="button"
+		class="jump"
+		class:on={pill === 'on'}
+		hidden={pill === 'gone'}
+		onclick={() => tail?.jump()}
+		ontransitionend={() => unseen || (pill = 'gone')}
+	>
 		↓ <span class="jn">{unseen}</span> new lines
 	</button>
 </div>

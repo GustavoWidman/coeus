@@ -1195,6 +1195,9 @@ button.vrow {
 		transform var(--t2) var(--e);
 	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
 }
+.jump[hidden] {
+	display: none;
+}
 .jump.on {
 	opacity: 1;
 	transform: translate(-50%, 0);
