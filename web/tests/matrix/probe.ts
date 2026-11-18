@@ -150,7 +150,7 @@ export function probe(config: ProbeConfig) {
 
 	// every animation started: CSS animations and transitions by their events, scripted ones
 	// through Element.animate
-	// one of 1 ms or less moves nothing: reduced motion shortens every transition to that
+	// one of 1 ms or less moves nothing: reduced motion shortens every animation to that
 	const note = (kind: string, property: string, at: string, duration: number) => {
 		if (duration <= 1) return;
 		const key = `${kind}|${property.replace(/[A-Z]/g, (c) => '-' + c.toLowerCase())}|${at}`;

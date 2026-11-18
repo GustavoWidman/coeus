@@ -1570,13 +1570,16 @@ button.vrow {
 	grid-template-columns: 348px minmax(0, 1fr) minmax(0, 1.15fr);
 }
 
+/* transitions take no time at all: every property of every element is `transition-property: all`
+   until a rule says otherwise, so any duration here would make each style a script writes,
+   a log's padding included, land a moment after the layout that reads it */
 @media (prefers-reduced-motion: reduce) {
 	*,
 	*::before,
 	*::after {
 		animation-duration: 1ms !important;
 		animation-iteration-count: 1 !important;
-		transition-duration: 1ms !important;
+		transition-duration: 0s !important;
 	}
 }
 @media (min-width: 640px) and (max-width: 1023px) {
