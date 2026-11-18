@@ -1061,7 +1061,14 @@ async function main(): Promise<Results> {
 
 	// tracing is one per browser, so each worker drives browsers of its own
 	const launch = async (): Promise<Record<Engine, Browser>> => ({
-		chromium: await chromium.launch({ channel: 'chromium' }),
+		chromium: await chromium.launch({
+			channel: 'chromium',
+			// chromium redraws only the changed part of a tile, and skia clips a curve's edges to
+			// the area it redraws, so a rounded corner's antialiasing would depend on which change
+			// last touched its tile, which depends on when each frame landed. whole-tile redraws make
+			// a screenshot depend only on the page, which the hashed linux screenshots need
+			args: process.platform === 'linux' ? ['--disable-partial-raster'] : []
+		}),
 		webkit: opt.engines.includes('webkit') ? await webkit.launch() : (null as unknown as Browser)
 	});
 	const browsers = await Promise.all(Array.from({ length: opt.workers }, launch));
