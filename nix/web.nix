@@ -75,6 +75,10 @@ let
           bun --bun run build
           bun --bun scripts/budget.ts
         '';
+        # fails when the built CSS animates anything but transform, opacity or clip-path
+        motion = check "motion" [ ../web/scripts/motion-lint.ts ] ''
+          bun --bun scripts/motion-lint.ts ${web}
+        '';
         # types and formatting
         check =
           check "check"

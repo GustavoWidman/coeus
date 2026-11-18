@@ -21,6 +21,7 @@
 		"@playwright/test": "^1.65.0",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
 		"@types/node": "^26.6.6",
+		"postcss": "^8.5.33",
 		"prettier": "^3.8.3",
 		"prettier-plugin-svelte": "^4.1.0",
 		"svelte": "^5.57.3",
