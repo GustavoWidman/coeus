@@ -135,9 +135,20 @@ test('a log of twenty thousand lines draws only the lines on screen', async ({
 	await page.route('**/api/machines/lab/jobs/61/log', (r) =>
 		r.fulfill({ contentType: 'text/event-stream', body })
 	);
+	// the most lines the page ever holds at once, not only once it settles
+	await page.addInitScript(() => {
+		const w = window as unknown as { most: number };
+		w.most = 0;
+		const lines = document.getElementsByClassName('ln');
+		new MutationObserver(() => (w.most = Math.max(w.most, lines.length))).observe(document, {
+			childList: true,
+			subtree: true
+		});
+	});
 	await open(LOG, 100);
 	const last = page.locator('.ln .no', { hasText: /^20000$/ });
 	await expect(last).toBeVisible();
+	expect(await page.evaluate(() => (window as unknown as { most: number }).most)).toBeLessThan(400);
 
 	const nodes = () =>
 		page.evaluate(() => {
