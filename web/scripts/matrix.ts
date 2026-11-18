@@ -491,7 +491,18 @@ async function route(ctx: BrowserContext, net: Net) {
 
 const seen = (page: Page) => page.evaluate(() => structuredClone(window.__matrix.seen));
 
-/** waits for fonts, the stream's first message, and every finite animation to end */
+/**
+ * How long every stream must have sent nothing before the page counts as at rest. A server
+ * sends what it holds back to back, a job's log in several batches, so the last of them is
+ * the one followed by this much silence while the fleet's clock is held.
+ */
+const QUIET = 250;
+
+/**
+ * Waits for fonts, the stream's first message, and then for the page to come to rest: no
+ * stream message for QUIET ms, nothing the page marks `aria-busy` (a log loading or settling,
+ * a sheet rising), and no finite animation running.
+ */
 async function settle(page: Page, streamed: boolean) {
 	await page.evaluate(() => document.fonts.ready.then(() => undefined));
 	if (streamed) {
@@ -508,7 +519,9 @@ async function settle(page: Page, streamed: boolean) {
 	}
 	await page
 		.waitForFunction(
-			() =>
+			(quiet) =>
+				performance.now() - window.__matrix.seen.last >= quiet &&
+				!document.querySelector('[aria-busy="true"]') &&
 				!document
 					.getAnimations()
 					.some(
@@ -516,8 +529,8 @@ async function settle(page: Page, streamed: boolean) {
 							a.playState === 'running' &&
 							Number.isFinite(Number(a.effect?.getComputedTiming().endTime))
 					),
-			undefined,
-			{ timeout: 3000, polling: 50 }
+			QUIET,
+			{ timeout: 5000, polling: 50 }
 		)
 		.catch(() => {});
 	await page.evaluate(
