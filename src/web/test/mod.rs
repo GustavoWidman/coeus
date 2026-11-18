@@ -6,6 +6,7 @@ mod fixture;
 mod live;
 mod ready;
 mod session;
+mod signin;
 mod site;
 mod sse;
 mod stream;

@@ -8,7 +8,7 @@ use ts_rs::{Config, TS};
 
 use crate::{
     common::model::{Hostname, Timestamp},
-    web::view::*,
+    web::{session::Jwk, signin::SignIn, view::*},
 };
 
 impl TS for Hostname {
@@ -44,6 +44,9 @@ pub fn typescript() -> String {
         (FleetEvent::docs(), FleetEvent::decl(&config)),
         (Snapshot::docs(), Snapshot::decl(&config)),
         (Viewer::docs(), Viewer::decl(&config)),
+        (SignIn::docs(), SignIn::decl(&config)),
+        (Jwk::docs(), Jwk::decl(&config)),
+        (SignedIn::docs(), SignedIn::decl(&config)),
         (MachineCard::docs(), MachineCard::decl(&config)),
         (MachineState::docs(), MachineState::decl(&config)),
         (PlatformView::docs(), PlatformView::decl(&config)),

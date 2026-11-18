@@ -10,7 +10,9 @@ use serde_json::Value;
 
 use super::{
     NOW, ORDERED, RELEASE, SHA, card, catch_up, following, git, host, job, machine, release,
-    running, succeeded,
+    running,
+    session::Browser,
+    signin, succeeded,
     typescript::{literals, names, typescript},
 };
 use crate::{
@@ -19,7 +21,7 @@ use crate::{
         JobSummary, Origin, Outcome, PackageChange, Phase, Platform, Progress, Source, Stamped,
         Tally, Timestamp,
     },
-    web::{derive, transcript::Transcript, view::*},
+    web::{derive, signin::SignIn, transcript::Transcript, view::*},
 };
 
 const CONTRACT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/web.json");
@@ -343,15 +345,36 @@ fn contract() -> String {
     ];
 
     #[derive(serde::Serialize)]
+    struct Auth {
+        signin: SignIn,
+        signed_in: SignedIn,
+    }
+    // RFC 6979 signs deterministically, so a fixed key signs the same bytes
+    let browser = Browser::seeded(7);
+    let auth = Auth {
+        signin: signin::request(&browser, "https://coeus.example.com", NOW),
+        signed_in: SignedIn {
+            token: "v1.eyJ2IjoxfQ.c2lnbmF0dXJl".into(),
+            viewer: Viewer {
+                login: "r3dlust@github".into(),
+                device: "iphone".into(),
+                expires_at: Timestamp(NOW.0 + 7 * DAY),
+            },
+        },
+    };
+
+    #[derive(serde::Serialize)]
     struct Contract {
         fleet: Vec<FleetEvent>,
         log: Vec<LogEvent>,
         diff: DiffView,
+        auth: Auth,
     }
     let contract = Contract {
         fleet,
         log,
         diff: DiffView::from(&diff()),
+        auth,
     };
     serde_json::to_string_pretty(&contract).unwrap() + "\n"
 }

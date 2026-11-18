@@ -24,6 +24,11 @@ impl Browser {
         }
     }
 
+    /// the same key pair every time
+    pub fn seeded(seed: u8) -> Self {
+        Self(SigningKey::from_slice(&[seed; 32]).unwrap())
+    }
+
     pub fn public(&self) -> DeviceKey {
         let point = self.0.verifying_key().to_encoded_point(false);
         DeviceKey::from_sec1(point.as_bytes()).unwrap()

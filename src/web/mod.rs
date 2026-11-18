@@ -17,6 +17,7 @@ pub mod fleet;
 pub mod logs;
 pub mod ready;
 pub mod session;
+pub mod signin;
 pub mod site;
 pub mod source;
 pub mod stream;
