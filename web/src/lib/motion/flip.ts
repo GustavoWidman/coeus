@@ -36,7 +36,9 @@ let before: Map<Element, DOMRect> | null = null;
 
 export async function withFlip(change: () => void) {
 	if (reduced() || stage.busy || document.hidden || !stage.roots.length) return change();
-	const keyed = stage.roots.flatMap((r) => [...r.querySelectorAll('[data-key]')]);
+	const keyed = stage.roots
+		.filter((r) => !under(r))
+		.flatMap((r) => [...r.querySelectorAll('[data-key]')]);
 	const was = new Map(keyed.map((e) => [e, e.getBoundingClientRect()]));
 	before = was;
 	change();
@@ -121,5 +123,17 @@ export function enter(node: HTMLElement, on = true) {
 		duration: 220,
 		easing: ease,
 		css: (t: number) => `opacity:${t};transform:translateY(${(t - 1) * 6}px)`
+	};
+}
+
+/** a block unfolding downward from its top edge, as a diff opening under its row */
+export function reveal(node: HTMLElement, on = true) {
+	if (!on || reduced() || under(node) || offScreen(node.getBoundingClientRect()))
+		return { duration: 0 };
+	return {
+		duration: 220,
+		easing: ease,
+		css: (t: number) =>
+			`clip-path:inset(0 0 ${((1 - t) * 100).toFixed(2)}% 0);opacity:${0.2 + 0.8 * t}`
 	};
 }
