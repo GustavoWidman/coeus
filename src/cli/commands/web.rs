@@ -1,4 +1,5 @@
 use std::{
+    future::Future,
     net::SocketAddr,
     os::unix::fs::{FileTypeExt, PermissionsExt},
     path::{Path, PathBuf},
@@ -11,15 +12,19 @@ use log::info;
 use tokio::{
     net::{TcpListener, UnixListener},
     signal::unix::{SignalKind, signal},
+    sync::watch,
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     cli::{exit::Exit, local_hostname},
     client::{Fleet, Targets},
     common::model::Hostname,
-    config::WebSettings,
+    config::{Endpoint, Key, WebSettings},
     web::{
+        connector::{self, Timing},
         fixture::{Fixture, Scenario},
+        ready,
         site::{Access, Settings, Site},
         source::Source,
     },
@@ -65,25 +70,55 @@ impl WebArgs {
             bail!("no machines in the inventory to show");
         }
 
-        let fleet = Fleet::new(settings.client.clone(), key, targets);
+        let served_by = local_hostname()
+            .parse::<Hostname>()
+            .wrap_err("this machine's hostname is not a valid name")?;
+
+        let fleet = Fleet::new(settings.client.clone(), key.clone(), targets);
         let source = Source::Live(fleet.clone());
         let site = Site::start(
             fleet.hosts().to_vec(),
             source.clone(),
             Settings {
                 web_dir: self.web_dir,
-                served_by: local_hostname()
-                    .parse::<Hostname>()
-                    .wrap_err("this machine's hostname is not a valid name")?,
+                served_by: served_by.clone(),
                 access: Access::Closed,
             },
         );
         source.feed(site.inputs.clone());
 
+        let terminated = terminated()?;
         let socket = &settings.web.origin_socket;
         let listener = bind(socket)?;
         info!("serving on {}", socket.display());
-        serve(listener, site.router).await?;
+
+        let stop = CancellationToken::new();
+        let tunnel = match &settings.web.tunnel {
+            Some(tunnel) => {
+                let config = connector::configure(tunnel, socket)?;
+                let ready = watch_readiness(&settings, key, &served_by);
+                let program = tunnel.cloudflared.clone();
+                let stop = stop.clone();
+                Some(tokio::spawn(async move {
+                    connector::run(&program, &config, Timing::DEFAULT, ready, stop).await;
+                }))
+            }
+            None => {
+                info!("no tunnel configured, so nothing reaches the site");
+                None
+            }
+        };
+
+        // cloudflared finishes the requests it carries, which need the
+        // origin, before the origin closes
+        let done = async {
+            terminated.await;
+            stop.cancel();
+            if let Some(tunnel) = tunnel {
+                let _ = tunnel.await;
+            }
+        };
+        serve(listener, site.router, done).await?;
         let _ = std::fs::remove_file(socket);
         Ok(Exit::Success)
     }
@@ -107,7 +142,7 @@ impl WebArgs {
             .await
             .wrap_err_with(|| format!("failed to listen on {}", self.listen))?;
         info!("serving the {scenario:?} fixture on http://{}", self.listen);
-        serve(listener, site.router.merge(fixture.routes())).await?;
+        serve(listener, site.router.merge(fixture.routes()), terminated()?).await?;
         Ok(Exit::Success)
     }
 }
@@ -125,17 +160,46 @@ fn bind(socket: &Path) -> Result<UnixListener> {
     Ok(listener)
 }
 
-/// serves until SIGTERM or SIGINT
-async fn serve<L>(listener: L, router: Router) -> Result<()>
+/// probes whether this machine can serve, its own coeusd reached over IPv4
+/// loopback with the read-only key, and says so in the receiver
+fn watch_readiness(
+    settings: &WebSettings,
+    key: Key,
+    served_by: &Hostname,
+) -> watch::Receiver<bool> {
+    let (sender, receiver) = watch::channel(false);
+    let client = settings.client.clone();
+    let readiness = settings.web.readiness.clone();
+    let daemon = Endpoint {
+        host: "127.0.0.1".to_owned(),
+        port: client.endpoint(served_by).port,
+    };
+    tokio::spawn(async move {
+        ready::watch(readiness, || ready::probe(&client, &daemon, &key), sender).await;
+    });
+    receiver
+}
+
+/// resolves on SIGTERM or SIGINT, whose handlers are installed at once
+fn terminated() -> Result<impl Future<Output = ()>> {
+    let mut terminate = signal(SignalKind::terminate())?;
+    let mut interrupt = signal(SignalKind::interrupt())?;
+    Ok(async move {
+        tokio::select! {
+            _ = terminate.recv() => {},
+            _ = interrupt.recv() => {},
+        }
+    })
+}
+
+/// serves until `done` resolves
+async fn serve<L>(listener: L, router: Router, done: impl Future<Output = ()>) -> Result<()>
 where
     L: axum::serve::Listener,
     L::Addr: std::fmt::Debug,
 {
-    let mut terminate = signal(SignalKind::terminate())?;
-    let mut interrupt = signal(SignalKind::interrupt())?;
     tokio::select! {
         served = axum::serve(listener, router) => served.wrap_err("the server stopped"),
-        _ = terminate.recv() => Ok(()),
-        _ = interrupt.recv() => Ok(()),
+        () = done => Ok(()),
     }
 }

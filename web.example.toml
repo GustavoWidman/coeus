@@ -16,3 +16,20 @@ tags = ["nixos", "dev-server"]
 [settings.web]
 # the site is served here, for cloudflared alone
 origin_socket = "/run/coeus-web/origin.sock"
+
+# the cloudflare tunnel this machine connects to while it can serve: tailscale
+# running, in touch with its coordination server and relays, and this
+# machine's coeusd answering on 127.0.0.1 at its inventory port. cloudflared
+# runs as coeus web's child, given a config written beside origin_socket.
+# without a tunnel nothing reaches the site.
+[settings.web.tunnel]
+id = "6f1c2a9e-3b7d-4e58-9a0c-d2e4f6a8b1c3"
+credentials_file = "/run/agenix/coeus-tunnel"
+# cloudflared = "/run/current-system/sw/bin/cloudflared"
+
+# a check every interval, each allowed as long; the tunnel comes up after
+# up_after passes in a row and goes down after down_after fails in a row
+[settings.web.readiness]
+interval = "2s"
+up_after = 3
+down_after = 5
