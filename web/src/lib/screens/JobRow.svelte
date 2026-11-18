@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { href } from '#lib/router.svelte.ts';
 	import { ago, dur, origin, source } from '#lib/derive/format.ts';
 	import { OUTCOME_DOT, outcome } from '#lib/derive/status.ts';
 	import { ghost, enter } from '#lib/motion/flip.ts';
@@ -21,7 +22,7 @@
 </script>
 
 <li data-key="j-{job.id}" in:enter={moves} out:ghost={moves}>
-	<div class="jrow tap" class:fresh>
+	<a class="jrow tap" class:fresh href={href({ screen: 'log', host, job: job.id })}>
 		<span class="jid">#{job.id}</span>
 		<div style="min-width:0">
 			<div class="jh">
@@ -37,5 +38,5 @@
 				{done && took ? dur(took) : '—'}
 			</span>
 		</div>
-	</div>
+	</a>
 </li>
