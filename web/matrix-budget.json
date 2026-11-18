@@ -1,0 +1,13 @@
+{
+	"counts": {
+		"longTasks": 0,
+		"layouts": { "perMessage": 1, "perSecond": 1 },
+		"recalcs": { "perMessage": 2, "perSecond": 1 },
+		"idlePaintsPerSecond": 1,
+		"layers": { "phone": 30, "desktop": 45 },
+		"nodes": 2500,
+		"growth": 0.02,
+		"heapMB": 12
+	},
+	"timings": { "dropped": 0.01, "gpuMB": 64 }
+}

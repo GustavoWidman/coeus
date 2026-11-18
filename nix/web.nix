@@ -84,6 +84,8 @@ let
           check "check"
             [
               ../web/scripts
+              ../web/tests
+              ../web/matrix-budget.json
               ../web/prettier.config.js
               ../web/.prettierignore
             ]

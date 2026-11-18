@@ -4,3 +4,4 @@ bun.lock
 /static/*.png
 /static/icons
 src/lib/wire/types.ts
+/test-results
