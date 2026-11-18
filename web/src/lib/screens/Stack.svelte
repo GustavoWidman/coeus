@@ -8,7 +8,7 @@
 	import { E, stage } from '#lib/motion/flip.ts';
 	import { reduced } from '#lib/motion/reduced.ts';
 	import Screen from './Screen.svelte';
-	import Sheet from './Sheet.svelte';
+	import type SheetView from './Sheet.svelte';
 
 	interface Entry {
 		key: string;
@@ -142,6 +142,13 @@
 		untrack(() => follow(nav));
 	});
 
+	// the sheet loads with the first log opened, and stays to put that one and the next away
+	let Sheet = $state.raw<typeof SheetView | null>(null);
+	$effect(() => {
+		if (router.nav.route.screen === 'log' && !Sheet)
+			import('./Sheet.svelte').then((m) => (Sheet = m.default));
+	});
+
 	onMount(() => {
 		mounted = true;
 		settle();
@@ -228,4 +235,4 @@
 		<Screen route={s.route} onback={back} />
 	{/each}
 </div>
-<Sheet stage={() => root} />
+{#if Sheet}<Sheet stage={() => root} />{/if}
