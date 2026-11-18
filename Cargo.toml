@@ -16,6 +16,7 @@ name = "coeus-launcher"
 path = "src/bin/coeus-launcher.rs"
 
 [dependencies]
+axum = "0.8.9"
 bytes = "1.12.1"
 coeus-proto-macros = { path = "proto-macros" }
 chrono = { version = "0.4.45", features = ["serde"] }
@@ -56,9 +57,12 @@ sha-crypt = { version = "0.6.0", features = ["getrandom"] }
 ssh-key = { version = "0.6.7", features = ["ed25519", "getrandom"] }
 regex-lite = "0.1.9"
 toml = "0.8.23"
+tower-http = { version = "0.7.1", features = ["fs"] }
 zeroize = { version = "1.9.0", features = ["std"] }
 
 
 [dev-dependencies]
+http-body-util = "0.1.3"
+tower = { version = "0.5.3", features = ["util"] }
 tokio = { version = "1.53.1", features = ["full", "test-util"] }
 ts-rs = { version = "12.0.1", default-features = false, features = ["serde-compat"] }

@@ -1,7 +1,7 @@
 use std::io::IsTerminal;
 
 use clap::Parser;
-use coeus::{cli::main::MainCLIArgs, config::ClientSettings, ui::say, utils::log::Logger};
+use coeus::{cli::main::MainCLIArgs, ui::say, utils::log::Logger};
 use env_logger::Target;
 
 #[tokio::main]
@@ -15,11 +15,7 @@ async fn main() {
         colored::control::set_override(false);
     }
 
-    let config = args.config.clone();
-    let exit = args
-        .command
-        .run(|| ClientSettings::load(config.as_deref()))
-        .await;
+    let exit = args.command.run(args.config.as_deref()).await;
 
     match exit {
         Ok(exit) => std::process::exit(exit.code()),
