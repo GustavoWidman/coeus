@@ -2,6 +2,11 @@ import { reduced } from './reduced.ts';
 import { onScreen } from './visible.ts';
 
 const seen = new WeakMap<Element, unknown>();
+/**
+ * The ring each `<b>` shows. A second ring started over one still running would make the
+ * browser run both on the main thread, a style recalc every frame, so the running one stands.
+ */
+const ringing = new WeakMap<Element, Animation>();
 
 export const under = (el: Element) => el.closest('[data-under]') !== null;
 
@@ -12,17 +17,19 @@ export const pulse = (value: unknown) => (el: Element) => {
 	const b = el.querySelector('b');
 	const visible = onScreen(el);
 	if (was === undefined || was === value || !b || reduced() || under(el) || !visible) return;
-	b.animate(
+	if (ringing.get(b)?.playState === 'running') return;
+	const ring = b.animate(
 		[
 			{ transform: 'scale(1)', opacity: 0.6 },
 			{ transform: 'scale(3.4)', opacity: 0 }
 		],
 		{ duration: 520, easing: 'cubic-bezier(.2,.6,.3,1)' }
 	);
+	ringing.set(b, ring);
 };
 
 const rolled = new Map<HTMLElement, { at: number; to: string }>();
-const ROLL = 170;
+const ROLL = 220;
 
 /**
  * Writes `to` into `el`, rolling the characters that differ from `from`: each run of changed

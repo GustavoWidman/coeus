@@ -47,7 +47,8 @@ code {
 	background: var(--bg);
 }
 
-/* number ticker: only the digits that change roll */
+/* number ticker: only the digits that change roll, as long as the gauges and rows an update
+   moves with them, so the browser winds every one of them down in the same frames */
 .tk {
 	white-space: pre;
 }
@@ -59,11 +60,11 @@ code {
 	position: absolute;
 	left: 0;
 	top: 0;
-	animation: dgo 170ms var(--e) forwards;
+	animation: dgo var(--t3) var(--e) forwards;
 }
 .dg > .n {
 	display: inline-block;
-	animation: dgi 170ms var(--e);
+	animation: dgi var(--t3) var(--e);
 }
 .dg.d > .o {
 	animation-name: dgod;
