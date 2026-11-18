@@ -575,10 +575,12 @@ dependencies = [
  "env_logger",
  "eyre",
  "futures-util",
+ "hmac",
  "http-body-util",
  "humantime-serde",
  "log",
  "memchr",
+ "p256",
  "postcard",
  "rand 0.10.2",
  "ratatui",
@@ -887,6 +889,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7c1832837b905bbfb5101e07cc24c8deddf52f93225eee6ead5f4d63d53ddcb"
 dependencies = [
  "const-oid 0.9.6",
+ "pem-rfc7468",
  "zeroize",
 ]
 
@@ -1026,6 +1029,7 @@ dependencies = [
  "generic-array",
  "group",
  "hkdf",
+ "pem-rfc7468",
  "pkcs8",
  "rand_core 0.6.4",
  "sec1",

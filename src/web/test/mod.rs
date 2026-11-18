@@ -5,6 +5,7 @@ mod deployment;
 mod fixture;
 mod live;
 mod ready;
+mod session;
 mod site;
 mod sse;
 mod stream;
