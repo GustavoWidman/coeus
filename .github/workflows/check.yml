@@ -104,6 +104,17 @@ jobs:
           save: false
       - if: steps.deps-cache.outputs.hit-primary-key == 'true'
         run: .github/scripts/deps-cache import "${{ steps.deps.outputs.path }}"
+      # The state matrix checks every screenshot against an exact hash, and an AMD and an Intel
+      # cpu draw some of its pixels differently, so the run comes from the x86_64-linux builder
+      # that blesses the hashes and uploads its builds to cache.r3dlust.com. This runner never
+      # draws it: it fetches that run of the same tree, and the check compares it.
+      - name: Fetch the state matrix's run
+        if: matrix.vm
+        run: |
+          nix build --no-link --max-jobs 0 .#packages.x86_64-linux.coeus-web-matrix || {
+            echo "::error::cache.r3dlust.com has no state matrix run of this tree; build it on the x86_64-linux builder (nix develop -c matrix-bless) and push again"
+            exit 1
+          }
       - if: matrix.vm
         run: nix flake check --print-build-logs
       - name: Build every check but the skipped ones
