@@ -783,31 +783,12 @@ code {
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-.sweep {
-	position: relative;
+/* a derivation building: a still accent hairline, so a list that holds still costs nothing */
+.busy {
 	flex: none;
 	width: 22px;
 	height: 1px;
-	background: var(--rule2);
-	overflow: hidden;
-}
-.sweep::after {
-	content: '';
-	position: absolute;
-	top: 0;
-	left: 0;
-	width: 8px;
-	height: 1px;
 	background: var(--acc);
-	animation: sweep 1.1s var(--e) infinite;
-}
-@keyframes sweep {
-	from {
-		transform: translateX(-8px);
-	}
-	to {
-		transform: translateX(22px);
-	}
 }
 .drvs .none {
 	color: var(--mute);
@@ -1660,8 +1641,7 @@ code {
 .line > i,
 .rule > i,
 .dot > b,
-.ph > i > b,
-.sweep::after {
+.ph > i > b {
 	z-index: 1;
 }
 .dg > .n,
