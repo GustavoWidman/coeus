@@ -195,28 +195,30 @@ impl Fixture {
             let mut ticks = tokio::time::interval(Self::TICK);
             loop {
                 ticks.tick().await;
-                let (at, speed) = {
-                    let clock = fixture.clock.lock().unwrap();
-                    (clock.at, clock.speed)
-                };
                 fixture
-                    .move_to(at + speed * Self::TICK.as_millis() as f64)
+                    .move_to(|clock| clock.at + clock.speed * Self::TICK.as_millis() as f64)
                     .await;
             }
         });
     }
 
-    /// moves the timeline to `t` seconds and runs it at `speed` from there,
-    /// answering once the site shows that moment
-    pub async fn seek(&self, t: f64, speed: f64) -> Status {
-        self.clock.lock().unwrap().speed = speed.max(0.0);
-        self.move_to(t.max(0.0) * 1_000.0).await
+    /// moves the timeline to `t` seconds, or keeps it where it is, and runs
+    /// it at `speed` from there, answering once the site shows that moment
+    pub async fn seek(&self, t: Option<f64>, speed: f64) -> Status {
+        self.move_to(|clock| {
+            clock.speed = speed.max(0.0);
+            t.map_or(clock.at, |t| t.max(0.0) * 1_000.0)
+        })
+        .await
     }
 
-    async fn move_to(&self, at: f64) -> Status {
+    /// moves the timeline to where `to` says, which it decides once the move
+    /// before has reached the aggregator
+    async fn move_to(&self, to: impl FnOnce(&mut Clock) -> f64) -> Status {
         let _moving = self.moving.lock().await;
         let (rewound, inputs, status) = {
             let mut clock = self.clock.lock().unwrap();
+            let at = to(&mut clock);
             let rewound = clock.move_to(at);
             (rewound, clock.tell(), clock.status())
         };
@@ -258,12 +260,13 @@ impl Fixture {
         })
     }
 
-    /// `POST /fixture/seek?t=<seconds>[&speed=<x>]`: moves the timeline and
-    /// holds it there, or runs it at `speed`
+    /// `POST /fixture/seek?[t=<seconds>][&speed=<x>]`: moves the timeline,
+    /// or keeps it where it is with no `t`, and holds it there, or runs it at
+    /// `speed`
     pub fn routes(self: &Arc<Self>) -> Router {
         #[derive(Deserialize)]
         struct Seek {
-            t: f64,
+            t: Option<f64>,
             #[serde(default)]
             speed: f64,
         }

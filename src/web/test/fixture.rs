@@ -35,7 +35,11 @@ fn simulated() -> (Arc<Fixture>, Router) {
 }
 
 async fn seek(router: &Router, t: f64) -> Value {
-    let request = Request::post(format!("/fixture/seek?t={t}"))
+    post_seek(router, &format!("t={t}")).await
+}
+
+async fn post_seek(router: &Router, query: &str) -> Value {
+    let request = Request::post(format!("/fixture/seek?{query}"))
         .body(Body::empty())
         .unwrap();
     let response = router.clone().oneshot(request).await.unwrap();
@@ -289,6 +293,21 @@ async fn moving_the_clock_back_forgets_the_diffs_of_jobs_not_yet_built() {
     assert_eq!(lab["verdict"], "running");
     assert!(lab["diff"].is_null(), "{lab}");
     assert_eq!(direct["rows"], again["rows"]);
+}
+
+#[tokio::test]
+async fn a_seek_with_no_moment_holds_the_clock_where_it_runs_to() {
+    let (_, router) = simulated();
+    let running = post_seek(&router, "t=30&speed=1").await;
+    assert_eq!(running["t"], 30.0);
+    tokio::time::sleep(Duration::from_millis(350)).await;
+
+    let held = post_seek(&router, "").await;
+    assert_eq!(held["speed"], 0.0);
+    let t = held["t"].as_f64().unwrap();
+    assert!((30.2..31.0).contains(&t), "held at {t}");
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    assert_eq!(post_seek(&router, "").await, held);
 }
 
 fn texts(messages: &[Message]) -> Vec<String> {

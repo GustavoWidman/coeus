@@ -44,7 +44,7 @@ pub struct WebArgs {
 
     /// Serve a simulated fleet instead of the real one, signing anyone in on
     /// the same address; POST /fixture/seek?t=<seconds>[&speed=<x>] moves its
-    /// clock
+    /// clock, and without t holds it or sets its speed where it stands
     #[arg(long, value_name = "SCENARIO")]
     pub fixture: Option<Scenario>,
 
