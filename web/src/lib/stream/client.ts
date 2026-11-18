@@ -34,15 +34,26 @@ export function split(text: string): { messages: Message[]; rest: string } {
 }
 
 const DELAYS = [500, 1000, 2000, 5000, 10000];
-/** what an answer to the stream request means */
-type Answer = 'open' | 'refused' | 'failed';
+/** how often to ask again while no host serves the site, as the banner's hairline drains */
+export const DOWN_PERIOD = 15_000;
 
-const answer = (status: number): Answer =>
-	status >= 200 && status < 300 ? 'open' : status === 401 ? 'refused' : 'failed';
+/** what an answer to the stream request means */
+export type Answer = 'open' | 'refused' | 'down' | 'failed';
+
+/**
+ * Cloudflare answers 530 when no host's connector is up, and the offline Worker turns that
+ * into a 503 it marks; either means every host is down, not this one request.
+ */
+export function answer(status: number, headers: Headers): Answer {
+	if (status >= 200 && status < 300) return 'open';
+	if (status === 401) return 'refused';
+	if (status === 530 || (status === 503 && headers.has('coeus-offline'))) return 'down';
+	return 'failed';
+}
 
 export interface Listener {
 	events(events: FleetEvent[]): void;
-	link(state: Link): void;
+	link(state: Link, status?: number): void;
 	/** the headers that prove this request's session */
 	sign(path: string): Promise<Record<string, string>>;
 	/** the session was refused or has ended; resolves once there is another */
@@ -99,12 +110,15 @@ export function connect(url: string, on: Listener) {
 		for (;;) {
 			await visible();
 			abort = new AbortController();
+			const started = Date.now();
 			let got: Answer = 'failed';
+			let status = 0;
 			try {
 				const headers = await on.sign(path.pathname + path.search);
 				if (cursor) headers['last-event-id'] = cursor;
 				const res = await fetch(url, { headers, cache: 'no-store', signal: abort.signal });
-				got = answer(res.status);
+				status = res.status;
+				got = answer(res.status, res.headers);
 				if (got === 'open' && res.body) {
 					// a stream resumed with nothing new says nothing until something changes
 					failures = 0;
@@ -118,10 +132,17 @@ export function connect(url: string, on: Listener) {
 				failures = 0;
 				continue;
 			}
-			on.link('retrying');
+			if (got === 'down') {
+				// a host that comes back has a stream of its own, which a cursor cannot resume
+				cursor = null;
+				on.link('down', status);
+			} else on.link('retrying');
 			if (document.hidden) continue;
-			const delay = DELAYS[Math.min(failures++, DELAYS.length - 1)];
-			await new Promise((ok) => setTimeout(ok, delay * (0.75 + Math.random() * 0.5)));
+			const delay =
+				got === 'down'
+					? DOWN_PERIOD - (Date.now() - started)
+					: DELAYS[Math.min(failures++, DELAYS.length - 1)] * (0.75 + Math.random() * 0.5);
+			await new Promise((ok) => setTimeout(ok, delay));
 		}
 	}
 

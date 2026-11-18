@@ -13,16 +13,18 @@
 
 	const s = $derived(status(card, fleet.progress[card.host], now.ms));
 	const st = $derived(card.state);
+	/** every host is down, so the row is the machine as it last was */
+	const off = $derived(fleet.link === 'down');
 </script>
 
 <li data-key="r-{card.host}">
 	<a class="row tap" class:sel href={href({ screen: 'machine', host: card.host })}>
-		<Dot s={s.dot} />
+		<Dot s={off ? 'stale' : s.dot} />
 		<div style="min-width:0">
 			<div class="row-h">
 				<span class="host">{card.host}</span><span class="plat">{st ? plat(st) : ''}</span>
 			</div>
-			<div class="row-s {s.tone ?? ''}">
+			<div class="row-s {off ? 'mute' : (s.tone ?? '')}">
 				{s.text}{#if s.builds}{' · '}<span class="mono">
 						<Tick v={num(s.builds.done)} /><span class="m">/{num(s.builds.expected)}</span>
 					</span>{/if}

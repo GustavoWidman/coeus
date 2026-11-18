@@ -23,7 +23,11 @@
 		<Nav {title} back={route.screen === 'fleet' ? undefined : 'Fleet'} {onback}>
 			{#snippet right()}{#if fleet.ready}<LiveTag />{/if}{/snippet}
 		</Nav>
-		<div class="scroll" onscroll={(e) => (scrolled = e.currentTarget.scrollTop > 40)}>
+		<div
+			class="scroll"
+			class:offline={fleet.link === 'down'}
+			onscroll={(e) => (scrolled = e.currentTarget.scrollTop > 40)}
+		>
 			<Center {route} />
 		</div>
 	</div>

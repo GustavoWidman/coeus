@@ -57,13 +57,15 @@
 		{/if}
 	</header>
 	<aside class="pane left">
-		<div class="scroll"><Fleet wide selected={host} /></div>
+		<div class="scroll" class:offline={fleet.link === 'down'}>
+			<Fleet wide selected={host} />
+		</div>
 	</aside>
 	<main class="pane mid" bind:this={mid}>
 		{#if boot.view === 'fleet'}
 			{#key key}
 				<div data-key="c-{key}" in:enter>
-					<div class="scroll">
+					<div class="scroll" class:offline={fleet.link === 'down'}>
 						{#if center}
 							<Center route={center} />
 						{:else}

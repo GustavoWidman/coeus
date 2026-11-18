@@ -22,7 +22,7 @@ setTimeout(skeleton, QUIET);
 $effect.root(() => {
 	$effect(() => {
 		if (fleet.ready && (view === 'nothing' || held)) view = 'fleet';
-		else if (fleet.link === 'retrying') skeleton();
+		else if (fleet.link === 'retrying' || fleet.link === 'down') skeleton();
 	});
 });
 
