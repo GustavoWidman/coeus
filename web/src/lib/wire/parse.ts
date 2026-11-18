@@ -27,30 +27,30 @@ import type {
 
 export class ParseError extends Error {}
 
-type Parser<T> = (value: unknown, at: string) => T;
+export type Parser<T> = (value: unknown, at: string) => T;
 
 const fail = (at: string, want: string): never => {
 	throw new ParseError(`${at}: not ${want}`);
 };
 
-const str: Parser<string> = (v, at) => (typeof v === 'string' ? v : fail(at, 'a string'));
-const num: Parser<number> = (v, at) =>
+export const str: Parser<string> = (v, at) => (typeof v === 'string' ? v : fail(at, 'a string'));
+export const num: Parser<number> = (v, at) =>
 	typeof v === 'number' && Number.isFinite(v) ? v : fail(at, 'a number');
 const bool: Parser<boolean> = (v, at) => (typeof v === 'boolean' ? v : fail(at, 'true or false'));
 const host = str as Parser<Hostname>;
 const order = str as Parser<OrderId>;
 
-const nullable =
+export const nullable =
 	<T>(p: Parser<T>): Parser<T | null> =>
 	(v, at) =>
 		v === null ? null : p(v, at);
 
-const list =
+export const list =
 	<T>(p: Parser<T>): Parser<T[]> =>
 	(v, at) =>
 		Array.isArray(v) ? v.map((x, i) => p(x, `${at}[${i}]`)) : fail(at, 'a list');
 
-const oneOf =
+export const oneOf =
 	<T extends string>(...values: T[]): Parser<T> =>
 	(v, at) =>
 		values.includes(v as T) ? (v as T) : fail(at, values.join(' or '));
@@ -60,7 +60,7 @@ const record = (v: unknown, at: string) =>
 		? (v as Record<string, unknown>)
 		: fail(at, 'an object');
 
-function obj<T>(shape: { [K in keyof T]-?: Parser<T[K]> }): Parser<T> {
+export function obj<T>(shape: { [K in keyof T]-?: Parser<T[K]> }): Parser<T> {
 	return (v, at) => {
 		const r = record(v, at);
 		const out = {} as T;
@@ -73,7 +73,7 @@ type Cases<T extends { kind: string }> = {
 	[K in T['kind']]: Parser<Omit<Extract<T, { kind: K }>, 'kind'>>;
 };
 
-function tagged<T extends { kind: string }>(cases: Cases<T>): Parser<T> {
+export function tagged<T extends { kind: string }>(cases: Cases<T>): Parser<T> {
 	return (v, at) => {
 		const kind = record(v, at).kind as T['kind'];
 		if (typeof kind !== 'string' || !Object.hasOwn(cases, kind))
@@ -82,7 +82,7 @@ function tagged<T extends { kind: string }>(cases: Cases<T>): Parser<T> {
 	};
 }
 
-const none: Parser<Record<never, never>> = (v, at) => (record(v, at), {});
+export const none: Parser<Record<never, never>> = (v, at) => (record(v, at), {});
 
 const phase: Parser<PhaseView> = oneOf(
 	'preparing',
@@ -112,7 +112,7 @@ const origin = tagged<OriginView>({
 });
 
 const failure = obj({ phase, message: str });
-const outcome = tagged<OutcomeView>({
+export const outcome = tagged<OutcomeView>({
 	succeeded: none,
 	up_to_date: none,
 	cancelled: none,
@@ -122,7 +122,7 @@ const outcome = tagged<OutcomeView>({
 	rolled_back: failure
 });
 
-const job = obj<JobCard>({
+export const job = obj<JobCard>({
 	id: num,
 	order,
 	source,
@@ -239,12 +239,12 @@ const event = tagged<FleetEvent>({
 	expired: none
 });
 
-export function parseFleetEvent(data: string): FleetEvent {
-	let json: unknown;
+export function json(data: string): unknown {
 	try {
-		json = JSON.parse(data);
+		return JSON.parse(data);
 	} catch {
 		throw new ParseError('not JSON');
 	}
-	return event(json, 'event');
 }
+
+export const parseFleetEvent = (data: string): FleetEvent => event(json(data), 'event');
