@@ -283,7 +283,7 @@ pub struct DeploymentRow {
     pub host: Hostname,
     /// index into the deployment's waves; `None` for a machine that follows
     /// the ref instead of being ordered
-    pub wave: Option<u8>,
+    pub wave: Option<u32>,
     pub verdict: Verdict,
     pub job: Option<u64>,
     pub diff: Option<DiffSummary>,

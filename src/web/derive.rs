@@ -1,9 +1,15 @@
 //! the dashboard's view, built from what daemons report by pure functions
 
+use std::{
+    cmp::Reverse,
+    collections::{BTreeMap, BTreeSet},
+};
+
 use super::view::{
-    ActionView, DaemonStateView, DiffSummary, DiffView, FollowView, JobCard, JobStateView,
-    LinkView, LiveProgress, MachineState, OriginView, OutcomeView, PackageChangeView, PhaseView,
-    PinnedView, PlatformView, SourceView, TallyView, UnreachView,
+    ActionView, DaemonStateView, DeploymentRow, DeploymentView, DiffSummary, DiffView, FollowView,
+    JobCard, JobStateView, LinkView, LiveProgress, MachineCard, MachineState, OriginView,
+    OutcomeView, PackageChangeView, PhaseView, PinnedView, PlatformView, SourceView, TallyView,
+    UnreachView, Verdict, WaveView,
 };
 use crate::{
     client::{Link, Unreach},
@@ -70,6 +76,209 @@ pub fn progress(view: &MachineView) -> Option<LiveProgress> {
         expected_bytes: progress.expected_bytes,
         active: progress.active.clone(),
     })
+}
+
+/// how far back the dashboard shows deployments, in milliseconds
+const DEPLOYMENT_AGE: i64 = 24 * 60 * 60 * 1000;
+const DEPLOYMENTS: usize = 5;
+/// `coeus deploy` orders a wave's machines all at once, so a longer pause
+/// between two of an order's jobs starts the next wave
+const WAVE_GAP: i64 = 2_000;
+
+/// the fleet's newest deployments, newest first. daemons know only jobs and
+/// the order each belongs to, so a deployment is the jobs that share an order,
+/// split into waves where the orders pause, plus the machines that take its
+/// commit by following a ref.
+pub fn deployments(cards: &[MachineCard], now: Timestamp) -> Vec<DeploymentView> {
+    let mut orders: BTreeMap<&str, Vec<Ordered>> = BTreeMap::new();
+    for (position, card) in cards.iter().enumerate() {
+        let Some(state) = &card.state else {
+            continue;
+        };
+        for job in jobs(state).filter(|job| job.origin != OriginView::Follow) {
+            orders.entry(&job.order).or_default().push(Ordered {
+                card,
+                position,
+                job,
+            });
+        }
+    }
+
+    let mut orders: Vec<Vec<Ordered>> = orders
+        .into_values()
+        .map(|mut jobs| {
+            jobs.sort_by_key(|ordered| (ordered.job.ordered_at, ordered.position));
+            jobs
+        })
+        .filter(|jobs| now.0.saturating_sub(jobs[0].job.ordered_at.0) < DEPLOYMENT_AGE)
+        .collect();
+    orders.sort_by_key(|jobs| Reverse(jobs[0].job.ordered_at));
+    orders.truncate(DEPLOYMENTS);
+
+    orders.iter().map(|jobs| deployment(jobs, cards)).collect()
+}
+
+/// a machine's job of an order, `position` being the machine's place in the
+/// inventory
+struct Ordered<'a> {
+    card: &'a MachineCard,
+    position: usize,
+    job: &'a JobCard,
+}
+
+/// `jobs` in the order they were ordered
+fn deployment(jobs: &[Ordered], cards: &[MachineCard]) -> DeploymentView {
+    let first = jobs[0].job;
+    let waves: Vec<&[Ordered]> = jobs
+        .chunk_by(|earlier, later| later.job.ordered_at.0 - earlier.job.ordered_at.0 <= WAVE_GAP)
+        .collect();
+
+    let mut rows: Vec<DeploymentRow> = waves
+        .iter()
+        .enumerate()
+        .flat_map(|(wave, jobs)| {
+            jobs.iter().map(move |ordered| DeploymentRow {
+                host: ordered.card.host.clone(),
+                wave: Some(wave as u32),
+                verdict: verdict(&ordered.job.state),
+                job: Some(ordered.job.id),
+                diff: None,
+            })
+        })
+        .collect();
+    if let SourceView::Git { rev, git_ref } = &first.source {
+        let ordered = |card: &MachineCard| jobs.iter().any(|job| job.card.host == card.host);
+        let others: Vec<&MachineCard> = cards.iter().filter(|card| !ordered(card)).collect();
+        rows.extend(followers(cards, &others, rev, git_ref.as_deref()));
+    }
+
+    DeploymentView {
+        order: first.order.clone(),
+        source: first.source.clone(),
+        origin: first.origin.clone(),
+        action: first.action,
+        subject: None,
+        ordered_at: first.ordered_at,
+        settled_at: settled(jobs),
+        waves: waves
+            .iter()
+            .map(|jobs| WaveView {
+                name: None,
+                hosts: jobs
+                    .iter()
+                    .map(|ordered| ordered.card.host.clone())
+                    .collect(),
+                started_at: jobs[0].job.ordered_at,
+                settled_at: settled(jobs),
+            })
+            .collect(),
+        rows,
+    }
+}
+
+fn verdict(state: &JobStateView) -> Verdict {
+    match state {
+        JobStateView::Queued => Verdict::Waiting,
+        JobStateView::Running { .. } => Verdict::Running,
+        JobStateView::Finished {
+            outcome: OutcomeView::Succeeded | OutcomeView::UpToDate | OutcomeView::Superseded { .. },
+        } => Verdict::Done,
+        JobStateView::Finished { .. } => Verdict::Failed,
+    }
+}
+
+/// when the last of `jobs` finished, once all have
+fn settled(jobs: &[Ordered]) -> Option<Timestamp> {
+    jobs.iter()
+        .map(|ordered| ordered.job.finished_at)
+        .try_fold(Timestamp(i64::MIN), |last, finished| {
+            Some(last.max(finished?))
+        })
+}
+
+/// rows for the machines among `others` that take commit `rev` by following
+/// a ref: the ref it was deployed from, or any ref a machine of the fleet
+/// found pointing at it. a deploy from CI orders `main`, then moves the
+/// `deployed` ref that sleeping machines follow to the same commit.
+fn followers(
+    cards: &[MachineCard],
+    others: &[&MachineCard],
+    rev: &str,
+    git_ref: Option<&str>,
+) -> Vec<DeploymentRow> {
+    let states = || cards.iter().filter_map(|card| card.state.as_ref());
+    let pointing = states().filter_map(|state| {
+        let follow = state.follow.as_ref()?;
+        (follow.latest.as_ref()?.rev == rev).then_some(follow.git_ref.as_str())
+    });
+    let caught_up = states()
+        .flat_map(jobs)
+        .filter_map(|job| catch_up_ref(job, rev));
+    let refs: BTreeSet<&str> = git_ref
+        .into_iter()
+        .chain(pointing)
+        .chain(caught_up)
+        .collect();
+
+    others
+        .iter()
+        .filter_map(|card| {
+            let state = card.state.as_ref()?;
+            let follow = state.follow.as_ref()?;
+            (!follow.paused && refs.contains(follow.git_ref.as_str()))
+                .then(|| follower(card, state, rev))
+        })
+        .collect()
+}
+
+/// the ref a catch-up job to `rev` followed
+fn catch_up_ref<'a>(job: &'a JobCard, rev: &str) -> Option<&'a str> {
+    match (&job.origin, &job.source) {
+        (
+            OriginView::Follow,
+            SourceView::Git {
+                rev: caught,
+                git_ref: Some(git_ref),
+            },
+        ) if caught == rev => Some(git_ref),
+        _ => None,
+    }
+}
+
+fn follower(card: &MachineCard, state: &MachineState, rev: &str) -> DeploymentRow {
+    let catch_up = jobs(state)
+        .filter(|job| catch_up_ref(job, rev).is_some())
+        .max_by_key(|job| job.id);
+    let runs_it =
+        matches!(&state.deployed, Some(SourceView::Git { rev: deployed, .. }) if deployed == rev);
+
+    let verdict = match catch_up.map(|job| &job.state) {
+        Some(JobStateView::Queued | JobStateView::Running { .. }) => Verdict::CatchingUp,
+        Some(JobStateView::Finished {
+            outcome: OutcomeView::Succeeded | OutcomeView::UpToDate,
+        }) => Verdict::CaughtUp,
+        Some(JobStateView::Finished {
+            outcome: OutcomeView::Superseded { .. },
+        })
+        | None => match runs_it {
+            true => Verdict::CaughtUp,
+            false => Verdict::Pending,
+        },
+        Some(JobStateView::Finished { .. }) => Verdict::Failed,
+    };
+
+    DeploymentRow {
+        host: card.host.clone(),
+        wave: None,
+        verdict,
+        job: catch_up.map(|job| job.id),
+        diff: None,
+    }
+}
+
+/// every job a machine reported, wherever it sits
+fn jobs(state: &MachineState) -> impl Iterator<Item = &JobCard> {
+    state.running.iter().chain(&state.next).chain(&state.recent)
 }
 
 impl From<&JobSummary> for JobCard {
