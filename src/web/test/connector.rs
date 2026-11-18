@@ -102,18 +102,23 @@ fn nothing_runs_while_the_host_is_not_ready() {
     assert_eq!((state, commands), (Connector::Stopped, vec![]));
 }
 
-/// a stand-in for cloudflared that logs its pid and arguments to `$LOG`,
-/// then runs `then`
+/// a stand-in for cloudflared that sets its signal handling, logs its pid and
+/// arguments to `$LOG`, then runs `then`. the handling comes first, so a
+/// signal sent once "start" is logged always meets it
 struct Stub {
     dir: tempfile::TempDir,
 }
 
 impl Stub {
     fn new(then: &str) -> Self {
+        Self::trapping("", then)
+    }
+
+    fn trapping(trap: &str, then: &str) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let program = dir.path().join("cloudflared");
         let script = format!(
-            "#!/bin/sh\nLOG=\"$(dirname \"$0\")/log\"\necho \"start $$ $*\" >> \"$LOG\"\n{then}\n"
+            "#!/bin/sh\nLOG=\"$(dirname \"$0\")/log\"\n{trap}\necho \"start $$ $*\" >> \"$LOG\"\n{then}\n"
         );
         std::fs::write(&program, script).unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -122,12 +127,18 @@ impl Stub {
 
     /// logs "term" on SIGTERM and leaves
     fn polite() -> Self {
-        Self::new("trap 'echo term >> \"$LOG\"; exit 0' TERM\nwhile :; do sleep 0.02; done")
+        Self::trapping(
+            "trap 'echo term >> \"$LOG\"; exit 0' TERM",
+            "while :; do sleep 0.02; done",
+        )
     }
 
     /// logs "term" on SIGTERM and carries on
     fn stubborn() -> Self {
-        Self::new("trap 'echo term >> \"$LOG\"' TERM\nwhile :; do sleep 0.02; done")
+        Self::trapping(
+            "trap 'echo term >> \"$LOG\"' TERM",
+            "while :; do sleep 0.02; done",
+        )
     }
 
     fn program(&self) -> PathBuf {
