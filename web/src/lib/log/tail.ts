@@ -204,7 +204,8 @@ export class Tail {
 			// what is drawn stays while it reaches a quarter screen above that and not much more,
 			// so a glide moves nothing on the page
 			const end = this.sum(0, n);
-			const top = Math.min(scroll - TOP, end - view);
+			// a glide is never longer than a screen, so the view's top is within two of the end
+			const top = Math.max(end - 2 * view, Math.min(scroll - TOP, end - view));
 			const at = this.drawn.size && ai >= 0 ? this.sum(0, ai) : -Infinity;
 			if (at <= top - view / 4 && at >= top - view * 1.5) na = ai;
 			else na = this.around(top - view / 2, end)[0];
