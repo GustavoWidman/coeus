@@ -1,6 +1,8 @@
 /**
  * A `coeus web --fixture instrument` of each worker's own, over the built app, its clock held
- * until a test moves it, and pages whose clock agrees with the fleet's.
+ * until a test moves it, and pages whose clock agrees with the fleet's. It lets anyone read
+ * the fleet, unless a test file asks for `signin`: then it signs in whoever asks, on its own
+ * address, as the tailnet listener does.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createServer } from 'node:net';
@@ -21,7 +23,35 @@ function freePort(): Promise<number> {
 }
 
 export class Fixture {
-	constructor(readonly base: string) {}
+	constructor(
+		readonly base: string,
+		private proc: ChildProcess
+	) {}
+
+	/** a fixture of its own, which a test may stop */
+	static async start(signin = false): Promise<Fixture> {
+		const port = await freePort();
+		const args = ['web', '--fixture', 'instrument', ...(signin ? [] : ['--open']), '--speed', '0'];
+		const proc = spawn(
+			COEUS,
+			[...args, '--web-dir', resolve(WEB, 'build'), '--listen', `127.0.0.1:${port}`],
+			{ stdio: ['ignore', 'ignore', 'inherit'] }
+		);
+		const fixture = new Fixture(`http://127.0.0.1:${port}`, proc);
+		for (let i = 0; ; i++) {
+			try {
+				await fixture.seek(0);
+				return fixture;
+			} catch (e) {
+				if (i > 200 || proc.exitCode !== null) throw new Error(`${COEUS} did not start: ${e}`);
+				await new Promise((ok) => setTimeout(ok, 50));
+			}
+		}
+	}
+
+	stop() {
+		this.proc.kill();
+	}
 
 	/** moves the fleet's clock to `t` seconds into its story and runs it at `speed` (0 holds it) */
 	async seek(t: number, speed = 0): Promise<number> {
@@ -31,34 +61,25 @@ export class Fixture {
 	}
 }
 
+type Workers = {
+	/** whether the fleet asks its readers to sign in */
+	signin: boolean;
+	server: Fixture;
+};
+
 type Fixtures = {
 	/** opens `path` with the fleet at `t`, its clock running at `speed` */
 	open(path: string, t: number, speed?: number): Promise<Page>;
 	fleet: Fixture;
 };
 
-export const test = base.extend<Fixtures, { server: Fixture }>({
+export const test = base.extend<Fixtures, Workers>({
+	signin: [false, { scope: 'worker', option: true }],
 	server: [
-		async ({}, use) => {
-			const port = await freePort();
-			const args = ['web', '--fixture', 'instrument', '--open', '--speed', '0'];
-			const proc: ChildProcess = spawn(
-				COEUS,
-				[...args, '--web-dir', resolve(WEB, 'build'), '--listen', `127.0.0.1:${port}`],
-				{ stdio: ['ignore', 'ignore', 'inherit'] }
-			);
-			const fixture = new Fixture(`http://127.0.0.1:${port}`);
-			for (let i = 0; ; i++) {
-				try {
-					await fixture.seek(0);
-					break;
-				} catch (e) {
-					if (i > 200 || proc.exitCode !== null) throw new Error(`${COEUS} did not start: ${e}`);
-					await new Promise((ok) => setTimeout(ok, 50));
-				}
-			}
+		async ({ signin }, use) => {
+			const fixture = await Fixture.start(signin);
 			await use(fixture);
-			proc.kill();
+			fixture.stop();
 		},
 		{ scope: 'worker' }
 	],
