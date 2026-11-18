@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use super::*;
 use crate::{
-    client::{FleetEvent, Link},
+    client::{FleetEvent, Link, Unreach},
     common::model::{Action, JobState, Outcome, Platform, Rejection},
     ui::{
         Frame,
@@ -133,7 +133,7 @@ fn verdicts_cover_refusals_and_silence() {
     );
     board.order(
         &host("lab"),
-        Ordering::Unreachable("connection refused".into()),
+        Ordering::Unreachable(Unreach::Refused("connection refused".into())),
     );
 
     let verdicts: Vec<Verdict> = board.verdicts().collect();

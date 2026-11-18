@@ -75,7 +75,7 @@ async fn follow(fleet: Fleet, host: Hostname, job: JobId, batches: mpsc::Unbound
     loop {
         let attachment = match fleet.connect(&host).await {
             Ok(client) => client.attach(JobSelector::Id(job), from, None).await,
-            Err(error) => Err(error),
+            Err(unreach) => Err(unreach.into()),
         };
 
         if let Ok(mut attachment) = attachment {

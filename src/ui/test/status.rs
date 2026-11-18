@@ -1,6 +1,6 @@
 use super::*;
 use crate::{
-    client::{FleetEvent, Link},
+    client::{FleetEvent, Link, Offline, Unreach},
     common::model::{
         ClosureDiff, FdaStatus, Follow, Generation, JobState, Outcome, PackageChange, Pinned,
     },
@@ -40,7 +40,7 @@ fn the_status_table_marks_what_needs_a_person() {
 
     board.apply(FleetEvent::Link {
         host: host("oracle"),
-        link: Link::Unreachable("connection refused".into()),
+        link: Link::Unreachable(Unreach::Refused("connection refused".into())),
     });
 
     let lines = plain(&status::lines(&board, NOW));
@@ -59,6 +59,25 @@ fn the_status_table_marks_what_needs_a_person() {
     assert!(text.contains("↳ boot pending"), "{text}");
     assert!(text.contains("⊘ unreachable"), "{text}");
     assert!(text.contains("↳ connection refused"), "{text}");
+}
+
+#[test]
+fn an_offline_machine_says_how_long_ago_tailscale_last_saw_it() {
+    let mut board = watch_board(&["laptop"]);
+    let seen = Timestamp(Timestamp::now().0 - 3 * 3600 * 1000);
+    board.apply(FleetEvent::Link {
+        host: host("laptop"),
+        link: Link::Unreachable(Unreach::Offline(Offline {
+            last_seen: Some(seen),
+        })),
+    });
+
+    let text = plain(&status::lines(&board, NOW)).join("\n");
+    assert!(text.contains("⊘ unreachable"), "{text}");
+    assert!(
+        text.contains("↳ offline, tailscale last saw it 3h ago"),
+        "{text}"
+    );
 }
 
 #[test]

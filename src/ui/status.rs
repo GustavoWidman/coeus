@@ -119,7 +119,7 @@ fn notes(row: &Row) -> Vec<String> {
     let mut notes = Vec::new();
 
     if let Status::Unreachable(reason) = row.status() {
-        notes.push(reason.dimmed().to_string());
+        notes.push(reason.to_string().dimmed().to_string());
     }
 
     let Some(view) = &row.view else {

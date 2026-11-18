@@ -173,7 +173,7 @@ mod tailnet {
     use std::time::{Duration, Instant};
 
     use crate::{
-        client::{Fleet, Offline, Tailnet, Targets},
+        client::{Fleet, FleetEvent, Link, Offline, Tailnet, Targets, Unreach},
         common::model::Timestamp,
         config::{ClientSettings, HostEntry, Key},
     };
@@ -309,11 +309,54 @@ mod tailnet {
             "{:?}",
             started.elapsed()
         );
+        assert_eq!(
+            error,
+            Unreach::Offline(Offline {
+                last_seen: Some(Timestamp(1_794_786_060_000))
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_watched_machine_tailscale_sees_offline_is_unreachable_as_offline() {
+        let (fleet, _listener, host) = silent("127.0.0.1", Duration::from_secs(30)).await;
+        let status = String::from_utf8(CURRENT.to_vec())
+            .unwrap()
+            .replace("100.64.0.2", "127.0.0.1");
+        let mut events = fleet
+            .seeing(Tailnet::parse(status.as_bytes()).unwrap())
+            .watch();
+
+        let Some(FleetEvent::Link { host: seen, link }) = events.recv().await else {
+            panic!("a link event first");
+        };
+        assert_eq!(seen, host);
+        assert_eq!(
+            link,
+            Link::Unreachable(Unreach::Offline(Offline {
+                last_seen: Some(Timestamp(1_794_786_060_000))
+            }))
+        );
+    }
+
+    #[tokio::test]
+    async fn a_machine_that_turns_the_connection_away_refuses_it() {
+        let (fleet, listener, host) = silent("127.0.0.1", Duration::from_secs(5)).await;
+        let hangs_up = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            drop(socket);
+        });
+        let error = fleet.connect(&host).await.err().unwrap();
+        hangs_up.await.unwrap();
         assert!(
-            error
-                .to_string()
-                .starts_with("offline, tailscale last saw it"),
-            "{error}"
+            matches!(&error, Unreach::Refused(detail) if detail.contains("fleet key")),
+            "{error:?}"
+        );
+
+        let error = fleet.connect(&host).await.err().unwrap();
+        assert!(
+            matches!(error, Unreach::Refused(_)),
+            "nothing listens: {error:?}"
         );
     }
 

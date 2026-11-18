@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 
 use super::rollout::{Rollout, Step};
 use crate::{
-    client::{Fleet, Snapshot},
+    client::{Fleet, Snapshot, Unreach},
     common::model::{Admission, Hostname, Order, Rejection},
     ui::{Board, board::Ordering},
 };
@@ -67,7 +67,7 @@ impl Dispatch {
 }
 
 /// a machine's answer to an order: taken, refused, or never heard
-pub type Answer = Result<Result<Admission, Rejection>, String>;
+pub type Answer = Result<Result<Admission, Rejection>, Unreach>;
 
 /// an order, and the working tree it names when it deploys one
 #[derive(Clone)]
@@ -93,9 +93,7 @@ impl Shipment {
             }
             client.deploy(self.order.clone()).await
         };
-        delivered
-            .await
-            .map_err(|error: eyre::Report| error.to_string())
+        delivered.await.map_err(Unreach::of)
     }
 }
 

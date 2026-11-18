@@ -2,6 +2,7 @@ use std::error::Error;
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
+    net::TcpStream,
     time::{Duration, timeout},
 };
 
@@ -46,7 +47,8 @@ async fn echo(payload: Vec<u8>) -> TestResult<Vec<u8>> {
         Ok::<_, Box<dyn Error + Send + Sync>>(received)
     });
 
-    let (mut client, _) = EncryptedStream::connect(address, &PSK).await?;
+    let (mut client, _) =
+        EncryptedStream::connect(TcpStream::connect(address).await?, &PSK).await?;
     client.write_all(&payload).await?;
     client.flush().await?;
 
@@ -89,7 +91,8 @@ async fn serves_plaintext_in_small_read_buffers() -> TestResult {
         Ok::<_, Box<dyn Error + Send + Sync>>(())
     });
 
-    let (mut client, _) = EncryptedStream::connect(address, &PSK).await?;
+    let (mut client, _) =
+        EncryptedStream::connect(TcpStream::connect(address).await?, &PSK).await?;
     let mut actual = Vec::new();
     let mut buffer = [0u8; 3];
 
@@ -119,7 +122,7 @@ async fn rejects_a_mismatched_psk() -> TestResult {
 
     let client = timeout(
         Duration::from_secs(2),
-        EncryptedStream::connect(address, &WRONG_PSK),
+        EncryptedStream::connect(TcpStream::connect(address).await?, &WRONG_PSK),
     )
     .await?;
 
@@ -146,7 +149,8 @@ async fn empty_writes_are_noops() -> TestResult {
         Ok::<_, Box<dyn Error + Send + Sync>>(received)
     });
 
-    let (mut client, _) = EncryptedStream::connect(address, &PSK).await?;
+    let (mut client, _) =
+        EncryptedStream::connect(TcpStream::connect(address).await?, &PSK).await?;
     assert_eq!(client.write(&[]).await?, 0);
     client.write_all(b"x").await?;
     client.flush().await?;
@@ -180,7 +184,8 @@ async fn round_trips_registered_packets() -> TestResult {
         Ok::<_, Box<dyn Error + Send + Sync>>(())
     });
 
-    let (mut client, _) = EncryptedStream::connect(address, &PSK).await?;
+    let (mut client, _) =
+        EncryptedStream::connect(TcpStream::connect(address).await?, &PSK).await?;
     client
         .send(ResolveRequest {
             git_ref: "abc123".into(),
@@ -237,7 +242,8 @@ async fn owned_halves_send_and_receive_packets_concurrently() -> TestResult {
             Ok::<_, Box<dyn Error + Send + Sync>>(())
         });
 
-        let (mut stream, hello) = EncryptedStream::connect(address, &PSK).await?;
+        let (mut stream, hello) =
+            EncryptedStream::connect(TcpStream::connect(address).await?, &PSK).await?;
         assert_eq!(hello.host, host());
         let (reader, writer) = stream.split();
 
@@ -285,7 +291,8 @@ async fn the_fullest_screen_fits_one_frame() -> TestResult {
         Ok::<_, Box<dyn Error + Send + Sync>>(())
     });
 
-    let (mut client, _) = EncryptedStream::connect(address, &PSK).await?;
+    let (mut client, _) =
+        EncryptedStream::connect(TcpStream::connect(address).await?, &PSK).await?;
     match client.recv().await? {
         Some(Packet::AttachScreen(screen)) => assert_eq!(screen.bytes, bytes),
         other => panic!("unexpected packet: {other:?}"),

@@ -12,13 +12,18 @@ mod targets;
 #[cfg(test)]
 mod test;
 
+use std::io::ErrorKind;
+
 use colored::Colorize;
 use eyre::{Result, eyre};
 use log::debug;
-use tokio::{net::lookup_host, time::timeout};
+use tokio::{
+    net::{TcpStream, lookup_host},
+    time::timeout,
+};
 
 pub use doctor::{Checkup, Finding, Severity};
-pub use fleet::{Fleet, FleetEvent, Link};
+pub use fleet::{Fleet, FleetEvent, Link, Unreach};
 pub use origin::detect_origin;
 pub use snapshot::Snapshot;
 pub use stream::{Attachment, AttachmentEvent};
@@ -49,23 +54,34 @@ pub struct CoeusClient {
 }
 
 impl CoeusClient {
+    /// connects to the daemon at `endpoint`, or says why it cannot
     pub async fn connect(
         settings: &ClientSettings,
         endpoint: &Endpoint,
         key: &Key,
-    ) -> Result<Self> {
+    ) -> Result<Self, Unreach> {
+        let failed = |error: &dyn std::fmt::Display| Unreach::Failed(error.to_string());
         let attempt = async {
             let address = lookup_host((endpoint.host.as_str(), endpoint.port))
-                .await?
+                .await
+                .map_err(|error| failed(&error))?
                 .next()
-                .ok_or_else(|| eyre!("{} does not resolve", endpoint.host))?;
+                .ok_or_else(|| failed(&format!("{} does not resolve", endpoint.host)))?;
+            let stream = TcpStream::connect(address)
+                .await
+                .map_err(|error| match error.kind() {
+                    ErrorKind::ConnectionRefused => Unreach::Refused(error.to_string()),
+                    _ => failed(&error),
+                })?;
 
-            EncryptedStream::connect(address, key.as_bytes()).await
+            EncryptedStream::connect(stream, key.as_bytes())
+                .await
+                .map_err(|error| Unreach::Refused(format!("{error:#}")))
         };
 
         let (stream, hello) = timeout(settings.connect_timeout, attempt)
             .await
-            .map_err(|_| eyre!("no answer within {:?}", settings.connect_timeout))??;
+            .map_err(|_| failed(&format!("no answer within {:?}", settings.connect_timeout)))??;
 
         debug!("connected to {}", hello.host.hostname.to_string().magenta());
         Ok(Self {

@@ -84,7 +84,7 @@ impl Daemon {
     }
 
     pub async fn client(&self) -> Result<CoeusClient> {
-        self.fleet.connect(&self.hello.hostname).await
+        Ok(self.fleet.connect(&self.hello.hostname).await?)
     }
 
     /// the job of `order` in the machine's history

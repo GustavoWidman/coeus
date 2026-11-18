@@ -1,10 +1,9 @@
-use std::{future::Future, sync::Arc, time::Duration};
+use std::{fmt, future::Future, sync::Arc, time::Duration};
 
-use eyre::eyre;
 use futures_util::future::join_all;
 use tokio::sync::mpsc;
 
-use super::{CoeusClient, Tailnet, Targets};
+use super::{CoeusClient, Offline, Tailnet, Targets};
 use crate::{
     common::model::{Hostname, MachineView, Timestamp},
     config::{ClientSettings, Key},
@@ -25,8 +24,41 @@ pub struct Fleet {
 pub enum Link {
     Connecting,
     Connected,
-    Unreachable(String),
+    Unreachable(Unreach),
 }
+
+/// why a machine cannot be reached
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Unreach {
+    /// tailscale sees it offline, asleep or away; it catches up once back
+    Offline(Offline),
+    /// it answered and turned this client away: nothing listens on the
+    /// port, it holds another fleet key, or it speaks another protocol
+    Refused(String),
+    Failed(String),
+}
+
+impl Unreach {
+    /// the reason behind a failed conversation with a machine
+    pub fn of(error: eyre::Report) -> Self {
+        error
+            .downcast::<Self>()
+            .unwrap_or_else(|error| Self::Failed(error.to_string()))
+    }
+}
+
+/// an offline machine's last sighting is told relative to the moment it is
+/// written out, so a reason kept on screen stays current
+impl fmt::Display for Unreach {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Offline(offline) => formatter.write_str(&offline.describe(Timestamp::now())),
+            Self::Refused(detail) | Self::Failed(detail) => formatter.write_str(detail),
+        }
+    }
+}
+
+impl std::error::Error for Unreach {}
 
 #[derive(Debug)]
 pub enum FleetEvent {
@@ -71,7 +103,7 @@ impl Fleet {
     /// connects to `host`, or gives up on it as soon as tailscale sees it
     /// offline. tailscale is asked alongside, so a machine that answers
     /// waits for no word from it.
-    pub async fn connect(&self, host: &Hostname) -> eyre::Result<CoeusClient> {
+    pub async fn connect(&self, host: &Hostname) -> Result<CoeusClient, Unreach> {
         let endpoint = self.settings.endpoint(host);
         let offline = async {
             match &self.tailnet {
@@ -82,7 +114,7 @@ impl Fleet {
 
         tokio::select! {
             connected = CoeusClient::connect(&self.settings, &endpoint, &self.key) => connected,
-            Some(offline) = offline => Err(eyre!(offline.describe(Timestamp::now()))),
+            Some(offline) = offline => Err(Unreach::Offline(offline)),
         }
     }
 
@@ -96,7 +128,7 @@ impl Fleet {
         let runs = self.hosts().iter().map(|host| async move {
             let result = match self.connect(host).await {
                 Ok(client) => operation(host.clone(), client).await,
-                Err(error) => Err(error),
+                Err(unreach) => Err(unreach.into()),
             };
             (host.clone(), result)
         });
@@ -128,8 +160,8 @@ impl Fleet {
 
         loop {
             let views = match self.connect(&host).await {
-                Ok(client) => client.watch().await,
-                Err(error) => Err(error),
+                Ok(client) => client.watch().await.map_err(Unreach::of),
+                Err(unreach) => Err(unreach),
             };
 
             match views {
@@ -153,12 +185,8 @@ impl Fleet {
                         return;
                     }
                 }
-                Err(error) => {
-                    if events
-                        .send(link(Link::Unreachable(error.to_string())))
-                        .await
-                        .is_err()
-                    {
+                Err(unreach) => {
+                    if events.send(link(Link::Unreachable(unreach))).await.is_err() {
                         return;
                     }
                 }

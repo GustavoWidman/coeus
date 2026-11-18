@@ -216,7 +216,9 @@ impl Row {
             ),
             Status::Sending => ("ordering".white(), String::new()),
             Status::Connecting => ("connecting".bright_black(), String::new()),
-            Status::Unreachable(reason) => ("unreachable".red(), reason.dimmed().to_string()),
+            Status::Unreachable(reason) => {
+                ("unreachable".red(), reason.to_string().dimmed().to_string())
+            }
             Status::Rejected(rejection) => (
                 "rejected".red(),
                 describe::rejection(rejection).yellow().to_string(),

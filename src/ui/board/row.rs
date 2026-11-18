@@ -1,5 +1,5 @@
 use crate::{
-    client::Link,
+    client::{Link, Unreach},
     common::model::{
         Admission, Hostname, JobId, JobState, JobSummary, JobView, MachineView, Outcome, Rejection,
     },
@@ -29,7 +29,7 @@ pub enum Ordering {
     Sending,
     Admitted(Admission),
     Rejected(Rejection),
-    Unreachable(String),
+    Unreachable(Unreach),
 }
 
 /// where a row stands, derived from its ordering and its machine's view
@@ -42,7 +42,7 @@ pub enum Status<'a> {
     Sending,
     /// watching, before the first view
     Connecting,
-    Unreachable(&'a str),
+    Unreachable(&'a Unreach),
     Rejected(&'a Rejection),
     /// watching a machine with no job yet
     Idle,

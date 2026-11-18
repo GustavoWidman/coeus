@@ -194,7 +194,7 @@ impl DeployArgs {
         for host in fleet.hosts() {
             let pinned = match fleet.connect(host).await {
                 Ok(mut client) => client.resolve(git_ref).await,
-                Err(error) => Err(error),
+                Err(unreach) => Err(unreach.into()),
             };
             match pinned {
                 Ok(pinned) => return Ok(Some(pinned.into())),
