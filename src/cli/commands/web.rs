@@ -3,12 +3,14 @@ use std::{
     net::SocketAddr,
     os::unix::fs::{FileTypeExt, PermissionsExt},
     path::{Path, PathBuf},
+    sync::Arc,
+    time::Duration,
 };
 
 use axum::Router;
 use clap::Args;
-use eyre::{Result, WrapErr, bail};
-use log::info;
+use eyre::{Result, WrapErr, bail, eyre};
+use log::{info, warn};
 use tokio::{
     net::{TcpListener, UnixListener},
     signal::unix::{SignalKind, signal},
@@ -18,15 +20,19 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     cli::{exit::Exit, local_hostname},
-    client::{Fleet, Targets},
+    client::{Fleet, Tailnet, Targets},
     common::model::Hostname,
-    config::{Endpoint, Key, WebSettings},
+    config::{Endpoint, Key, SigninSettings, WebSettings},
     web::{
         connector::{self, Timing},
         fixture::{Fixture, Scenario},
         ready,
+        session::Sessions,
+        signin::{Caller, Signin},
         site::{Access, Settings, Site},
         source::Source,
+        tls::{Certificate, TlsListener},
+        whois::{Policy, Whois},
     },
 };
 
@@ -36,8 +42,9 @@ pub struct WebArgs {
     #[arg(long, value_name = "DIR", env = "COEUS_WEB_DIR")]
     pub web_dir: Option<PathBuf>,
 
-    /// Serve a simulated fleet, open to anyone, instead of the real one; POST
-    /// /fixture/seek?t=<seconds>[&speed=<x>] moves its clock
+    /// Serve a simulated fleet instead of the real one, signing anyone in on
+    /// the same address; POST /fixture/seek?t=<seconds>[&speed=<x>] moves its
+    /// clock
     #[arg(long, value_name = "SCENARIO")]
     pub fixture: Option<Scenario>,
 
@@ -50,6 +57,10 @@ pub struct WebArgs {
     )]
     pub listen: SocketAddr,
 
+    /// Let anyone read a simulated fleet without signing in
+    #[arg(long, requires = "fixture")]
+    pub open: bool,
+
     /// How fast a simulated fleet's clock runs; 0 holds it
     #[arg(long, default_value_t = 1.0, requires = "fixture")]
     pub speed: f64,
@@ -57,13 +68,26 @@ pub struct WebArgs {
 
 impl WebArgs {
     /// serves the fleet named in `config`, or in /etc/coeus/web.toml, on its
-    /// origin socket, or a simulated one on a local port
+    /// origin socket and signing in on this machine's tailnet addresses, or
+    /// a simulated one on a local port
     pub async fn run(self, config: Option<&Path>) -> Result<Exit> {
         if let Some(scenario) = self.fixture {
             return self.simulate(scenario).await;
         }
 
         let settings = WebSettings::load(config.unwrap_or(Path::new(WebSettings::PATH)))?;
+        let web = &settings.web;
+        let sessions = Arc::new(Sessions::load(&web.session_key_file, web.session_days)?);
+        let signin = Signin {
+            sessions: sessions.clone(),
+            whois: Whois::tailscale(),
+            policy: Policy {
+                capability: web.signin.capability.clone(),
+                logins: web.signin.logins.clone(),
+            },
+            origin: web.public_origin.clone(),
+        }
+        .router()?;
         let key = settings.client.key.load()?;
         let targets = Targets::select(&["@all".to_owned()], &settings.client)?;
         if targets.hosts().is_empty() {
@@ -82,18 +106,21 @@ impl WebArgs {
             Settings {
                 web_dir: self.web_dir,
                 served_by: served_by.clone(),
-                access: Access::Closed,
+                access: Access::Sessions {
+                    sessions,
+                    signin: web.signin.urls.clone(),
+                },
             },
         );
         source.feed(site.inputs.clone());
 
         let terminated = terminated()?;
-        let socket = &settings.web.origin_socket;
+        let socket = &web.origin_socket;
         let listener = bind(socket)?;
         info!("serving on {}", socket.display());
 
         let stop = CancellationToken::new();
-        let tunnel = match &settings.web.tunnel {
+        let tunnel = match &web.tunnel {
             Some(tunnel) => {
                 let config = connector::configure(tunnel, socket)?;
                 let ready = watch_readiness(&settings, key, &served_by);
@@ -118,7 +145,18 @@ impl WebArgs {
                 let _ = tunnel.await;
             }
         };
-        serve(listener, site.router, done).await?;
+        let public = async { axum::serve(listener, site.router).await };
+        let signing_in = sign_in(signin, &web.signin);
+        until(
+            async {
+                tokio::select! {
+                    served = public => served.wrap_err("the site stopped"),
+                    served = signing_in => served,
+                }
+            },
+            done,
+        )
+        .await?;
         let _ = std::fs::remove_file(socket);
         Ok(Exit::Success)
     }
@@ -126,24 +164,75 @@ impl WebArgs {
     /// serves a simulated fleet, which never dials a coeusd
     async fn simulate(self, scenario: Scenario) -> Result<Exit> {
         let fixture = Fixture::new(scenario, self.speed);
-        let source = Source::Fixture(fixture.clone());
-        let site = Site::start(
-            fixture.hosts(),
-            source.clone(),
-            Settings {
-                web_dir: self.web_dir,
-                served_by: "lab".parse()?,
-                access: Access::Open(Fixture::viewer()),
-            },
-        );
-        source.feed(site.inputs.clone());
+        let origin = format!("http://{}", self.listen);
+        let router = fixture.site(self.web_dir, &origin, self.open)?;
 
         let listener = TcpListener::bind(self.listen)
             .await
             .wrap_err_with(|| format!("failed to listen on {}", self.listen))?;
-        info!("serving the {scenario:?} fixture on http://{}", self.listen);
-        serve(listener, site.router.merge(fixture.routes()), terminated()?).await?;
+        info!("serving the {scenario:?} fixture on {origin}");
+        until(
+            async {
+                axum::serve(
+                    listener,
+                    router.into_make_service_with_connect_info::<Caller>(),
+                )
+                .await
+                .wrap_err("the site stopped")
+            },
+            terminated()?,
+        )
+        .await?;
         Ok(Exit::Success)
+    }
+}
+
+/// serves `router` on each of this machine's tailnet addresses, once
+/// tailscale has them and the certificate exists, trying again until then
+async fn sign_in(router: Router, settings: &SigninSettings) -> Result<()> {
+    let listeners = loop {
+        match listen_on_tailnet(settings).await {
+            Ok(listeners) => break listeners,
+            Err(error) => warn!("not signing in yet: {error:#}"),
+        }
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    };
+    let served = listeners.into_iter().map(|listener| {
+        let router = router.clone();
+        async move {
+            axum::serve(
+                listener,
+                router.into_make_service_with_connect_info::<Caller>(),
+            )
+            .await
+        }
+    });
+    futures_util::future::try_join_all(served)
+        .await
+        .wrap_err("signing in stopped")?;
+    Ok(())
+}
+
+/// TLS listeners on every tailnet address of this machine that binds
+async fn listen_on_tailnet(settings: &SigninSettings) -> Result<Vec<TlsListener>> {
+    let tailnet = Tailnet::read()
+        .await
+        .ok_or_else(|| eyre!("tailscale did not answer"))?;
+    let certificate = Certificate::load(&settings.cert, &settings.key)?;
+    let mut listeners = Vec::new();
+    for address in tailnet.addresses() {
+        let address = SocketAddr::new(address, settings.port);
+        match TcpListener::bind(address).await {
+            Ok(tcp) => {
+                listeners.push(TlsListener::new(tcp, certificate.acceptor())?);
+                info!("signing in on https://{address}");
+            }
+            Err(error) => warn!("failed to listen on {address}: {error}"),
+        }
+    }
+    match listeners.is_empty() {
+        true => Err(eyre!("no tailnet address to listen on")),
+        false => Ok(listeners),
     }
 }
 
@@ -192,14 +281,13 @@ fn terminated() -> Result<impl Future<Output = ()>> {
     })
 }
 
-/// serves until `done` resolves
-async fn serve<L>(listener: L, router: Router, done: impl Future<Output = ()>) -> Result<()>
-where
-    L: axum::serve::Listener,
-    L::Addr: std::fmt::Debug,
-{
+/// runs `serving` until it stops, or until `done` resolves
+async fn until(
+    serving: impl Future<Output = Result<()>>,
+    done: impl Future<Output = ()>,
+) -> Result<()> {
     tokio::select! {
-        served = axum::serve(listener, router) => served.wrap_err("the server stopped"),
+        served = serving => served,
         () = done => Ok(()),
     }
 }

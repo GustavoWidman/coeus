@@ -44,6 +44,7 @@ pub fn typescript() -> String {
         (FleetEvent::docs(), FleetEvent::decl(&config)),
         (Snapshot::docs(), Snapshot::decl(&config)),
         (Viewer::docs(), Viewer::decl(&config)),
+        (Hello::docs(), Hello::decl(&config)),
         (SignIn::docs(), SignIn::decl(&config)),
         (Jwk::docs(), Jwk::decl(&config)),
         (SignedIn::docs(), SignedIn::decl(&config)),

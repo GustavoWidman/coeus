@@ -881,6 +881,9 @@
     {
       "kind": "deployment_removed",
       "order": "0000000000005038"
+    },
+    {
+      "kind": "expired"
     }
   ],
   "log": [
@@ -978,6 +981,9 @@
       "outcome": {
         "kind": "succeeded"
       }
+    },
+    {
+      "kind": "expired"
     }
   ],
   "diff": {
@@ -1011,6 +1017,14 @@
     ]
   },
   "auth": {
+    "hello": {
+      "signin": [
+        "https://lab.tail0000.ts.net:8443",
+        "https://oracle.tail0000.ts.net:8443"
+      ],
+      "build": "0.6.0-4f2a9c1",
+      "schema": 1
+    },
     "signin": {
       "key": {
         "kty": "EC",
