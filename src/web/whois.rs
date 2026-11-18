@@ -28,8 +28,9 @@ pub struct Peer {
     pub capabilities: BTreeSet<String>,
 }
 
-/// who may sign in: a user's node, not a tagged one, which the tailnet
-/// policy grants the capability or whose login is listed
+/// who may sign in: a node the tailnet policy grants the capability, or a
+/// user's node whose login is listed. a tagged node has no user to list, so
+/// only the policy can let it in
 #[derive(Clone, Debug)]
 pub struct Policy {
     pub capability: String,
@@ -39,7 +40,7 @@ pub struct Policy {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
     Welcome,
-    /// a tagged node is a server, not someone's device
+    /// a tagged node the policy grants nothing; it has no login to list
     Tagged,
     /// neither granted the capability nor listed
     NotGranted,
@@ -47,11 +48,12 @@ pub enum Verdict {
 
 impl Policy {
     pub fn judge(&self, peer: &Peer) -> Verdict {
-        if peer.tagged {
-            return Verdict::Tagged;
+        if peer.capabilities.contains(&self.capability) {
+            return Verdict::Welcome;
         }
-        match peer.capabilities.contains(&self.capability) || self.logins.contains(&peer.login) {
-            true => Verdict::Welcome,
+        match peer.tagged {
+            true => Verdict::Tagged,
+            false if self.logins.contains(&peer.login) => Verdict::Welcome,
             false => Verdict::NotGranted,
         }
     }
