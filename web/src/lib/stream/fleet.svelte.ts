@@ -30,14 +30,40 @@ export class Fleet {
 	progress = $state.raw<Partial<Record<Hostname, LiveProgress>>>({});
 	deployments = $state.raw<DeploymentView[]>([]);
 	servedBy = $state.raw<Hostname | null>(null);
+	schema = 0;
+	build = '';
 	viewer = $state.raw<Viewer | null>(null);
 	link = $state<Link>('connecting');
+	/** what is on screen came from this device's cache, and the stream has not replaced it */
+	cached = $state(false);
 	/** counts changes to a machine or a deployment; the live dot rings on each */
 	beat = $state(0);
 	landed = $state.raw<Landed[]>([]);
 
 	get ready() {
 		return this.servedBy !== null;
+	}
+
+	/** shows a snapshot this device kept, until the stream sends its own */
+	restore(snapshot: Extract<FleetEvent, { kind: 'snapshot' }>) {
+		if (this.ready) return;
+		this.one(snapshot);
+		this.cached = true;
+	}
+
+	/** the fleet as a snapshot, to keep for the next launch */
+	snapshot(): Extract<FleetEvent, { kind: 'snapshot' }> | null {
+		if (!this.servedBy || !this.viewer) return null;
+		return {
+			kind: 'snapshot',
+			schema: this.schema,
+			build: this.build,
+			served_by: this.servedBy,
+			viewer: this.viewer,
+			machines: this.machines,
+			progress: Object.values(this.progress) as LiveProgress[],
+			deployments: this.deployments
+		};
 	}
 
 	machine(host: string) {
@@ -64,6 +90,9 @@ export class Fleet {
 	private one(e: FleetEvent) {
 		switch (e.kind) {
 			case 'snapshot':
+				this.cached = false;
+				this.schema = e.schema;
+				this.build = e.build;
 				this.machines = e.machines;
 				this.progress = Object.fromEntries(e.progress.map((p) => [p.host, p]));
 				this.deployments = e.deployments;
