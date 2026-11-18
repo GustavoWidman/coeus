@@ -103,7 +103,7 @@ export function ghost(node: HTMLElement, on = true) {
 		overflow: 'hidden'
 	});
 	return {
-		duration: 160,
+		duration: 220,
 		easing: ease,
 		css: (t: number) => `opacity:${t};transform:translateY(${(t - 1) * 4}px)`
 	};
