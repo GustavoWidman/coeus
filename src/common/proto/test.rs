@@ -1,5 +1,5 @@
 use crate::common::{
-    model::{JobId, JobSelector},
+    model::{Action, JobId, JobSelector, NixOptions, Order, OrderId, Origin, Source},
     proto::envelope::PacketEnvelope,
 };
 
@@ -59,4 +59,91 @@ fn daemons_that_cannot_draw_still_read_an_attach_request() {
 
     let request: (JobSelector, u64) = postcard::from_bytes(&payload).unwrap();
     assert_eq!(request, (JobSelector::Id(JobId(6)), 42));
+}
+
+#[test]
+fn a_read_only_key_may_watch_and_read_but_never_make_the_daemon_work() {
+    let terminal = TerminalSize {
+        columns: 80,
+        rows: 24,
+    };
+    let order = Order {
+        id: OrderId(1),
+        source: Source::Generation(3),
+        action: Action::Switch,
+        options: NixOptions::default(),
+        origin: Origin::Follow,
+        now: false,
+    };
+    let table: Vec<(Packet, bool)> = vec![
+        (WatchRequest { follow: false }.into(), true),
+        (WatchRequest { follow: true }.into(), true),
+        (HistoryRequest { limit: 10 }.into(), true),
+        (GenerationsRequest {}.into(), true),
+        (
+            AttachRequest {
+                job: JobSelector::Current,
+                from: 0,
+                terminal: None,
+            }
+            .into(),
+            true,
+        ),
+        (
+            AttachRequest {
+                job: JobSelector::Current,
+                from: 0,
+                terminal: Some(terminal),
+            }
+            .into(),
+            false,
+        ),
+        (AttachResize { size: terminal }.into(), false),
+        (DeployRequest { order }.into(), false),
+        (
+            CancelRequest {
+                job: JobSelector::Current,
+            }
+            .into(),
+            false,
+        ),
+        (
+            ResolveRequest {
+                git_ref: "main".into(),
+            }
+            .into(),
+            false,
+        ),
+        (CatchUpRequest {}.into(), false),
+        (RebootRequest {}.into(), false),
+        (
+            UploadBegin {
+                nar_hash: format!("sha256-{}", "A".repeat(44)).parse().unwrap(),
+                size: 0,
+            }
+            .into(),
+            false,
+        ),
+        (UploadChunk { data: vec![0] }.into(), false),
+        (HelloRequest {}.into(), false),
+        (HelloFinished { compatible: true }.into(), false),
+        (
+            Error {
+                message: "no".into(),
+            }
+            .into(),
+            false,
+        ),
+        (Ack {}.into(), false),
+    ];
+
+    for (packet, allowed) in &table {
+        assert!(Role::Full.allows(packet), "{:#06x}", packet.kind());
+        assert_eq!(
+            Role::Read.allows(packet),
+            *allowed,
+            "a read-only key sending {:#06x}",
+            packet.kind()
+        );
+    }
 }

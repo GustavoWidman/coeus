@@ -1,4 +1,5 @@
 pub mod envelope;
+mod role;
 
 #[cfg(test)]
 mod test;
@@ -7,6 +8,7 @@ pub use coeus_proto_macros::{Packet, packet_enum};
 
 pub const PROTOCOL_VERSION: u8 = 2;
 
+pub use role::Role;
 pub mod types;
 pub use types::*;
 
