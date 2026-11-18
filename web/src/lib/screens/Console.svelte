@@ -54,6 +54,17 @@
 		if (log && !Log) import('./Log.svelte').then((m) => (Log = m.default));
 	});
 
+	// the pane changes logs in a task of its own, not in the one where the fleet's update that
+	// ended a job moves everything else
+	const named = $derived(log ? `${log.host}/${log.id}` : '');
+	let shown = $state.raw<{ host: string; id: number } | null>(null);
+	$effect(() => {
+		named;
+		const next = untrack(() => log);
+		const t = setTimeout(() => (shown = next));
+		return () => clearTimeout(t);
+	});
+
 	let mid: HTMLElement;
 	$effect(() => {
 		key;
@@ -105,9 +116,9 @@
 		{/if}
 	</main>
 	<section class="pane right">
-		{#if boot.view === 'fleet' && log && Log}
-			{#key `${log.host}/${log.id}`}
-				<Log host={log.host} id={log.id} wide />
+		{#if boot.view === 'fleet' && shown && Log}
+			{#key `${shown.host}/${shown.id}`}
+				<Log host={shown.host} id={shown.id} wide />
 			{/key}
 		{/if}
 	</section>
