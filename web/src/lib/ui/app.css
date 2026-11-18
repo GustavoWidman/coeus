@@ -249,6 +249,10 @@ code {
 	pointer-events: none;
 	z-index: 6;
 }
+/* only a screen something covers is shaded; over the top one the shade would take a layer */
+.screen:last-child > .shade {
+	display: none;
+}
 .scroll {
 	position: absolute;
 	inset: 0;
@@ -1636,13 +1640,16 @@ code {
 .pane {
 	isolation: isolate;
 }
-.dg > .o,
-.dg > .n,
 .line > i,
 .rule > i,
 .dot > b,
 .ph > i > b {
 	z-index: 1;
+}
+/* what moves for a moment paints above even those, so none of them follows it into a layer */
+.dg > .o,
+.dg > .n {
+	z-index: 2;
 }
 .dg > .n,
 [data-key] {
