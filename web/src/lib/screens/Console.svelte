@@ -1,6 +1,8 @@
 <!--
 	The desktop: the fleet always on the left, and in the middle the machine picked from it, or
-	else a deployment, the newest one across machines unless the address names another.
+	else a deployment, the newest one across machines unless the address names another. On the
+	right, a job's log: the one the address names, or else the job of the machine in
+	the middle, or of the first machine building, or the one that last finished.
 -->
 <script lang="ts">
 	import { untrack } from 'svelte';
@@ -14,6 +16,7 @@
 	import { boot } from './boot.svelte.ts';
 	import Center from './Center.svelte';
 	import Fleet from './Fleet.svelte';
+	import type LogView from './Log.svelte';
 
 	const route = $derived(router.nav.route);
 	const host = $derived(route.screen === 'machine' || route.screen === 'log' ? route.host : null);
@@ -30,6 +33,26 @@
 				? `d-${center.order}`
 				: '-'
 	);
+
+	const log = $derived.by((): { host: string; id: number } | null => {
+		if (route.screen === 'log') return { host: route.host, id: route.job };
+		const states = fleet.machines.flatMap((m) =>
+			m.state && (!host || m.host === host) ? [{ host: m.host, st: m.state }] : []
+		);
+		const running = states.find((m) => m.st.running);
+		if (running) return { host: running.host, id: running.st.running!.id };
+		const last = states
+			.flatMap(({ host, st }) => st.recent.slice(0, 1).map((j) => ({ host, j })))
+			.sort((a, b) => (b.j.finished_at ?? 0) - (a.j.finished_at ?? 0))[0];
+		if (last) return { host: last.host, id: last.j.id };
+		const next = states.find((m) => m.st.next);
+		return next ? { host: next.host, id: next.st.next!.id } : null;
+	});
+
+	let Log = $state.raw<typeof LogView | null>(null);
+	$effect(() => {
+		if (log && !Log) import('./Log.svelte').then((m) => (Log = m.default));
+	});
 
 	let mid: HTMLElement;
 	$effect(() => {
@@ -81,5 +104,11 @@
 			{/key}
 		{/if}
 	</main>
-	<section class="pane right"></section>
+	<section class="pane right">
+		{#if boot.view === 'fleet' && log && Log}
+			{#key `${log.host}/${log.id}`}
+				<Log host={log.host} id={log.id} wide />
+			{/key}
+		{/if}
+	</section>
 </div>
