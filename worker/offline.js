@@ -31,7 +31,9 @@ function wait() {
 
 function tell() {
 	const s = Math.round((Date.now() - checked) / 1000);
-	ago.textContent = s < 2 ? 'no answer · checked just now' : `no answer · checked ${s}s ago`;
+	const text = s < 2 ? 'no answer · checked just now' : `no answer · checked ${s}s ago`;
+	// writing the same words again would still repaint them
+	if (ago.textContent !== text) ago.textContent = text;
 }
 
 document.getElementById('copy').addEventListener('click', async (e) => {
