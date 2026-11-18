@@ -8,6 +8,14 @@
 
     environment.etc = {
       "coeus-test/key".text = "4c1f0e3b8a2d5c7e9f6a1b3d5e7f9a2c4e6b8d0f1a3c5e7b9d2f4a6c8e0b1d3f";
+      "coeus-test/read-key".text = "9e2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9e1b";
+      "coeus-test/read-key.toml".text = ''
+        [settings]
+        key_file = "/etc/coeus-test/read-key"
+
+        [settings.hosts.loopback]
+        address = "127.0.0.1"
+      '';
       "coeus-test/wrong-key.toml".text = ''
         [settings]
         key = "0000000000000000000000000000000000000000000000000000000000000000"
@@ -20,6 +28,7 @@
     services.coeus = {
       enable = true;
       keyFile = "/etc/coeus-test/key";
+      readKeyFile = "/etc/coeus-test/read-key";
       flake = "git+file:///var/fleet";
       follow.ref = "deployed";
       hosts.loopback = {
@@ -55,6 +64,18 @@
     assert published["committed"] == int(machine.succeed("git -C /var/fleet log -1 --format=%ct")), published
     assert machine.succeed("stat -c %a /run/coeus /run/coeus/follow.json").split() == ["755", "644"]
     machine.succeed("su nobody -s /bin/sh -c 'cat /run/coeus/follow.json'")
+
+    # the read-only key watches the machine and is refused anything that
+    # makes coeusd work, a deploy of the commit just looked up included
+    reader = "coeus --config /etc/coeus-test/read-key.toml"
+    watched = json.loads(machine.succeed(f"{reader} status loopback --json"))
+    assert watched[0]["view"]["host"]["hostname"] == "machine", watched
+    machine.succeed(f"{reader} history loopback")
+    rev = published["rev"]
+    refused = machine.fail(f"{reader} deploy loopback --rev {rev} --build --detach 2>&1")
+    assert "this key may only read" in refused, refused
+    refused = machine.fail(f"{reader} catch-up loopback 2>&1")
+    assert "this key may only read" in refused, refused
 
     # a restart, as in the switch that upgrades coeus, keeps it
     machine.succeed("systemctl restart coeusd.service")
