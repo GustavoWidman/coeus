@@ -567,6 +567,9 @@ class Worker {
 				file: `shots/${name}.png`,
 				sha256: createHash('sha256').update(png).digest('hex')
 			};
+			// the screenshot stops endless animations and they start over once it is taken, which
+			// belongs to the screenshot, not to the page at rest
+			await settle(page, false);
 			const before = await seen(page);
 			result.loading = before.longTasks;
 			if (instruments) {
