@@ -21,6 +21,7 @@ use tower_http::services::{ServeDir, ServeFile};
 use super::{
     diffs::Diffs,
     fleet::{Aggregator, FleetState, Input},
+    logs,
     source::Source,
     stream::{self, Cursor, Masthead},
     view::{DiffView, Viewer},
@@ -90,6 +91,7 @@ impl Site {
 
         let api = Router::new()
             .route("/stream", get(fleet_stream))
+            .route("/machines/{host}/jobs/{id}/log", get(log))
             .route("/machines/{host}/jobs/{id}/diff", get(diff))
             .fallback(|_: Signed| async { StatusCode::NOT_FOUND });
         let mut router = Router::new().nest("/api", api);
@@ -146,6 +148,25 @@ async fn fleet_stream(
         viewer,
     };
     events(stream::fleet(app.fleet.clone(), resume, masthead))
+}
+
+async fn log(
+    Signed(_): Signed,
+    State(app): State<Shared>,
+    Segments((host, job)): Segments<(String, u64)>,
+    headers: HeaderMap,
+) -> Response {
+    let Some(host) = app.machine(&host) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let from = last_event_id(&headers)
+        .and_then(|id| id.parse().ok())
+        .unwrap_or(0);
+
+    match logs::follow(&app.source, &host, job, from).await {
+        Ok(body) => events(body),
+        Err(error) => (StatusCode::BAD_GATEWAY, format!("{error:#}")).into_response(),
+    }
 }
 
 async fn diff(
