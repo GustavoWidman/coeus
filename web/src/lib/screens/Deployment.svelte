@@ -65,6 +65,7 @@
 				{d.settled_at ? 'took' : 'elapsed'}
 				<b>
 					{#if d.settled_at}{dur(d.settled_at - d.ordered_at)}{:else}<Tick
+							still
 							v={clk(now.ms - d.ordered_at)}
 						/>{/if}
 				</b>
@@ -87,6 +88,7 @@
 							: 'follows the ref'}{:else if w.settled !== null && w.started !== null}done in {dur(
 							w.settled - w.started
 						)}{:else if w.started !== null}running · <Tick
+							still
 							v={clk(now.ms - w.started)}
 						/>{:else}waiting{/if}
 				</Label>

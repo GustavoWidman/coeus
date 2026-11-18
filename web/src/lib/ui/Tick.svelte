@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { roll } from '#lib/motion/pulse.ts';
 
-	let { v }: { v: string | number } = $props();
+	/** `still`: the number changes in place, as an elapsed time does every second */
+	let { v, still = false }: { v: string | number; still?: boolean } = $props();
 
 	let el: HTMLSpanElement;
 	let shown: string | null = null;
@@ -9,7 +10,8 @@
 	$effect(() => {
 		const next = String(v);
 		if (next === shown) return;
-		roll(el, shown, next);
+		if (still) el.textContent = next;
+		else roll(el, shown, next);
 		shown = next;
 	});
 </script>
