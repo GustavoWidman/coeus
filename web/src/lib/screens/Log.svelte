@@ -36,6 +36,8 @@
 	});
 	const done = $derived(ended ?? (job?.state.kind === 'finished' ? job.state.outcome : null));
 	const running = $derived(!done && job?.state.kind === 'running');
+	/** every host is down, so the log can't be read and the job stands as last seen */
+	const down = $derived(fleet.down !== null);
 	const queued = $derived(!done && job?.state.kind === 'queued');
 	const said = $derived.by(() => {
 		if (done) {
@@ -93,7 +95,7 @@
 					</span>{/if}
 			</div>
 			<div class="s">
-				<Dot s={done ? OUTCOME_DOT[done.kind] : running ? 'run' : 'wait'} />
+				<Dot s={down ? 'stale' : done ? OUTCOME_DOT[done.kind] : running ? 'run' : 'wait'} />
 				{host} · {said}{#if running && job?.started_at != null}{' · '}<Tick
 						still
 						v={clk(now.ms - job.started_at)}
@@ -102,7 +104,9 @@
 		</div>
 		<span class="r">
 			{#if wide}
-				<span class="live">{running ? 'tailing' : queued ? 'queued' : 'complete'}</span>
+				<span class="live">
+					{down ? 'cached' : running ? 'tailing' : queued ? 'queued' : 'complete'}
+				</span>
 			{:else}
 				<button type="button" class="done-btn" onclick={onclose}>Done</button>
 			{/if}
@@ -111,11 +115,13 @@
 	<div class="logbody mono" bind:this={box}>
 		{#if empty}
 			<p class="empty">
-				{failed
-					? `Could not read the log: ${failed}. Trying again.`
-					: queued
-						? 'Nothing yet: the job starts after the one before it.'
-						: 'Waiting for the first line.'}
+				{down
+					? `No host answered (${fleet.down}). The log comes back with them.`
+					: failed
+						? `Could not read the log: ${failed}. Trying again.`
+						: queued
+							? 'Nothing yet: the job starts after the one before it.'
+							: 'Waiting for the first line.'}
 			</p>
 		{/if}
 		<div class="lns" bind:this={list}></div>
