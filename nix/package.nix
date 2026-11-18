@@ -41,8 +41,12 @@ let
       versioned = map (package: entry package.name package.version) workspace;
       unversioned = map (package: entry package.name "0.0.0") workspace;
     in
-    assert lib.assertMsg (lib.all (lib.flip lib.hasInfix locked) versioned)
-      "Cargo.lock lays out a workspace package differently than expected";
+    # found by replacing it, not with lib.hasInfix, whose regex over the whole
+    # lock libstdc++ runs one stack frame a character: past a few thousand
+    # lines it overflows an evaluator's stack on linux
+    assert lib.assertMsg (lib.all (
+      text: builtins.replaceStrings [ text ] [ "" ] locked != locked
+    ) versioned) "Cargo.lock lays out a workspace package differently than expected";
     builtins.toFile "Cargo.lock" (builtins.replaceStrings versioned unversioned locked);
 
   # its name, version and vendored sources are given, so crane never reads
