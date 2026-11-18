@@ -102,9 +102,10 @@ fn nothing_runs_while_the_host_is_not_ready() {
     assert_eq!((state, commands), (Connector::Stopped, vec![]));
 }
 
-/// a stand-in for cloudflared that sets its signal handling, logs its pid and
-/// arguments to `$LOG`, then runs `then`. the handling comes first, so a
-/// signal sent once "start" is logged always meets it
+/// a stand-in for cloudflared that sets its signal handling, marks when it
+/// started in `started.<pid>`, logs its pid and arguments to `$LOG`, then runs
+/// `then`. the handling comes first, so a signal sent once "start" is logged
+/// always meets it
 struct Stub {
     dir: tempfile::TempDir,
 }
@@ -118,7 +119,7 @@ impl Stub {
         let dir = tempfile::tempdir().unwrap();
         let program = dir.path().join("cloudflared");
         let script = format!(
-            "#!/bin/sh\nLOG=\"$(dirname \"$0\")/log\"\n{trap}\necho \"start $$ $*\" >> \"$LOG\"\n{then}\n"
+            "#!/bin/sh\nLOG=\"$(dirname \"$0\")/log\"\n{trap}\n: > \"$(dirname \"$0\")/started.$$\"\necho \"start $$ $*\" >> \"$LOG\"\n{then}\n"
         );
         std::fs::write(&program, script).unwrap();
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -166,6 +167,16 @@ impl Stub {
         })
         .await
         .unwrap_or_else(|_| panic!("the log holds only {:?}", self.lines()))
+    }
+
+    /// when the process that logged `line` started, by its own mark rather
+    /// than by when a poll of the log noticed it
+    fn started(&self, line: &str) -> std::time::SystemTime {
+        let pid = line.split_whitespace().nth(1).unwrap();
+        std::fs::metadata(self.dir.path().join(format!("started.{pid}")))
+            .unwrap()
+            .modified()
+            .unwrap()
     }
 
     fn pid(line: &str) -> rustix::process::Pid {
@@ -267,12 +278,17 @@ async fn a_cloudflared_that_keeps_dying_restarts_ever_more_slowly() {
     let running = supervise(stub.program(), Path::new("config.json"));
 
     running.ready.send_replace(true);
-    let mut starts = Vec::new();
-    for count in 1..=4 {
-        stub.until(count).await;
-        starts.push(Instant::now());
-    }
-    let gaps: Vec<Duration> = starts.windows(2).map(|pair| pair[1] - pair[0]).collect();
+    let starts: Vec<_> = stub
+        .until(4)
+        .await
+        .iter()
+        .take(4)
+        .map(|line| stub.started(line))
+        .collect();
+    let gaps: Vec<Duration> = starts
+        .windows(2)
+        .map(|pair| pair[1].duration_since(pair[0]).unwrap())
+        .collect();
     for (gap, wait) in gaps.iter().zip(QUICK.restarts) {
         assert!(
             *gap >= wait,
