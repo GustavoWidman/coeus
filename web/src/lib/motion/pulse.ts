@@ -1,15 +1,17 @@
 import { reduced } from './reduced.ts';
+import { onScreen } from './visible.ts';
 
 const seen = new WeakMap<Element, unknown>();
 
 export const under = (el: Element) => el.closest('[data-under]') !== null;
 
-/** rings the element's `<b>` when `value` changes, but not when it first shows */
+/** rings the element's `<b>` when `value` changes, but not when it first shows or off screen */
 export const pulse = (value: unknown) => (el: Element) => {
 	const was = seen.get(el);
 	seen.set(el, value);
 	const b = el.querySelector('b');
-	if (was === undefined || was === value || !b || reduced() || under(el)) return;
+	const visible = onScreen(el);
+	if (was === undefined || was === value || !b || reduced() || under(el) || !visible) return;
 	b.animate(
 		[
 			{ transform: 'scale(1)', opacity: 0.6 },
@@ -24,11 +26,13 @@ const ROLL = 170;
 
 /**
  * Writes `to` into `el`, rolling the characters that differ from `from`: each run of changed
- * characters slides up (down when the number fell) and fades, over the run it replaces.
+ * characters slides up (down when the number fell) and fades, over the run it replaces. Off
+ * screen the text just changes.
  */
 export function roll(el: HTMLElement, from: string | null, to: string) {
 	rolled.delete(el);
-	if (from === null || reduced() || under(el)) {
+	const visible = onScreen(el);
+	if (from === null || reduced() || under(el) || !visible) {
 		el.textContent = to;
 		return;
 	}

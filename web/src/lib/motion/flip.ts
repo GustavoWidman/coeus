@@ -7,6 +7,7 @@
 import { tick } from 'svelte';
 import { under } from './pulse.ts';
 import { reduced } from './reduced.ts';
+import { offScreen } from './visible.ts';
 
 const CURVE = [0.23, 1, 0.32, 1] as const;
 export const E = `cubic-bezier(${CURVE.join(',')})`;
@@ -43,10 +44,14 @@ export async function withFlip(change: () => void) {
 	before = null;
 
 	const moved = new Map<Element, number>();
+	const hidden = new Set<Element>();
 	for (const [e, r] of was) {
 		if (!e.isConnected) continue;
-		const dy = r.top - e.getBoundingClientRect().top;
-		if (Math.abs(dy) > 0.5) moved.set(e, dy);
+		const now = e.getBoundingClientRect();
+		const dy = r.top - now.top;
+		if (Math.abs(dy) <= 0.5) continue;
+		moved.set(e, dy);
+		if (offScreen(r) && offScreen(now)) hidden.add(e);
 	}
 	for (const [e, dy] of moved) {
 		let along = 0;
@@ -57,10 +62,11 @@ export async function withFlip(change: () => void) {
 			}
 		}
 		const d = dy - along;
-		if (Math.abs(d) <= 0.5) continue;
+		// a slide that starts and ends off screen shows nothing
+		if (Math.abs(d) <= 0.5 || hidden.has(e)) continue;
 		// above what stands still, so the browser composites the sliding element alone
 		const el = e as HTMLElement;
-		el.style.zIndex = '1';
+		el.style.zIndex = '2';
 		el.animate([{ transform: `translateY(${d}px)` }, { transform: 'none' }], {
 			duration: 220,
 			easing: E
@@ -84,7 +90,7 @@ const PINNED = [
 export function ghost(node: HTMLElement, on = true) {
 	const r = before?.get(node) ?? node.getBoundingClientRect();
 	if (!on || reduced() || stage.busy || under(node)) return { duration: 0 };
-	if (r.height === 0 || r.bottom < 0 || r.top > innerHeight) return { duration: 0 };
+	if (r.height === 0 || offScreen(r)) return { duration: 0 };
 	Object.assign(node.style, {
 		position: 'fixed',
 		left: r.left + 'px',
@@ -106,7 +112,11 @@ export function ghost(node: HTMLElement, on = true) {
 export function enter(node: HTMLElement, on = true) {
 	// an element that comes back while it fades out is still pinned where it stood
 	for (const p of PINNED) node.style.removeProperty(p);
-	if (!on || reduced() || under(node)) return { duration: 0 };
+	if (!on || reduced() || under(node) || offScreen(node.getBoundingClientRect()))
+		return { duration: 0 };
+	// above what stands still, as a slide is, so what follows it keeps off the compositor
+	node.style.zIndex = '2';
+	node.addEventListener('introend', () => node.style.removeProperty('z-index'), { once: true });
 	return {
 		duration: 220,
 		easing: ease,
