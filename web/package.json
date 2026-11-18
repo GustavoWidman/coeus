@@ -10,6 +10,7 @@
 		"build": "vite build && bun scripts/compress.ts",
 		"preview": "vite preview",
 		"check": "svelte-check --tsconfig ./tsconfig.json",
+		"test": "vitest run",
 		"lint": "prettier --check .",
 		"format": "prettier --write ."
 	},
@@ -27,6 +28,7 @@
 		"svelte": "^5.57.3",
 		"svelte-check": "^4.6.0",
 		"typescript": "^6.0.3",
-		"vite": "^8.3.7"
+		"vite": "^8.3.7",
+		"vitest": "^4.1.8"
 	}
 }

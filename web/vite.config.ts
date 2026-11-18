@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 export default defineConfig({
@@ -14,5 +14,10 @@ export default defineConfig({
 		// Every browser the app supports preloads modules itself.
 		modulePreload: { polyfill: false }
 	},
-	plugins: [svelte({ compilerOptions: { runes: true } })]
+	plugins: [svelte({ compilerOptions: { runes: true } })],
+	test: {
+		include: ['src/**/*.test.ts'],
+		environment: 'node',
+		expect: { requireAssertions: true }
+	}
 });
