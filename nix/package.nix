@@ -74,8 +74,8 @@ let
     }
   );
 
-  # the tests also read recorded nix output and sample contracts, which the
-  # package itself never needs
+  # the tests also read recorded nix output, sample contracts and the web
+  # dashboard's contract and types, which the package itself never needs
   checkArgs = args // {
     inherit cargoArtifacts;
     src = lib.fileset.toSource {
@@ -85,6 +85,8 @@ let
         ../src/nix/fixtures
         ../src/bootstrap/contract/test/fixtures
         ../src/bootstrap/test/run/contract.nix
+        ../contract/web.json
+        ../web/src/lib/wire/types.ts
       ];
     };
   };
