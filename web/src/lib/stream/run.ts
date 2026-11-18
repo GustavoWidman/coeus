@@ -1,8 +1,9 @@
 /**
  * The fleet's lifetime in the page: the stream, which signs each request with this device's
- * session. A refused session sends the page to sign in and waits there until it does.
+ * session. A refused session sends the page to sign in and waits there until it does; a
+ * session past a day old renews itself in the background whenever the page shows.
  */
-import { device } from '#lib/auth/device.ts';
+import { device, due } from '#lib/auth/device.ts';
 import { withFlip } from '#lib/motion/flip.ts';
 import { router } from '#lib/router.svelte.ts';
 import { connect } from './client.ts';
@@ -24,3 +25,11 @@ connect('/api/stream', {
 		await device.signedIn();
 	}
 });
+
+async function renew() {
+	const session = await device.session();
+	if (session && due(session, Date.now())) (await import('#lib/auth/signin.ts')).renew();
+}
+
+renew();
+document.addEventListener('visibilitychange', () => document.hidden || renew());
