@@ -22,6 +22,7 @@ pub mod source;
 pub mod stream;
 pub mod transcript;
 pub mod view;
+pub mod whois;
 
 #[cfg(test)]
 mod test;

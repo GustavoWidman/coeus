@@ -27,7 +27,7 @@ pub use fleet::{Fleet, FleetEvent, Link, Unreach};
 pub use origin::detect_origin;
 pub use snapshot::Snapshot;
 pub use stream::{Attachment, AttachmentEvent};
-pub use tailnet::{Offline, Tailnet};
+pub use tailnet::{Offline, Tailnet, tailscale};
 pub use targets::Targets;
 
 use crate::{
