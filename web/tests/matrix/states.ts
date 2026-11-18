@@ -87,9 +87,39 @@ const worker: Net = {
 	headers: { 'content-type': 'application/json', 'coeus-offline': '1', 'retry-after': '15' },
 	body: '{"offline":true}'
 };
+// Signing in. A simulated fleet that lets anyone read it offers no sign-in address, so these
+// answer for one: lab's, on the tailnet.
+const START = 1_794_927_600_000;
+const LAB = 'https://lab.tail4a3ea.ts.net:45730';
+const cors = { 'access-control-allow-origin': '*' };
+const json = { ...cors, 'content-type': 'application/json' };
+const hello: Net = {
+	url: '**/api/hello',
+	status: 200,
+	headers: json,
+	body: JSON.stringify({ signin: [LAB], build: '', schema: 1 })
+};
 const ping: Record<'up' | 'off', Net> = {
-	up: { url: '**/auth/ping', status: 204 },
+	up: { url: '**/auth/ping', status: 204, headers: cors },
 	off: { url: '**/auth/ping', abort: true }
+};
+const claims = btoa(JSON.stringify({ v: 1, iat: START, exp: START + 7 * 864e5 }));
+const session: Record<'ok' | 'refused', Net> = {
+	ok: {
+		url: '**/auth/session',
+		status: 200,
+		headers: json,
+		body: JSON.stringify({
+			token: `v1.${claims.replace(/=+$/, '')}.mac`,
+			viewer: { login: 'gustavo@github', device: 'iphone', expires_at: START + 7 * 864e5 }
+		})
+	},
+	refused: {
+		url: '**/auth/session',
+		status: 403,
+		headers: cors,
+		body: 'the tailnet policy grants no access'
+	}
 };
 
 /** the machine screen of `host` at `t`, with the prototype's machine screen for it */
@@ -315,7 +345,7 @@ export const STATES: State[] = [
 		name: 'off the tailnet',
 		path: '/signin',
 		t: 10,
-		net: [ping.off],
+		net: [hello, ping.off],
 		steps: [{ wait: 500 }],
 		reference: { s: 'signin' }
 	},
@@ -324,7 +354,7 @@ export const STATES: State[] = [
 		name: 'signing',
 		path: '/signin',
 		t: 10,
-		net: [ping.up, hold('**/auth/session')],
+		net: [hello, ping.up, hold('**/auth/session')],
 		steps: [{ wait: 500 }],
 		reference: null
 	},
@@ -333,16 +363,24 @@ export const STATES: State[] = [
 		name: 'signed in',
 		path: '/signin',
 		t: 10,
-		net: [ping.up],
+		net: [hello, ping.up, session.ok],
 		steps: [{ wait: 500 }],
 		reference: { s: 'signedin' }
 	},
 	{
+		// signed in, then off the tailnet when the server stops taking the session
 		screen: 'signin',
 		name: 'session expired',
-		path: '/',
+		path: '/signin',
 		t: 10,
-		net: [{ url: STREAM, status: 401, body: '' }],
+		net: [hello, ping.up, session.ok],
+		steps: [
+			{ wait: 500 },
+			{ net: ping.off },
+			{ net: { url: STREAM, status: 401, body: '' } },
+			{ click: '.btn' },
+			{ wait: 500 }
+		],
 		reference: null
 	},
 	{
@@ -350,7 +388,7 @@ export const STATES: State[] = [
 		name: 'grant refused',
 		path: '/signin',
 		t: 10,
-		net: [ping.up, { url: '**/auth/session', status: 403, body: '' }],
+		net: [hello, ping.up, session.refused],
 		steps: [{ wait: 500 }],
 		reference: null
 	},

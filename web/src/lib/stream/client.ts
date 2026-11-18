@@ -1,7 +1,7 @@
 /**
  * Server-sent events read through `fetch` rather than `EventSource`, so the request carries
- * headers like any other, `Last-Event-ID` among them. The stream closes while the page is
- * hidden, where iOS would suspend it anyway.
+ * headers like any other: the session, its proof, and `Last-Event-ID`. The stream closes while
+ * the page is hidden, where iOS would suspend it anyway.
  */
 import { ParseError, parseFleetEvent } from '#lib/wire/parse.ts';
 import type { Link } from './fleet.svelte.ts';
@@ -34,10 +34,19 @@ export function split(text: string): { messages: Message[]; rest: string } {
 }
 
 const DELAYS = [500, 1000, 2000, 5000, 10000];
+/** what an answer to the stream request means */
+type Answer = 'open' | 'refused' | 'failed';
+
+const answer = (status: number): Answer =>
+	status >= 200 && status < 300 ? 'open' : status === 401 ? 'refused' : 'failed';
 
 export interface Listener {
 	events(events: FleetEvent[]): void;
 	link(state: Link): void;
+	/** the headers that prove this request's session */
+	sign(path: string): Promise<Record<string, string>>;
+	/** the session was refused or has ended; resolves once there is another */
+	refused(): Promise<void>;
 }
 
 export function connect(url: string, on: Listener) {
@@ -45,6 +54,7 @@ export function connect(url: string, on: Listener) {
 	let failures = 0;
 	let abort: AbortController | null = null;
 	let wake: (() => void) | null = null;
+	const path = new URL(url, location.href);
 
 	const visible = () =>
 		new Promise<void>((ok) => {
@@ -57,19 +67,23 @@ export function connect(url: string, on: Listener) {
 		else wake?.();
 	});
 
+	/** reads messages until the stream ends; true if it ended because the session did */
 	async function read(body: ReadableStream<Uint8Array>) {
 		const reader = body.getReader();
 		const text = new TextDecoder();
 		let rest = '';
 		for (;;) {
 			const { done, value } = await reader.read();
-			if (done) return;
+			if (done) return false;
 			const got = split(rest + text.decode(value, { stream: true }));
 			rest = got.rest;
 			const events: FleetEvent[] = [];
+			let expired = false;
 			for (const m of got.messages) {
 				try {
-					events.push(parseFleetEvent(m.data));
+					const e = parseFleetEvent(m.data);
+					if (e.kind === 'expired') expired = true;
+					else events.push(e);
 				} catch (e) {
 					if (!(e instanceof ParseError)) throw e;
 					console.warn(`coeus: dropped a stream message: ${e.message}`);
@@ -77,6 +91,7 @@ export function connect(url: string, on: Listener) {
 				if (m.id !== null) cursor = m.id;
 			}
 			if (events.length) on.events(events);
+			if (expired) return true;
 		}
 	}
 
@@ -84,19 +99,25 @@ export function connect(url: string, on: Listener) {
 		for (;;) {
 			await visible();
 			abort = new AbortController();
+			let got: Answer = 'failed';
 			try {
-				const res = await fetch(url, {
-					headers: cursor ? { 'Last-Event-ID': cursor } : {},
-					cache: 'no-store',
-					signal: abort.signal
-				});
-				if (res.ok && res.body) {
+				const headers = await on.sign(path.pathname + path.search);
+				if (cursor) headers['last-event-id'] = cursor;
+				const res = await fetch(url, { headers, cache: 'no-store', signal: abort.signal });
+				got = answer(res.status);
+				if (got === 'open' && res.body) {
 					// a stream resumed with nothing new says nothing until something changes
 					failures = 0;
 					on.link('live');
-					await read(res.body);
-				}
+					if (await read(res.body)) got = 'refused';
+				} else await res.body?.cancel();
 			} catch {}
+			if (got === 'refused') {
+				on.link('connecting');
+				await on.refused();
+				failures = 0;
+				continue;
+			}
 			on.link('retrying');
 			if (document.hidden) continue;
 			const delay = DELAYS[Math.min(failures++, DELAYS.length - 1)];

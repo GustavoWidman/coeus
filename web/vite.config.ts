@@ -12,7 +12,9 @@ export default defineConfig({
 		// Every name under this path carries a content hash, so the server caches it for a year.
 		assetsDir: '_app/immutable',
 		// Every browser the app supports preloads modules itself.
-		modulePreload: { polyfill: false }
+		modulePreload: { polyfill: false },
+		// what each route loads, for scripts/budget.ts
+		manifest: true
 	},
 	plugins: [svelte({ compilerOptions: { runes: true } })],
 	test: {

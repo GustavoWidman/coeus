@@ -1,1 +1,7 @@
-{ "js": 40, "css": 9 }
+{
+	"default": { "js": 40, "css": 9 },
+	"routes": {
+		"/": { "module": "src/lib/screens/Live.svelte" },
+		"/signin": { "module": "src/lib/auth/SignIn.svelte", "js": 30 }
+	}
+}

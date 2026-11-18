@@ -1,10 +1,15 @@
+<!--
+	Signing in is a page of its own, and the fleet's screens load only past it, so a device that
+	has to sign in first loads none of them.
+-->
 <script lang="ts">
-	import Console from '#lib/screens/Console.svelte';
-	import Stack from '#lib/screens/Stack.svelte';
+	import { router } from '#lib/router.svelte.ts';
 
-	const wide = matchMedia('(min-width: 1024px)');
-	let isWide = $state(wide.matches);
-	wide.addEventListener('change', (e) => (isWide = e.matches));
+	const signin = $derived(router.nav.route.screen === 'signin');
 </script>
 
-{#if isWide}<Console />{:else}<Stack />{/if}
+{#if signin}
+	{#await import('#lib/auth/SignIn.svelte') then m}<m.default />{/await}
+{:else}
+	{#await import('#lib/screens/Live.svelte') then m}<m.default />{/await}
+{/if}
