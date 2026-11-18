@@ -34,6 +34,7 @@ nobody has to babysit it. a push to `main` can roll out to the whole fleet, cana
 | `coeus reboot <host>` | reboot, once nothing is activating |
 | `coeus bootstrap <host> --to <user@address>` | bring a machine that runs nixos, or a mac, into the fleet; without a host, list the bootstraps in progress |
 | `coeus doctor [targets]` | problems and how to fix them; `--fix` on a mac walks through the one permission it needs |
+| `coeus web` | serve the fleet's dashboard, live; `--fixture instrument` serves a simulated fleet instead |
 | `coeus keygen` | a new fleet key |
 | `coeus completions <shell>` | completions for bash, zsh, fish and nushell |
 
@@ -224,6 +225,14 @@ a newer order replaces one that is still waiting, `--now` replaces one that hasn
 
 a daemon can accept a second key, `read_key_file` (`readKeyFile` in the module), for things that should see the fleet and never touch it. the first noise message only decrypts under the key the client used, so coeusd tries the fleet key, then the read-only one, and the one that opens it decides what the connection may ask. a read-only connection may watch, read history and generations, and attach to a log as plain frames. everything else gets `this key may only read` and the connection stays open: deploy, cancel and reboot obviously, but also resolving a ref, which makes the daemon fetch git, catching up, which can start a job, uploads, and a drawn attach, which spawns nix-output-monitor on the machine. `Role::allows` names every packet with no wildcard, so a new one does not compile until someone decides. coeusd refuses to start when both keys are the same.
 
+## the dashboard
+
+`coeus web` watches every machine of its inventory with the read-only key and keeps one copy of the fleet, built by a single task from each machine's views. every machine, running build and deployment in it carries the number of the change that last touched it. it reads `/etc/coeus/web.toml` (`web.example.toml` shows it), serves the built app from `--web-dir` (`COEUS_WEB_DIR`) and everything else under `/api`, on a unix socket only its own user can open, for cloudflared. until browsers can sign in, nothing under `/api` answers but 401.
+
+`/api/stream` is server-sent events: a snapshot, then each thing again, whole, whenever it changes, with `<epoch>.<number>` as the id. come back with the last id as `Last-Event-ID` and you get only what changed since, unless the process restarted, or you were gone so long it forgot a removal, in which case you get a snapshot. a browser is nothing but that id, so one that stops reading costs no memory: when it reads again it gets the latest of each thing once, not everything it missed. a build's numbers go out at most every 250 ms, the rest within 50 ms. `/api/machines/<host>/jobs/<id>/log` streams a job's log as typed lines, its ids the machine's own log offsets, so a reconnect resumes on any host; `/api/machines/<host>/jobs/<id>/diff` is the job's closure diff.
+
+`coeus web --fixture instrument` runs the same site over a simulated fleet on `127.0.0.1:7979`, open to anyone: the design prototype's six machines in the middle of a rollout, a failed build, a laptop that wakes to catch up, and then it all starts over (about 108 s). it never dials a coeusd. one seeded generator draws every number, so a moment looks the same however the clock got there. `POST /fixture/seek?t=<seconds>` moves the clock there and holds it, `&speed=1` runs it from there, and the answer, which comes once the site shows that moment, says what time it is in the simulated fleet, for a test to pin the browser's clock to.
+
 ## development
 
 ```sh
@@ -231,7 +240,7 @@ nix develop -c cargo test   # unit and end-to-end tests over the real protocol
 nix flake check             # the package and clippy, plus a nixos vm running coeusd on linux
 ```
 
-the dashboard lives in `web/`, a svelte 5 app that vite builds into static files. `bun run dev` serves it with hot reload, and `nix build .#coeus-web` builds what ships. its checks hold what `index.html` loads to `web/perf-budget.json` (gzipped js and css) and the built css to animating only `transform`, `opacity` and `clip-path`. after changing its dependencies, run `nix develop -c lock-web` so nix fetches the same ones.
+the dashboard lives in `web/`, a svelte 5 app that vite builds into static files. `bun run dev` serves it with hot reload, talking to `cargo run -- web --fixture instrument`, and `nix build .#coeus-web` builds what ships. its checks hold what `index.html` loads to `web/perf-budget.json` (gzipped js and css) and the built css to animating only `transform`, `opacity` and `clip-path`. after changing its dependencies, run `nix develop -c lock-web` so nix fetches the same ones.
 
 the web dashboard's types live in `src/web/view.rs`. `web/src/lib/wire/types.ts` and `contract/web.json`, an example of every message, are generated from them, and the tests fail until both are rewritten with `COEUS_BLESS=1 nix develop -c cargo test web::`.
 
