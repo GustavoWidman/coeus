@@ -1,4 +1,8 @@
-use std::{fmt, path::PathBuf, str::FromStr};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use eyre::{Context, Report, Result, bail, eyre};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -18,6 +22,13 @@ impl Key {
 
     pub fn to_hex(&self) -> String {
         self.0.iter().map(|byte| format!("{byte:02x}")).collect()
+    }
+
+    /// reads a key file, such as an agenix secret
+    pub fn read(path: &Path) -> Result<Self> {
+        std::fs::read_to_string(path)
+            .wrap_err_with(|| format!("failed to read the key from {}", path.display()))?
+            .parse()
     }
 }
 
@@ -92,9 +103,7 @@ impl KeySource {
         }
 
         if let Some(path) = &self.key_file {
-            return std::fs::read_to_string(path)
-                .wrap_err_with(|| format!("failed to read the key from {}", path.display()))?
-                .parse();
+            return Key::read(path);
         }
 
         match std::env::var(Self::ENV) {

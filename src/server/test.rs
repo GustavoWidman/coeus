@@ -5,9 +5,12 @@ use tokio_util::sync::CancellationToken;
 use super::CoeusServer;
 use crate::{
     client::{AttachmentEvent, CoeusClient},
-    common::model::{
-        Action, AttachFrame, JobEvent, JobId, JobSelector, JobState, NixOptions, Order, OrderId,
-        Origin, Outcome, Placement, Source,
+    common::{
+        model::{
+            Action, AttachFrame, JobEvent, JobId, JobSelector, JobState, NixOptions, Order,
+            OrderId, Origin, Outcome, Placement, Source,
+        },
+        proto::{Role, TerminalSize},
     },
     config::{ClientSettings, Endpoint, FollowSettings, Key},
     testing::{GitFlake, Harness},
@@ -17,6 +20,7 @@ struct Served {
     harness: Harness,
     endpoint: Endpoint,
     key: Key,
+    read_key: Key,
     restart: CancellationToken,
 }
 
@@ -27,10 +31,15 @@ impl Served {
 
     async fn serve(harness: Harness) -> Self {
         let key = Key::generate();
-        let server =
-            CoeusServer::bind("127.0.0.1:0".parse().unwrap(), &key, harness.engine.clone())
-                .await
-                .unwrap();
+        let read_key = Key::generate();
+        let keys = [(Role::Full, key.clone()), (Role::Read, read_key.clone())];
+        let server = CoeusServer::bind(
+            "127.0.0.1:0".parse().unwrap(),
+            &keys,
+            harness.engine.clone(),
+        )
+        .await
+        .unwrap();
         let endpoint = Endpoint {
             host: "127.0.0.1".into(),
             port: server.local_addr().unwrap().port(),
@@ -43,12 +52,21 @@ impl Served {
             harness,
             endpoint,
             key,
+            read_key,
             restart,
         }
     }
 
     async fn client(&self) -> CoeusClient {
-        CoeusClient::connect(&ClientSettings::default(), &self.endpoint, &self.key)
+        self.client_with(&self.key).await
+    }
+
+    async fn reader(&self) -> CoeusClient {
+        self.client_with(&self.read_key).await
+    }
+
+    async fn client_with(&self, key: &Key) -> CoeusClient {
+        CoeusClient::connect(&ClientSettings::default(), &self.endpoint, key)
             .await
             .unwrap()
     }
@@ -254,5 +272,90 @@ async fn catching_up_looks_the_followed_ref_up_at_once() {
                 .is_some_and(|latest| latest.rev.to_string() == head)
         })
         .await;
+    served.stop();
+}
+
+#[tokio::test]
+async fn a_read_only_key_watches_and_reads_logs() {
+    let served = Served::start().await;
+    served
+        .client()
+        .await
+        .deploy(order(1))
+        .await
+        .unwrap()
+        .unwrap();
+    served.harness.release.notify_one();
+    served
+        .harness
+        .until(|view| view.recent.iter().any(|job| job.id == JobId(1)))
+        .await;
+
+    let mut reader = served.reader().await;
+    assert_eq!(reader.view().await.unwrap().recent[0].id, JobId(1));
+    assert_eq!(reader.history(10).await.unwrap()[0].id, JobId(1));
+
+    let mut views = served.reader().await.watch().await.unwrap();
+    assert!(views.next().await.unwrap().is_some());
+
+    let mut attachment = served
+        .reader()
+        .await
+        .attach(JobSelector::Id(JobId(1)), 0, None)
+        .await
+        .unwrap();
+    let outcome = loop {
+        match attachment.next().await.unwrap() {
+            Some(AttachmentEvent::Ended { outcome, .. }) => break outcome,
+            Some(_) => {}
+            None => panic!("the attach ended without an outcome"),
+        }
+    };
+    assert_eq!(outcome, Outcome::Succeeded);
+    served.stop();
+}
+
+#[tokio::test]
+async fn a_read_only_key_is_refused_work_and_keeps_its_connection() {
+    let served = Served::start().await;
+    let mut reader = served.reader().await;
+    let refused = |error: eyre::Report| {
+        assert!(
+            error.to_string().contains("this key may only read"),
+            "{error}"
+        );
+    };
+
+    refused(reader.deploy(order(1)).await.unwrap_err());
+    refused(reader.cancel(JobSelector::Current).await.unwrap_err());
+    refused(reader.resolve("main").await.unwrap_err());
+    refused(reader.catch_up().await.unwrap_err());
+    refused(reader.reboot().await.unwrap_err());
+    let tree = tempfile::tempdir().unwrap();
+    let init = std::process::Command::new("git")
+        .args(["init", "--quiet"])
+        .arg(tree.path())
+        .status()
+        .unwrap();
+    assert!(init.success());
+    std::fs::write(tree.path().join("flake.nix"), "{ }").unwrap();
+    let snapshot = crate::client::Snapshot::capture(tree.path()).await.unwrap();
+    refused(reader.upload(&snapshot).await.unwrap_err());
+
+    let view = reader.view().await.unwrap();
+    assert!(view.running.is_none() && view.recent.is_empty(), "{view:?}");
+    assert!(!served.harness.engine.snapshots().has(&snapshot.nar_hash));
+
+    let terminal = TerminalSize {
+        columns: 80,
+        rows: 24,
+    };
+    let drawn = reader
+        .attach(JobSelector::Current, 0, Some(terminal))
+        .await
+        .unwrap()
+        .next()
+        .await;
+    refused(drawn.unwrap_err());
     served.stop();
 }

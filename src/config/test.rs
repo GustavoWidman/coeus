@@ -3,7 +3,7 @@ use std::path::Path;
 use easy_config_store::ConfigStore;
 
 use super::*;
-use crate::common::model::Hostname;
+use crate::common::{model::Hostname, proto::Role};
 
 fn example<T>(name: &str) -> T
 where
@@ -69,6 +69,33 @@ fn keys_load_from_inline_values_and_files() {
     assert_eq!(from_file.load().unwrap(), key);
     assert!("abc".parse::<Key>().is_err());
     assert_eq!(format!("{key:?}"), "Key(..)");
+}
+
+#[test]
+fn a_daemon_accepts_a_read_only_key_beside_the_fleet_key() {
+    let full = Key::generate();
+    let read = Key::generate();
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(file.path(), read.to_hex()).unwrap();
+    let mut settings = DaemonSettings {
+        key: KeySource {
+            key: Some(full.clone()),
+            key_file: None,
+        },
+        ..DaemonSettings::default()
+    };
+
+    assert_eq!(settings.keys().unwrap(), [(Role::Full, full.clone())]);
+
+    settings.read_key_file = Some(file.path().to_owned());
+    assert_eq!(
+        settings.keys().unwrap(),
+        [(Role::Full, full.clone()), (Role::Read, read)]
+    );
+
+    settings.read_key = Some(full);
+    let error = settings.keys().unwrap_err();
+    assert!(error.to_string().contains("is the fleet key"), "{error}");
 }
 
 #[test]

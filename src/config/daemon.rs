@@ -7,12 +7,12 @@ use std::{
 };
 
 use easy_config_store::ConfigStore;
-use eyre::{Result, WrapErr};
+use eyre::{Result, WrapErr, eyre};
 use log::debug;
 use serde::{Deserialize, Serialize};
 
-use super::{DEFAULT_PORT, KeySource};
-use crate::common::model::Hostname;
+use super::{DEFAULT_PORT, Key, KeySource};
+use crate::common::{model::Hostname, proto::Role};
 
 pub type DaemonConfig = Arc<ConfigStore<DaemonSettings>>;
 
@@ -39,6 +39,13 @@ pub fn create_state_dir(dir: &Path) -> Result<PathBuf> {
 pub struct DaemonSettings {
     #[serde(flatten)]
     pub key: KeySource,
+
+    /// a second key, inline or in a file, that may only watch: the
+    /// machine's view, its history, generations and logs
+    #[serde(default)]
+    pub read_key: Option<Key>,
+    #[serde(default)]
+    pub read_key_file: Option<PathBuf>,
 
     /// where coeusd accepts connections
     #[serde(default = "DaemonSettings::default_listen")]
@@ -81,6 +88,24 @@ pub struct DaemonSettings {
 }
 
 impl DaemonSettings {
+    /// every key coeusd accepts with what it may do, the fleet key first
+    pub fn keys(&self) -> Result<Vec<(Role, Key)>> {
+        let full = self.key.load()?;
+        let read = match (&self.read_key, &self.read_key_file) {
+            (Some(key), _) => Some(key.clone()),
+            (None, Some(path)) => Some(Key::read(path)?),
+            (None, None) => None,
+        };
+
+        match read {
+            Some(read) if read == full => Err(eyre!(
+                "the read-only key is the fleet key, so it could do anything"
+            )),
+            Some(read) => Ok(vec![(Role::Full, full), (Role::Read, read)]),
+            None => Ok(vec![(Role::Full, full)]),
+        }
+    }
+
     fn default_listen() -> SocketAddr {
         SocketAddr::from(([0u16; 8], DEFAULT_PORT))
     }
@@ -102,6 +127,8 @@ impl Default for DaemonSettings {
     fn default() -> Self {
         Self {
             key: KeySource::default(),
+            read_key: None,
+            read_key_file: None,
             listen: Self::default_listen(),
             flake: String::new(),
             hostname: None,
