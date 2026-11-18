@@ -79,7 +79,7 @@ impl Diffs {
         Ok(diff)
     }
 
-    /// reads the diffs of the newest deployment's jobs as soon as they are
+    /// reads the diffs of the deployments' jobs as soon as they are
     /// written, telling the aggregator of each, for as long as it runs
     pub async fn follow(
         self: Arc<Self>,
@@ -128,43 +128,39 @@ impl Diffs {
     }
 }
 
-/// the jobs of the newest deployment that are past building, so their logs
-/// hold a diff if they will ever hold one
+/// the jobs of the deployments shown that are past building, so their logs
+/// hold a diff if they will ever hold one. every deployment counts, not only
+/// the newest: a one-machine order placed after a rollout would otherwise
+/// hide the rollout's diffs, and each job's log is read once all the same
 fn written(state: &FleetState) -> Vec<Key> {
-    let newest = state
+    let rows = state
         .deployments
         .values()
         .filter_map(|deployment| deployment.value.as_ref())
-        .max_by_key(|deployment| deployment.ordered_at);
-    let Some(newest) = newest else {
-        return Vec::new();
-    };
+        .flat_map(|deployment| &deployment.rows);
 
-    newest
-        .rows
-        .iter()
-        .filter_map(|row| {
-            let job = row.job?;
-            let card = state
-                .machines
-                .iter()
-                .find(|card| card.value.host == row.host)?;
-            let machine = card.value.state.as_ref()?;
-            let known = machine
-                .running
-                .iter()
-                .chain(&machine.recent)
-                .find(|card| card.id == job)?;
-            let past = match known.state {
-                JobStateView::Running { phase } => {
-                    matches!(phase, PhaseView::Activating | PhaseView::Verifying)
-                }
-                JobStateView::Finished { .. } => true,
-                JobStateView::Queued => false,
-            };
-            past.then(|| (row.host.clone(), job))
-        })
-        .collect()
+    rows.filter_map(|row| {
+        let job = row.job?;
+        let card = state
+            .machines
+            .iter()
+            .find(|card| card.value.host == row.host)?;
+        let machine = card.value.state.as_ref()?;
+        let known = machine
+            .running
+            .iter()
+            .chain(&machine.recent)
+            .find(|card| card.id == job)?;
+        let past = match known.state {
+            JobStateView::Running { phase } => {
+                matches!(phase, PhaseView::Activating | PhaseView::Verifying)
+            }
+            JobStateView::Finished { .. } => true,
+            JobStateView::Queued => false,
+        };
+        past.then(|| (row.host.clone(), job))
+    })
+    .collect()
 }
 
 /// reads the job's log until its diff, or until it is clear none comes
