@@ -36,6 +36,28 @@ export type Viewer = {
   expires_at: Ms;
 };
 
+/** what a browser sends to sign in: its public key, and its signature over `coeus-signin-v1\n<public origin>\n<ts>` by the matching private key */
+export type SignIn = {
+  key: Jwk;
+  ts: Ms;
+  /** `r || s`, base64url, as WebCrypto signs */
+  sig: string;
+};
+
+/** a public key as a JSON Web Key */
+export type Jwk = {
+  kty: string;
+  crv: string;
+  x: string;
+  y: string;
+};
+
+/** what signing in on the tailnet answers: the session to send as `Authorization: Coeus <token>`, and who it is for */
+export type SignedIn = {
+  token: string;
+  viewer: Viewer;
+};
+
 /** a machine, all but its running job's progress */
 export type MachineCard = {
   host: Hostname;

@@ -1009,5 +1009,25 @@
         "size_delta": -104857600
       }
     ]
+  },
+  "auth": {
+    "signin": {
+      "key": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "HhhTL9R1TALzBB2cdc6zO4P_2BrHzk_ogsyxyYvFiW4",
+        "y": "pGwxHE4v9A3ZajZT5uRURdMt_khuztdcepDGoYiBwKM"
+      },
+      "ts": 1800000600000,
+      "sig": "XkT1d6l81joc0BqpAQfrzOatl_a2rJPHKwTyXVs_aftuGMoMLnhnmXVKTgskULkvxrlpJWSxG8c0b1I87ZmIdQ"
+    },
+    "signed_in": {
+      "token": "v1.eyJ2IjoxfQ.c2lnbmF0dXJl",
+      "viewer": {
+        "login": "r3dlust@github",
+        "device": "iphone",
+        "expires_at": 1800605400000
+      }
+    }
   }
 }

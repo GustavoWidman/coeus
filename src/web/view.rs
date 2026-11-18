@@ -31,6 +31,15 @@ pub struct Viewer {
     pub expires_at: Timestamp,
 }
 
+/// what signing in on the tailnet answers: the session to send as
+/// `Authorization: Coeus <token>`, and who it is for
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct SignedIn {
+    pub token: String,
+    pub viewer: Viewer,
+}
+
 /// one message of the fleet stream. every entity travels whole, so a lost or
 /// skipped message is repaired by the next one about the same entity
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

@@ -57,7 +57,7 @@ sha-crypt = { version = "0.6.0", features = ["getrandom"] }
 ssh-key = { version = "0.6.7", features = ["ed25519", "getrandom"] }
 regex-lite = "0.1.9"
 toml = "0.8.23"
-tower-http = { version = "0.7.1", features = ["fs"] }
+tower-http = { version = "0.7.1", features = ["cors", "fs"] }
 zeroize = { version = "1.9.0", features = ["std"] }
 hmac = "0.12.1"
 p256 = "0.13.2"
