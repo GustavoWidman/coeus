@@ -66,7 +66,7 @@ fn the_web_example_parses() {
     );
     assert_eq!(settings.web.public_origin, "https://coeus.example.com");
     assert_eq!(settings.web.session_days, 7);
-    assert_eq!(settings.web.signin.port, 8443);
+    assert_eq!(settings.web.signin.port, 45730);
     assert_eq!(settings.web.signin.urls.len(), 2);
     assert_eq!(settings.web.signin.capability, "example.com/cap/coeus");
     let tunnel = settings.web.tunnel.unwrap();
@@ -98,7 +98,7 @@ urls = []
     .unwrap();
     let settings = WebSettings::load(file.path()).unwrap();
     assert_eq!(settings.web.session_days, 7);
-    assert_eq!(settings.web.signin.port, 8443);
+    assert_eq!(settings.web.signin.port, 45730);
     assert_eq!(settings.web.signin.capability, "r3dlust.com/cap/coeus");
     assert!(settings.web.signin.logins.is_empty());
     assert_eq!(settings.web.tunnel, None);

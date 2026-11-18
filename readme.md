@@ -246,7 +246,7 @@ services.coeus.web = {
   # 64 hex digits a line (`coeus keygen`), the same file on every serving host
   sessionKeyFile = config.age.secrets.coeus-session-key.path;
   # every serving host's, so the app finds whichever answers
-  signin.urls = [ "https://lab.tail0000.ts.net:8443" "https://altar.tail0000.ts.net:8443" ];
+  signin.urls = [ "https://lab.tail0000.ts.net:45730" "https://altar.tail0000.ts.net:45730" ];
   tunnel = {
     id = "6f1c2a9e-3b7d-4e58-9a0c-d2e4f6a8b1c3"; # `cloudflared tunnel create`
     credentialsFile = config.age.secrets.coeus-tunnel.path;

@@ -32,7 +32,7 @@
         enable = true;
         publicOrigin = "https://coeus.example.com";
         sessionKeyFile = "/etc/coeus-test/session-key";
-        signin.urls = [ "https://machine.tail0000.ts.net:8443" ];
+        signin.urls = [ "https://machine.tail0000.ts.net:45730" ];
         tunnel = {
           id = "6f1c2a9e-3b7d-4e58-9a0c-d2e4f6a8b1c3";
           credentialsFile = "/etc/coeus-test/tunnel.json";
@@ -57,7 +57,7 @@
     def serves():
         assert "<html" in machine.succeed(f"{site}/ --fail"), "the app's shell"
         hello = json.loads(machine.succeed(f"{site}/api/hello --fail"))
-        assert hello["signin"] == ["https://machine.tail0000.ts.net:8443"], hello
+        assert hello["signin"] == ["https://machine.tail0000.ts.net:45730"], hello
         assert answer("/api/stream") == (401, 0), "nothing but the app without a session"
 
     def tunnel_down():

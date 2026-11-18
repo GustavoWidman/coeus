@@ -357,8 +357,8 @@ fn contract() -> String {
     let auth = Auth {
         hello: Hello {
             signin: vec![
-                "https://lab.tail0000.ts.net:8443".into(),
-                "https://oracle.tail0000.ts.net:8443".into(),
+                "https://lab.tail0000.ts.net:45730".into(),
+                "https://oracle.tail0000.ts.net:45730".into(),
             ],
             build: "0.6.0-4f2a9c1".into(),
             schema: SCHEMA,

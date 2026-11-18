@@ -93,15 +93,15 @@ in
     signin = {
       port = mkOption {
         type = types.port;
-        default = 8443;
+        default = 45730;
         description = "The port signing in is served on, on this machine's tailnet addresses alone.";
       };
 
       urls = mkOption {
         type = types.listOf types.str;
         example = [
-          "https://lab.tail0000.ts.net:8443"
-          "https://oracle.tail0000.ts.net:8443"
+          "https://lab.tail0000.ts.net:45730"
+          "https://oracle.tail0000.ts.net:45730"
         ];
         description = ''
           Every serving machine's sign-in address,

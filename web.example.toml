@@ -27,13 +27,13 @@ session_days = 7
 # signing in, served only on this machine's tailnet addresses, over its own
 # *.ts.net certificate (`tailscale cert`)
 [settings.web.signin]
-port = 8443
+port = 45730
 cert = "/var/lib/coeus-web/altar.tail0000.ts.net.crt"
 key = "/var/lib/coeus-web/altar.tail0000.ts.net.key"
 # every serving host's, offered to the app by /api/hello
 urls = [
-  "https://altar.tail0000.ts.net:8443",
-  "https://lab.tail0000.ts.net:8443",
+  "https://altar.tail0000.ts.net:45730",
+  "https://lab.tail0000.ts.net:45730",
 ]
 # a user's node may sign in when the tailnet policy grants it this app
 # capability toward the serving host, or when its login is listed here

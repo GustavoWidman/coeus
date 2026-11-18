@@ -1019,8 +1019,8 @@
   "auth": {
     "hello": {
       "signin": [
-        "https://lab.tail0000.ts.net:8443",
-        "https://oracle.tail0000.ts.net:8443"
+        "https://lab.tail0000.ts.net:45730",
+        "https://oracle.tail0000.ts.net:45730"
       ],
       "build": "0.6.0-4f2a9c1",
       "schema": 1
