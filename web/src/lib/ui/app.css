@@ -1639,3 +1639,32 @@ code {
 .pane.left .waves {
 	gap: 8px;
 }
+
+/* a phone screen hidden under the top one changes with the fleet but moves nothing: an
+   animation there would run on the main thread, since nothing of it is drawn */
+.screen[data-under] *,
+.screen[data-under] *::before,
+.screen[data-under] *::after {
+	animation-duration: 0s !important;
+	transition-duration: 0s !important;
+}
+/* what animates paints above what stands still, each screen and pane on its own, so the browser
+   gives a layer to the moving element alone and not to everything drawn after it */
+.screen,
+.scroll,
+.pane {
+	isolation: isolate;
+}
+.dg > .o,
+.dg > .n,
+.line > i,
+.rule > i,
+.dot > b,
+.ph > i > b,
+.sweep::after {
+	z-index: 1;
+}
+.dg > .n,
+[data-key] {
+	position: relative;
+}

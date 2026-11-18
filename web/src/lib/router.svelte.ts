@@ -20,6 +20,8 @@ export type Nav = {
 	depth: number;
 	/** How this entry became current: opened, pushed, replaced, or reached through history. */
 	kind: 'load' | 'push' | 'replace' | 'back' | 'forward';
+	/** The browser already animated the move, as Safari does for a swipe from the edge. */
+	animated?: boolean;
 };
 
 const routes: [RegExp, (...params: string[]) => Route][] = [
@@ -86,7 +88,8 @@ addEventListener('popstate', (event) => {
 	nav = {
 		route: parse(location.pathname) ?? { screen: 'fleet' },
 		depth,
-		kind: depth < nav.depth ? 'back' : 'forward'
+		kind: depth < nav.depth ? 'back' : 'forward',
+		animated: (event as PopStateEvent & { hasUAVisualTransition?: boolean }).hasUAVisualTransition
 	};
 });
 
@@ -107,5 +110,5 @@ export const router = {
 		return nav;
 	},
 	go,
-	back: () => history.back()
+	back: (route: Route) => (nav.depth > 0 ? history.back() : go(route, true))
 };
