@@ -17,6 +17,7 @@ let
   daemon = render (
     lib.recursiveUpdate {
       key_file = cfg.keyFile;
+      read_key_file = cfg.readKeyFile;
       ssh_key_file = cfg.sshKeyFile;
       follow = lib.mapNullable (follow: {
         inherit (follow) ref interval;
@@ -54,6 +55,18 @@ in
       type = types.str;
       example = "/run/agenix/coeus-key";
       description = "File holding the fleet's pre-shared key (64 hex digits), read by coeusd and the CLI.";
+    };
+
+    readKeyFile = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "/run/agenix/coeus-read-key";
+      description = ''
+        File holding a second key (64 hex digits) that may only watch: the
+        machine's view, its history, generations and logs, never a deploy, a
+        cancel, a lookup, a catch-up, a reboot or an upload. It must differ
+        from `keyFile`; coeusd refuses to start otherwise.
+      '';
     };
 
     flake = mkOption {
