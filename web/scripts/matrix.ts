@@ -484,7 +484,8 @@ async function route(ctx: BrowserContext, net: Net) {
 	await ctx.route(net.url, async (r) => {
 		if ('hold' in net) return;
 		if ('abort' in net) return r.abort('connectionrefused');
-		await r.fulfill({ status: net.status, headers: net.headers, body: net.body ?? '' });
+		const body = net.file ? readFileSync(join(opt.webDir, net.file)) : (net.body ?? '');
+		await r.fulfill({ status: net.status, headers: net.headers, body });
 	});
 }
 

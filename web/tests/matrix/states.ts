@@ -31,6 +31,8 @@ export type Net =
 			status: number;
 			headers?: Record<string, string>;
 			body?: string;
+			/** the body is this file of the built app */
+			file?: string;
 	  };
 
 /** A change to what the server streams, for states the simulated fleet never reaches. */
@@ -86,11 +88,12 @@ const STREAM = '**/api/stream';
 const API = '**/api/**';
 const hold = (url: string): Net => ({ url, hold: true });
 const down: Net = { url: API, status: 530, body: '' };
-const worker: Net = {
-	url: API,
+/** the page the offline Worker, or the service worker's copy of it, serves in place of the app */
+const offlinePage: Net = {
+	url: '**/',
 	status: 503,
-	headers: { 'content-type': 'application/json', 'coeus-offline': '1', 'retry-after': '15' },
-	body: '{"offline":true}'
+	headers: { 'content-type': 'text/html; charset=utf-8', 'coeus-offline': '1' },
+	file: 'offline.html'
 };
 
 // Signing in. A simulated fleet that lets anyone read it offers no sign-in address, so these
@@ -409,11 +412,12 @@ export const STATES: State[] = [
 		reference: { s: 'offline' }
 	},
 	{
+		// a first visit, where nothing on the device serves the app
 		screen: 'down',
 		name: 'from the worker',
 		path: '/',
 		t: 10,
-		net: [worker],
+		net: [offlinePage],
 		reference: null
 	},
 	{
