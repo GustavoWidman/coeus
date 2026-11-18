@@ -36,6 +36,13 @@
 	const done = $derived(ended ?? (job?.state.kind === 'finished' ? job.state.outcome : null));
 	const running = $derived(!done && job?.state.kind === 'running');
 	const queued = $derived(!done && job?.state.kind === 'queued');
+	const said = $derived.by(() => {
+		if (done) {
+			const took = job?.started_at && job.finished_at ? job.finished_at - job.started_at : 0;
+			return outcome(done).split(':')[0] + (took ? ` · ${dur(took)}` : '');
+		}
+		return job?.state.kind === 'running' ? job.state.phase : 'queued';
+	});
 
 	let box: HTMLElement;
 	let list: HTMLElement;
@@ -72,11 +79,10 @@
 			</div>
 			<div class="s">
 				<Dot s={done ? OUTCOME_DOT[done.kind] : running ? 'run' : 'wait'} />
-				{host} · {#if done}{outcome(done).split(':')[0]}{job?.started_at && job.finished_at
-						? ` · ${dur(job.finished_at - job.started_at)}`
-						: ''}{:else if running && job?.state.kind === 'running'}{job.state
-						.phase}{#if job.started_at !== null}
-						· <Tick still v={clk(now.ms - job.started_at)} />{/if}{:else}queued{/if}
+				{host} · {said}{#if running && job?.started_at != null}{' · '}<Tick
+						still
+						v={clk(now.ms - job.started_at)}
+					/>{/if}
 			</div>
 		</div>
 		<span class="r">
