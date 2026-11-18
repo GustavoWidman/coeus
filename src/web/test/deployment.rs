@@ -1,9 +1,9 @@
-use super::{ORDERED, SHA, git, host, job, view};
+use super::{
+    NOW, ORDERED, RELEASE, SHA, card, catch_up, following, git, host, job, machine, release,
+    running, succeeded,
+};
 use crate::{
-    common::model::{
-        Failure, Follow, JobState, JobSummary, JobView, MachineView, Origin, Outcome, Phase,
-        Pinned, Source, Timestamp,
-    },
+    common::model::{Failure, JobState, JobSummary, Outcome, Phase, Source, Timestamp},
     web::{
         derive,
         view::{
@@ -12,71 +12,6 @@ use crate::{
         },
     },
 };
-
-/// the commit a deploy rolls out; [SHA] is what machines ran before
-const RELEASE: &str = "1111111111111111111111111111111111111111";
-const NOW: Timestamp = Timestamp(ORDERED.0 + 600_000);
-
-fn succeeded() -> JobState {
-    JobState::Finished(Outcome::Succeeded)
-}
-
-fn running() -> JobState {
-    JobState::Running {
-        phase: Phase::Building,
-    }
-}
-
-/// job `id` of order `order` deploying [RELEASE] from `main`
-fn release(id: u64, order: u64, at: i64, state: JobState) -> JobSummary {
-    JobSummary {
-        source: git(RELEASE, "main"),
-        ..job(id, order, at, state)
-    }
-}
-
-/// a catch-up to [RELEASE] through `git_ref`
-fn catch_up(id: u64, git_ref: &str, state: JobState) -> JobSummary {
-    JobSummary {
-        source: git(RELEASE, git_ref),
-        origin: Origin::Follow,
-        ..job(id, 0xf011, 120_000, state)
-    }
-}
-
-/// a machine reporting `jobs`, each where its state puts it
-fn machine(name: &str, jobs: Vec<JobSummary>) -> MachineView {
-    let mut machine = view(name);
-    for job in jobs {
-        match job.state {
-            JobState::Queued => machine.next = Some(job),
-            JobState::Running { .. } => machine.running = Some(JobView::queued(job)),
-            JobState::Finished(_) => machine.recent.push(job),
-        }
-    }
-    machine
-}
-
-fn following(mut machine: MachineView, git_ref: &str, latest: &str) -> MachineView {
-    machine.system.follow = Some(Follow {
-        git_ref: git_ref.into(),
-        latest: Some(Pinned {
-            git_ref: git_ref.into(),
-            rev: latest.parse().unwrap(),
-            committed_at: ORDERED,
-        }),
-        paused: false,
-    });
-    machine
-}
-
-fn card(machine: &MachineView) -> MachineCard {
-    MachineCard {
-        host: machine.host.hostname.clone(),
-        link: LinkView::Connected,
-        state: Some(derive::state(machine, ORDERED)),
-    }
-}
 
 fn row(name: &str, wave: Option<u32>, verdict: Verdict, job: Option<u64>) -> DeploymentRow {
     DeploymentRow {

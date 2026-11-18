@@ -1,0 +1,1013 @@
+{
+  "fleet": [
+    {
+      "kind": "snapshot",
+      "schema": 1,
+      "build": "0.6.0-4f2a9c1",
+      "served_by": "lab",
+      "viewer": {
+        "login": "r3dlust@github",
+        "device": "iphone",
+        "expires_at": 1800604800000
+      },
+      "machines": [
+        {
+          "host": "lab",
+          "link": {
+            "kind": "connected"
+          },
+          "state": {
+            "seen_at": 1800000000000,
+            "platform": "nixos",
+            "system": "x86_64-linux",
+            "version": "0.5.1",
+            "daemon": "serving",
+            "generation": 41,
+            "current": "/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-nixos-system-lab-26.11",
+            "pending_boot": false,
+            "reboot_required": true,
+            "deployed": {
+              "kind": "git",
+              "rev": "caf4e2b9a1d6c3e8f0b2a4c6d8e0f1a3b5c7d9e1",
+              "git_ref": "main"
+            },
+            "follow": {
+              "git_ref": "deployed",
+              "latest": {
+                "rev": "1111111111111111111111111111111111111111",
+                "committed_at": 1800000000000
+              },
+              "paused": false
+            },
+            "running": {
+              "id": 62,
+              "order": "00000000000000a1",
+              "source": {
+                "kind": "git",
+                "rev": "1111111111111111111111111111111111111111",
+                "git_ref": "main"
+              },
+              "action": "switch",
+              "origin": {
+                "kind": "user",
+                "user": "r3dlust",
+                "host": "altar"
+              },
+              "state": {
+                "kind": "running",
+                "phase": "building"
+              },
+              "ordered_at": 1800000000000,
+              "started_at": 1800000001000,
+              "finished_at": null,
+              "phase_started_at": 1800000090000,
+              "toplevel": "/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-nixos-system-lab-26.11",
+              "attempt": 1,
+              "changes": 14
+            },
+            "next": {
+              "id": 63,
+              "order": "00000000000000b2",
+              "source": {
+                "kind": "snapshot",
+                "label": "altar:~/nix",
+                "nar_hash": "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
+              },
+              "action": "boot",
+              "origin": {
+                "kind": "user",
+                "user": "r3dlust",
+                "host": "altar"
+              },
+              "state": {
+                "kind": "queued"
+              },
+              "ordered_at": 1799999940000,
+              "started_at": 1799999941000,
+              "finished_at": null,
+              "phase_started_at": null,
+              "toplevel": null,
+              "attempt": 1,
+              "changes": null
+            },
+            "recent": [
+              {
+                "id": 61,
+                "order": "000000000000503d",
+                "source": {
+                  "kind": "generation",
+                  "number": 40
+                },
+                "action": "build",
+                "origin": {
+                  "kind": "user",
+                  "user": "r3dlust",
+                  "host": "altar"
+                },
+                "state": {
+                  "kind": "finished",
+                  "outcome": {
+                    "kind": "up_to_date"
+                  }
+                },
+                "ordered_at": 1799827200000,
+                "started_at": 1799827201000,
+                "finished_at": 1799827260000,
+                "phase_started_at": null,
+                "toplevel": null,
+                "attempt": 1,
+                "changes": null
+              },
+              {
+                "id": 60,
+                "order": "000000000000503c",
+                "source": {
+                  "kind": "git",
+                  "rev": "caf4e2b9a1d6c3e8f0b2a4c6d8e0f1a3b5c7d9e1",
+                  "git_ref": "main"
+                },
+                "action": "test",
+                "origin": {
+                  "kind": "github",
+                  "repository": "r3dlust/nix",
+                  "workflow": "deploy",
+                  "run_id": 19458201337,
+                  "attempt": 1,
+                  "url": "https://github.com/r3dlust/nix/actions/runs/19458201337"
+                },
+                "state": {
+                  "kind": "finished",
+                  "outcome": {
+                    "kind": "superseded",
+                    "by": 61
+                  }
+                },
+                "ordered_at": 1799827200000,
+                "started_at": 1799827201000,
+                "finished_at": 1799827260000,
+                "phase_started_at": null,
+                "toplevel": null,
+                "attempt": 1,
+                "changes": null
+              },
+              {
+                "id": 59,
+                "order": "000000000000503b",
+                "source": {
+                  "kind": "git",
+                  "rev": "caf4e2b9a1d6c3e8f0b2a4c6d8e0f1a3b5c7d9e1",
+                  "git_ref": "main"
+                },
+                "action": "switch",
+                "origin": {
+                  "kind": "user",
+                  "user": "r3dlust",
+                  "host": "altar"
+                },
+                "state": {
+                  "kind": "finished",
+                  "outcome": {
+                    "kind": "rolled_back",
+                    "phase": "verifying",
+                    "message": "sshd.service did not come back"
+                  }
+                },
+                "ordered_at": 1799827200000,
+                "started_at": 1799827201000,
+                "finished_at": 1799827260000,
+                "phase_started_at": null,
+                "toplevel": null,
+                "attempt": 1,
+                "changes": null
+              },
+              {
+                "id": 58,
+                "order": "000000000000503a",
+                "source": {
+                  "kind": "git",
+                  "rev": "caf4e2b9a1d6c3e8f0b2a4c6d8e0f1a3b5c7d9e1",
+                  "git_ref": "main"
+                },
+                "action": "switch",
+                "origin": {
+                  "kind": "user",
+                  "user": "r3dlust",
+                  "host": "altar"
+                },
+                "state": {
+                  "kind": "finished",
+                  "outcome": {
+                    "kind": "failed",
+                    "phase": "evaluating",
+                    "message": "attribute 'zfs' missing"
+                  }
+                },
+                "ordered_at": 1799827200000,
+                "started_at": 1799827201000,
+                "finished_at": 1799827260000,
+                "phase_started_at": null,
+                "toplevel": null,
+                "attempt": 1,
+                "changes": null
+              },
+              {
+                "id": 57,
+                "order": "0000000000005039",
+                "source": {
+                  "kind": "git",
+                  "rev": "caf4e2b9a1d6c3e8f0b2a4c6d8e0f1a3b5c7d9e1",
+                  "git_ref": "main"
+                },
+                "action": "switch",
+                "origin": {
+                  "kind": "user",
+                  "user": "r3dlust",
+                  "host": "altar"
+                },
+                "state": {
+                  "kind": "finished",
+                  "outcome": {
+                    "kind": "cancelled"
+                  }
+                },
+                "ordered_at": 1799827200000,
+                "started_at": 1799827201000,
+                "finished_at": 1799827260000,
+                "phase_started_at": null,
+                "toplevel": null,
+                "attempt": 1,
+                "changes": null
+              },
+              {
+                "id": 56,
+                "order": "0000000000005038",
+                "source": {
+                  "kind": "git",
+                  "rev": "caf4e2b9a1d6c3e8f0b2a4c6d8e0f1a3b5c7d9e1",
+                  "git_ref": "main"
+                },
+                "action": "switch",
+                "origin": {
+                  "kind": "user",
+                  "user": "r3dlust",
+                  "host": "altar"
+                },
+                "state": {
+                  "kind": "finished",
+                  "outcome": {
+                    "kind": "interrupted"
+                  }
+                },
+                "ordered_at": 1799827200000,
+                "started_at": 1799827201000,
+                "finished_at": 1799827260000,
+                "phase_started_at": null,
+                "toplevel": null,
+                "attempt": 1,
+                "changes": null
+              }
+            ]
+          }
+        },
+        {
+          "host": "nova",
+          "link": {
+            "kind": "connected"
+          },
+          "state": {
+            "seen_at": 1800000000000,
+            "platform": "nixos",
+            "system": "x86_64-linux",
+            "version": "0.5.1",
+            "daemon": "serving",
+            "generation": 41,
+            "current": null,
+            "pending_boot": false,
+            "reboot_required": false,
+            "deployed": null,
+            "follow": null,
+            "running": null,
+            "next": null,
+            "recent": [
+              {
+                "id": 20,
+                "order": "00000000000000a1",
+                "source": {
+                  "kind": "git",
+                  "rev": "1111111111111111111111111111111111111111",
+                  "git_ref": "main"
+                },
+                "action": "switch",
+                "origin": {
+                  "kind": "user",
+                  "user": "r3dlust",
+                  "host": "altar"
+                },
+                "state": {
+                  "kind": "finished",
+                  "outcome": {
+                    "kind": "failed",
+                    "phase": "fetching",
+                    "message": "could not reach the forge"
+                  }
+                },
+                "ordered_at": 1800000000800,
+                "started_at": 1800000001800,
+                "finished_at": 1800000060800,
+                "phase_started_at": null,
+                "toplevel": null,
+                "attempt": 1,
+                "changes": null
+              }
+            ]
+          }
+        },
+        {
+          "host": "altar",
+          "link": {
+            "kind": "connected"
+          },
+          "state": {
+            "seen_at": 1800000000000,
+            "platform": "darwin",
+            "system": "aarch64-darwin",
+            "version": "0.5.1",
+            "daemon": "serving",
+            "generation": 41,
+            "current": null,
+            "pending_boot": false,
+            "reboot_required": false,
+            "deployed": null,
+            "follow": null,
+            "running": null,
+            "next": null,
+            "recent": [
+              {
+                "id": 30,
+                "order": "00000000000000a1",
+                "source": {
+                  "kind": "git",
+                  "rev": "1111111111111111111111111111111111111111",
+                  "git_ref": "main"
+                },
+                "action": "switch",
+                "origin": {
+                  "kind": "user",
+                  "user": "r3dlust",
+                  "host": "altar"
+                },
+                "state": {
+                  "kind": "finished",
+                  "outcome": {
+                    "kind": "succeeded"
+                  }
+                },
+                "ordered_at": 1800000006000,
+                "started_at": 1800000007000,
+                "finished_at": 1800000066000,
+                "phase_started_at": null,
+                "toplevel": null,
+                "attempt": 1,
+                "changes": null
+              }
+            ]
+          }
+        },
+        {
+          "host": "oracle",
+          "link": {
+            "kind": "connected"
+          },
+          "state": {
+            "seen_at": 1800000000000,
+            "platform": "nixos",
+            "system": "x86_64-linux",
+            "version": "0.5.1",
+            "daemon": "restarting",
+            "generation": 41,
+            "current": null,
+            "pending_boot": false,
+            "reboot_required": false,
+            "deployed": null,
+            "follow": null,
+            "running": {
+              "id": 40,
+              "order": "00000000000000a1",
+              "source": {
+                "kind": "git",
+                "rev": "1111111111111111111111111111111111111111",
+                "git_ref": "main"
+              },
+              "action": "switch",
+              "origin": {
+                "kind": "user",
+                "user": "r3dlust",
+                "host": "altar"
+              },
+              "state": {
+                "kind": "running",
+                "phase": "activating"
+              },
+              "ordered_at": 1800000006500,
+              "started_at": 1800000007500,
+              "finished_at": null,
+              "phase_started_at": null,
+              "toplevel": null,
+              "attempt": 1,
+              "changes": null
+            },
+            "next": null,
+            "recent": []
+          }
+        },
+        {
+          "host": "laptop",
+          "link": {
+            "kind": "unreachable",
+            "since": 1799913600000,
+            "reason": {
+              "kind": "offline",
+              "last_seen": 1799913540000
+            }
+          },
+          "state": {
+            "seen_at": 1800000000000,
+            "platform": "nixos",
+            "system": "x86_64-linux",
+            "version": "0.5.1",
+            "daemon": "serving",
+            "generation": 41,
+            "current": null,
+            "pending_boot": false,
+            "reboot_required": false,
+            "deployed": {
+              "kind": "git",
+              "rev": "caf4e2b9a1d6c3e8f0b2a4c6d8e0f1a3b5c7d9e1",
+              "git_ref": "deployed"
+            },
+            "follow": {
+              "git_ref": "deployed",
+              "latest": {
+                "rev": "caf4e2b9a1d6c3e8f0b2a4c6d8e0f1a3b5c7d9e1",
+                "committed_at": 1800000000000
+              },
+              "paused": false
+            },
+            "running": null,
+            "next": null,
+            "recent": []
+          }
+        },
+        {
+          "host": "tower",
+          "link": {
+            "kind": "connected"
+          },
+          "state": {
+            "seen_at": 1800000000000,
+            "platform": "nixos",
+            "system": "x86_64-linux",
+            "version": "0.5.1",
+            "daemon": "serving",
+            "generation": 41,
+            "current": null,
+            "pending_boot": true,
+            "reboot_required": false,
+            "deployed": null,
+            "follow": {
+              "git_ref": "deployed",
+              "latest": {
+                "rev": "1111111111111111111111111111111111111111",
+                "committed_at": 1800000000000
+              },
+              "paused": false
+            },
+            "running": {
+              "id": 50,
+              "order": "000000000000f011",
+              "source": {
+                "kind": "git",
+                "rev": "1111111111111111111111111111111111111111",
+                "git_ref": "deployed"
+              },
+              "action": "switch",
+              "origin": {
+                "kind": "follow"
+              },
+              "state": {
+                "kind": "running",
+                "phase": "preparing"
+              },
+              "ordered_at": 1800000120000,
+              "started_at": 1800000121000,
+              "finished_at": null,
+              "phase_started_at": null,
+              "toplevel": null,
+              "attempt": 1,
+              "changes": null
+            },
+            "next": null,
+            "recent": []
+          }
+        },
+        {
+          "host": "mini",
+          "link": {
+            "kind": "connected"
+          },
+          "state": {
+            "seen_at": 1800000000000,
+            "platform": "nixos",
+            "system": "x86_64-linux",
+            "version": "0.5.1",
+            "daemon": "serving",
+            "generation": 41,
+            "current": null,
+            "pending_boot": false,
+            "reboot_required": false,
+            "deployed": null,
+            "follow": {
+              "git_ref": "deployed",
+              "latest": {
+                "rev": "1111111111111111111111111111111111111111",
+                "committed_at": 1800000000000
+              },
+              "paused": false
+            },
+            "running": null,
+            "next": null,
+            "recent": [
+              {
+                "id": 51,
+                "order": "000000000000f011",
+                "source": {
+                  "kind": "git",
+                  "rev": "1111111111111111111111111111111111111111",
+                  "git_ref": "deployed"
+                },
+                "action": "switch",
+                "origin": {
+                  "kind": "follow"
+                },
+                "state": {
+                  "kind": "finished",
+                  "outcome": {
+                    "kind": "succeeded"
+                  }
+                },
+                "ordered_at": 1800000120000,
+                "started_at": 1800000121000,
+                "finished_at": 1800000180000,
+                "phase_started_at": null,
+                "toplevel": null,
+                "attempt": 1,
+                "changes": null
+              }
+            ]
+          }
+        },
+        {
+          "host": "spare",
+          "link": {
+            "kind": "connecting"
+          },
+          "state": null
+        },
+        {
+          "host": "relay",
+          "link": {
+            "kind": "unreachable",
+            "since": 1800000000000,
+            "reason": {
+              "kind": "refused",
+              "detail": "the handshake failed: another fleet key, or not coeusd"
+            }
+          },
+          "state": null
+        }
+      ],
+      "progress": [
+        {
+          "host": "lab",
+          "job": 62,
+          "builds": {
+            "done": 186,
+            "expected": 388,
+            "running": 2,
+            "failed": 0
+          },
+          "downloads": {
+            "done": 12,
+            "expected": 40,
+            "running": 1,
+            "failed": 0
+          },
+          "downloaded_bytes": 1288490189,
+          "expected_bytes": 3650722201,
+          "active": [
+            "firefox-121.0",
+            "linux-6.12.4"
+          ]
+        }
+      ],
+      "deployments": [
+        {
+          "order": "00000000000000a1",
+          "source": {
+            "kind": "git",
+            "rev": "1111111111111111111111111111111111111111",
+            "git_ref": "main"
+          },
+          "origin": {
+            "kind": "user",
+            "user": "r3dlust",
+            "host": "altar"
+          },
+          "action": "switch",
+          "subject": null,
+          "ordered_at": 1800000000000,
+          "settled_at": null,
+          "waves": [
+            {
+              "name": null,
+              "hosts": [
+                "lab",
+                "nova"
+              ],
+              "started_at": 1800000000000,
+              "settled_at": null
+            },
+            {
+              "name": null,
+              "hosts": [
+                "altar",
+                "oracle"
+              ],
+              "started_at": 1800000006000,
+              "settled_at": null
+            }
+          ],
+          "rows": [
+            {
+              "host": "lab",
+              "wave": 0,
+              "verdict": "running",
+              "job": 62,
+              "diff": null
+            },
+            {
+              "host": "nova",
+              "wave": 0,
+              "verdict": "failed",
+              "job": 20,
+              "diff": null
+            },
+            {
+              "host": "altar",
+              "wave": 1,
+              "verdict": "done",
+              "job": 30,
+              "diff": {
+                "changes": 3,
+                "size_delta": -94162125
+              }
+            },
+            {
+              "host": "oracle",
+              "wave": 1,
+              "verdict": "running",
+              "job": 40,
+              "diff": null
+            },
+            {
+              "host": "laptop",
+              "wave": null,
+              "verdict": "pending",
+              "job": null,
+              "diff": null
+            },
+            {
+              "host": "tower",
+              "wave": null,
+              "verdict": "catching_up",
+              "job": 50,
+              "diff": null
+            },
+            {
+              "host": "mini",
+              "wave": null,
+              "verdict": "caught_up",
+              "job": 51,
+              "diff": null
+            }
+          ]
+        },
+        {
+          "order": "00000000000000b2",
+          "source": {
+            "kind": "snapshot",
+            "label": "altar:~/nix",
+            "nar_hash": "sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
+          },
+          "origin": {
+            "kind": "user",
+            "user": "r3dlust",
+            "host": "altar"
+          },
+          "action": "boot",
+          "subject": null,
+          "ordered_at": 1799999940000,
+          "settled_at": null,
+          "waves": [
+            {
+              "name": null,
+              "hosts": [
+                "lab"
+              ],
+              "started_at": 1799999940000,
+              "settled_at": null
+            }
+          ],
+          "rows": [
+            {
+              "host": "lab",
+              "wave": 0,
+              "verdict": "waiting",
+              "job": 63,
+              "diff": null
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "machine",
+      "machine": {
+        "host": "relay",
+        "link": {
+          "kind": "unreachable",
+          "since": 1800000600000,
+          "reason": {
+            "kind": "failed",
+            "detail": "connection reset by peer"
+          }
+        },
+        "state": null
+      }
+    },
+    {
+      "kind": "progress",
+      "progress": {
+        "host": "lab",
+        "job": 62,
+        "builds": {
+          "done": 186,
+          "expected": 388,
+          "running": 2,
+          "failed": 0
+        },
+        "downloads": {
+          "done": 12,
+          "expected": 40,
+          "running": 1,
+          "failed": 0
+        },
+        "downloaded_bytes": 1288490189,
+        "expected_bytes": 3650722201,
+        "active": [
+          "firefox-121.0",
+          "linux-6.12.4"
+        ]
+      }
+    },
+    {
+      "kind": "progress_cleared",
+      "host": "lab"
+    },
+    {
+      "kind": "deployment",
+      "deployment": {
+        "order": "00000000000000a1",
+        "source": {
+          "kind": "git",
+          "rev": "1111111111111111111111111111111111111111",
+          "git_ref": "main"
+        },
+        "origin": {
+          "kind": "user",
+          "user": "r3dlust",
+          "host": "altar"
+        },
+        "action": "switch",
+        "subject": null,
+        "ordered_at": 1800000000000,
+        "settled_at": null,
+        "waves": [
+          {
+            "name": null,
+            "hosts": [
+              "lab",
+              "nova"
+            ],
+            "started_at": 1800000000000,
+            "settled_at": null
+          },
+          {
+            "name": null,
+            "hosts": [
+              "altar",
+              "oracle"
+            ],
+            "started_at": 1800000006000,
+            "settled_at": null
+          }
+        ],
+        "rows": [
+          {
+            "host": "lab",
+            "wave": 0,
+            "verdict": "running",
+            "job": 62,
+            "diff": null
+          },
+          {
+            "host": "nova",
+            "wave": 0,
+            "verdict": "failed",
+            "job": 20,
+            "diff": null
+          },
+          {
+            "host": "altar",
+            "wave": 1,
+            "verdict": "done",
+            "job": 30,
+            "diff": {
+              "changes": 3,
+              "size_delta": -94162125
+            }
+          },
+          {
+            "host": "oracle",
+            "wave": 1,
+            "verdict": "running",
+            "job": 40,
+            "diff": null
+          },
+          {
+            "host": "laptop",
+            "wave": null,
+            "verdict": "pending",
+            "job": null,
+            "diff": null
+          },
+          {
+            "host": "tower",
+            "wave": null,
+            "verdict": "catching_up",
+            "job": 50,
+            "diff": null
+          },
+          {
+            "host": "mini",
+            "wave": null,
+            "verdict": "caught_up",
+            "job": 51,
+            "diff": null
+          }
+        ]
+      }
+    },
+    {
+      "kind": "deployment_removed",
+      "order": "0000000000005038"
+    }
+  ],
+  "log": [
+    {
+      "kind": "started",
+      "job": {
+        "id": 62,
+        "order": "00000000000000a1",
+        "source": {
+          "kind": "git",
+          "rev": "1111111111111111111111111111111111111111",
+          "git_ref": "main"
+        },
+        "action": "switch",
+        "origin": {
+          "kind": "user",
+          "user": "r3dlust",
+          "host": "altar"
+        },
+        "state": {
+          "kind": "running",
+          "phase": "building"
+        },
+        "ordered_at": 1800000000000,
+        "started_at": 1800000001000,
+        "finished_at": null,
+        "phase_started_at": 1800000090000,
+        "toplevel": "/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-nixos-system-lab-26.11",
+        "attempt": 1,
+        "changes": 14
+      }
+    },
+    {
+      "kind": "lines",
+      "lines": [
+        {
+          "at": 1800000001000,
+          "kind": "coeus",
+          "text": "runner started (coeus 0.6.0)",
+          "prefix": null
+        },
+        {
+          "at": 1800000001200,
+          "kind": "phase",
+          "text": "fetching",
+          "prefix": null
+        },
+        {
+          "at": null,
+          "kind": "fetch",
+          "text": "copying path '/nix/store/fv6rgzamfwj334kf1xv8ms3y6x8nvirn-hello-2.12.3' from 'https://cache.nixos.org'",
+          "prefix": null
+        },
+        {
+          "at": 1800000030000,
+          "kind": "phase",
+          "text": "building",
+          "prefix": null
+        },
+        {
+          "at": null,
+          "kind": "build",
+          "text": "building '/nix/store/9rfvhi1nqszqmny102jqxp2vmb6n0mk7-zfs-kernel-2.3.4.drv'",
+          "prefix": null
+        },
+        {
+          "at": null,
+          "kind": "output",
+          "text": "CC [M]  module/zfs/arc.o",
+          "prefix": "zfs-kernel-2.3.4"
+        },
+        {
+          "at": null,
+          "kind": "error",
+          "text": "error: cannot connect to 'ssh-ng://builder'",
+          "prefix": null
+        },
+        {
+          "at": 1800000200000,
+          "kind": "note",
+          "text": "the build fell back to building locally",
+          "prefix": null
+        },
+        {
+          "at": 1800000241000,
+          "kind": "done",
+          "text": "succeeded",
+          "prefix": null
+        }
+      ],
+      "end": 18342
+    },
+    {
+      "kind": "ended",
+      "outcome": {
+        "kind": "succeeded"
+      }
+    }
+  ],
+  "diff": {
+    "changes": [
+      {
+        "name": "firefox",
+        "before": [
+          "120.0"
+        ],
+        "after": [
+          "121.0"
+        ],
+        "size_delta": 1258291
+      },
+      {
+        "name": "zfs-kernel",
+        "before": [],
+        "after": [
+          "2.3.4"
+        ],
+        "size_delta": 9437184
+      },
+      {
+        "name": "python3.11",
+        "before": [
+          "3.11.9"
+        ],
+        "after": [],
+        "size_delta": -104857600
+      }
+    ]
+  }
+}

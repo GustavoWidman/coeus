@@ -8,6 +8,7 @@ pub const SCHEMA: u16 = 1;
 
 /// what a browser receives first, and again whenever it cannot resume
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Snapshot {
     pub schema: u16,
     /// the web app build this server serves
@@ -23,6 +24,7 @@ pub struct Snapshot {
 
 /// who is signed in, on which device, until when
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Viewer {
     pub login: String,
     pub device: String,
@@ -32,28 +34,42 @@ pub struct Viewer {
 /// one message of the fleet stream. every entity travels whole, so a lost or
 /// skipped message is repaired by the next one about the same entity
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FleetEvent {
     Snapshot(Snapshot),
-    Machine { machine: Box<MachineCard> },
-    Progress { progress: LiveProgress },
-    ProgressCleared { host: Hostname },
-    Deployment { deployment: DeploymentView },
-    DeploymentRemoved { order: String },
+    Machine {
+        machine: Box<MachineCard>,
+    },
+    Progress {
+        progress: LiveProgress,
+    },
+    ProgressCleared {
+        host: Hostname,
+    },
+    Deployment {
+        deployment: DeploymentView,
+    },
+    DeploymentRemoved {
+        #[cfg_attr(test, ts(type = "OrderId"))]
+        order: String,
+    },
 }
 
 /// a machine, all but its running job's progress
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct MachineCard {
     pub host: Hostname,
     pub link: LinkView,
-    /// what the machine last reported, kept while it is out of reach; `None`
+    /// what the machine last reported, kept while it is out of reach; unset
     /// until it is first reached, since only the machine knows its platform
     pub state: Option<MachineState>,
 }
 
 /// a machine as its daemon last described it
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct MachineState {
     pub seen_at: Timestamp,
     pub platform: PlatformView,
@@ -77,6 +93,7 @@ pub struct MachineState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "lowercase")]
 pub enum PlatformView {
     NixOs,
@@ -84,6 +101,7 @@ pub enum PlatformView {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum DaemonStateView {
     Serving,
@@ -92,6 +110,7 @@ pub enum DaemonStateView {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LinkView {
     Connected,
@@ -103,6 +122,7 @@ pub enum LinkView {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum UnreachView {
     /// tailscale sees it offline, asleep or away; it catches up once back
@@ -120,6 +140,7 @@ pub enum UnreachView {
 
 /// the ref a machine catches up with on its own
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct FollowView {
     pub git_ref: String,
     /// where the ref pointed when the machine last looked
@@ -128,15 +149,18 @@ pub struct FollowView {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PinnedView {
     pub rev: String,
     pub committed_at: Timestamp,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct JobCard {
     pub id: u64,
     /// 16 hex digits: an order id exceeds what a javascript number holds
+    #[cfg_attr(test, ts(type = "OrderId"))]
     pub order: String,
     pub source: SourceView,
     pub action: ActionView,
@@ -154,6 +178,7 @@ pub struct JobCard {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SourceView {
     Git {
@@ -170,6 +195,7 @@ pub enum SourceView {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OriginView {
     User {
@@ -187,6 +213,7 @@ pub enum OriginView {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum ActionView {
     Switch,
@@ -196,6 +223,7 @@ pub enum ActionView {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum PhaseView {
     Preparing,
@@ -207,6 +235,7 @@ pub enum PhaseView {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum JobStateView {
     Queued,
@@ -217,6 +246,7 @@ pub enum JobStateView {
 /// how a job ended. a failure's last lines are left out: the log view shows
 /// the end of the log itself
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum OutcomeView {
     Succeeded,
@@ -231,6 +261,7 @@ pub enum OutcomeView {
 /// the running job's numbers, the only entity that changes several times a
 /// second
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LiveProgress {
     pub host: Hostname,
     pub job: u64,
@@ -243,6 +274,7 @@ pub struct LiveProgress {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct TallyView {
     pub done: u32,
     pub expected: u32,
@@ -253,7 +285,9 @@ pub struct TallyView {
 /// one order across the fleet, put together from the jobs machines report
 /// for it
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct DeploymentView {
+    #[cfg_attr(test, ts(type = "OrderId"))]
     pub order: String,
     pub source: SourceView,
     pub origin: OriginView,
@@ -270,6 +304,7 @@ pub struct DeploymentView {
 
 /// machines ordered together
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct WaveView {
     /// what the deploy called this wave; no machine reports it yet
     pub name: Option<String>,
@@ -279,9 +314,10 @@ pub struct WaveView {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct DeploymentRow {
     pub host: Hostname,
-    /// index into the deployment's waves; `None` for a machine that follows
+    /// index into the deployment's waves; unset for a machine that follows
     /// the ref instead of being ordered
     pub wave: Option<u32>,
     pub verdict: Verdict,
@@ -290,6 +326,7 @@ pub struct DeploymentRow {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum Verdict {
     Waiting,
@@ -305,6 +342,7 @@ pub enum Verdict {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct DiffSummary {
     pub changes: u32,
     /// net closure growth in bytes
@@ -312,11 +350,13 @@ pub struct DiffSummary {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct DiffView {
     pub changes: Vec<PackageChangeView>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PackageChangeView {
     pub name: String,
     /// empty when the package is new
@@ -328,6 +368,7 @@ pub struct PackageChangeView {
 
 /// one message of a job's log stream
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum LogEvent {
     Started {
@@ -344,6 +385,7 @@ pub enum LogEvent {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LogLine {
     /// when coeus recorded it; nix's own lines carry no time
     pub at: Option<Timestamp>,
@@ -354,6 +396,7 @@ pub struct LogLine {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(rename_all = "snake_case")]
 pub enum LineKind {
     /// coeus's own account of the job

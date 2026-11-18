@@ -3,3 +3,4 @@ bun.lock
 /build
 /static/*.png
 /static/icons
+src/lib/wire/types.ts
