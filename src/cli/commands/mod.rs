@@ -12,6 +12,7 @@ mod setup;
 mod status;
 mod top;
 mod watch;
+mod web;
 
 pub use attach::{AttachArgs, LogsArgs};
 pub use bootstrap::BootstrapArgs;
@@ -27,6 +28,9 @@ pub use setup::{CompletionsArgs, keygen};
 pub use status::StatusArgs;
 pub use top::TopArgs;
 pub use watch::WatchArgs;
+pub use web::WebArgs;
+
+use std::path::Path;
 
 use eyre::Result;
 
@@ -34,8 +38,10 @@ use super::{Context, exit::Exit, main::Command};
 use crate::config::ClientSettings;
 
 impl Command {
-    pub async fn run(self, settings: impl FnOnce() -> Result<ClientSettings>) -> Result<Exit> {
-        let context = || settings().map(Context::new);
+    /// runs the command with the settings at `config`, or at the command's
+    /// default location
+    pub async fn run(self, config: Option<&Path>) -> Result<Exit> {
+        let context = || ClientSettings::load(config).map(Context::new);
 
         match self {
             Self::Deploy(args) => args.run(&context()?).await,
@@ -52,6 +58,7 @@ impl Command {
             Self::Bootstrap(args) => args.run(&context()?).await,
             Self::Doctor(args) => args.run(&context()?).await,
             Self::Top(args) => args.run(&context()?).await,
+            Self::Web(args) => args.run(config).await,
             Self::Keygen => Ok(keygen()),
             Self::Completions(args) => Ok(args.run()),
         }

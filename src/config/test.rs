@@ -51,6 +51,22 @@ fn the_client_example_parses_into_an_inventory() {
 }
 
 #[test]
+fn the_web_example_parses() {
+    let settings =
+        WebSettings::load(&Path::new(env!("CARGO_MANIFEST_DIR")).join("web.example.toml")).unwrap();
+
+    assert_eq!(
+        settings.client.key.key_file.unwrap(),
+        Path::new("/run/agenix/coeus-read-key")
+    );
+    assert_eq!(settings.client.hosts.len(), 2);
+    assert_eq!(
+        settings.web.origin_socket,
+        Path::new("/run/coeus-web/origin.sock")
+    );
+}
+
+#[test]
 fn keys_load_from_inline_values_and_files() {
     let key = Key::generate();
     let file = tempfile::NamedTempFile::new().unwrap();

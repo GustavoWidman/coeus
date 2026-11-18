@@ -1,0 +1,18 @@
+# coeus web's settings, read from --config or /etc/coeus/web.toml. on NixOS
+# and nix-darwin the coeus module writes this file from `services.coeus`.
+[settings]
+# the read-only key every coeusd also holds as `read_key`; never the fleet key
+key_file = "/run/agenix/coeus-read-key"
+
+connect_timeout = "5s"
+
+# the machines the dashboard shows, in this order
+[settings.hosts.altar]
+tags = ["darwin", "dev-server"]
+
+[settings.hosts.lab]
+tags = ["nixos", "dev-server"]
+
+[settings.web]
+# the site is served here, for cloudflared alone
+origin_socket = "/run/coeus-web/origin.sock"

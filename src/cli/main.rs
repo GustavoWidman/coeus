@@ -6,7 +6,7 @@ use log::LevelFilter;
 use super::commands::{
     AttachArgs, BootstrapArgs, CancelArgs, CatchUpArgs, CompletionsArgs, DeployArgs, DoctorArgs,
     GenerationsArgs, HistoryArgs, LogsArgs, RebootArgs, RollbackArgs, StatusArgs, TopArgs,
-    WatchArgs,
+    WatchArgs, WebArgs,
 };
 
 #[derive(Parser, Debug)]
@@ -59,6 +59,8 @@ pub enum Command {
     Bootstrap(BootstrapArgs),
     /// Check machines for problems and say how to fix them
     Doctor(DoctorArgs),
+    /// Serve the fleet's dashboard and stream it live to browsers
+    Web(WebArgs),
     /// Generate a new fleet key
     Keygen,
     /// Print shell completions
