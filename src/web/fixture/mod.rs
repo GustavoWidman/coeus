@@ -26,6 +26,7 @@ use tokio::sync::{mpsc, watch};
 
 use self::world::{HOSTS, STEP, World};
 use super::{
+    diffs::Diffs,
     fleet::Input,
     session::Sessions,
     signin::Signin,
@@ -58,6 +59,9 @@ pub struct Fixture {
     /// log readers look again after every move
     moved: watch::Sender<()>,
     inputs: OnceLock<mpsc::Sender<Input>>,
+    /// the site's closure diffs, read from logs of a past that moving the
+    /// clock back undoes
+    diffs: OnceLock<Arc<Diffs>>,
 }
 
 struct Clock {
@@ -112,6 +116,7 @@ impl Fixture {
             moving: tokio::sync::Mutex::new(()),
             moved: watch::Sender::new(()),
             inputs: OnceLock::new(),
+            diffs: OnceLock::new(),
         })
     }
 
@@ -156,6 +161,7 @@ impl Fixture {
                 access,
             },
         );
+        let _ = self.diffs.set(site.diffs.clone());
         source.feed(site.inputs.clone());
 
         let router = site.router.merge(self.routes());
@@ -209,13 +215,17 @@ impl Fixture {
 
     async fn move_to(&self, at: f64) -> Status {
         let _moving = self.moving.lock().await;
-        let (inputs, status) = {
+        let (rewound, inputs, status) = {
             let mut clock = self.clock.lock().unwrap();
-            clock.move_to(at);
-            (clock.tell(), clock.status())
+            let rewound = clock.move_to(at);
+            (rewound, clock.tell(), clock.status())
         };
+        if rewound && let Some(diffs) = self.diffs.get() {
+            diffs.forget();
+        }
         if let Some(sender) = self.inputs.get() {
-            for input in inputs {
+            let diffed = rewound.then_some(Input::Diffed);
+            for input in inputs.into_iter().chain(diffed) {
                 let _ = sender.send(input).await;
             }
             // a seek answers once browsers would see the moment it moved to
@@ -272,12 +282,14 @@ impl Fixture {
 }
 
 impl Clock {
-    fn move_to(&mut self, at: f64) {
+    /// whether the world started over to get there
+    fn move_to(&mut self, at: f64) -> bool {
         let target = at as i64;
         let turn = target / self.period;
         let local = (target % self.period) / STEP * STEP;
         let base = START + turn * self.period;
-        if turn != self.turn || base + local < self.world.now {
+        let rewound = turn != self.turn || base + local < self.world.now;
+        if rewound {
             self.world = World::seed(base);
             self.turn = turn;
         }
@@ -285,6 +297,7 @@ impl Clock {
             self.world.step();
         }
         self.at = at;
+        rewound
     }
 
     /// what the machines say that they did not say before
