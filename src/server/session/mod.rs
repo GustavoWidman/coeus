@@ -13,7 +13,7 @@ use crate::{
         proto::{
             Ack, AttachBatch, AttachEnded, AttachStarted, CancelResponse, CatchUpResponse,
             DeployAccepted, DeployRejected, Error, GenerationsResponse, HistoryResponse,
-            MachineUpdate, Packet, ResolveResponse, TerminalSize, UploadDone, UploadReady,
+            MachineUpdate, Packet, ResolveResponse, Role, TerminalSize, UploadDone, UploadReady,
         },
         stream::EncryptedStream,
     },
@@ -25,6 +25,7 @@ use crate::{
 /// may be a watch or an attach that streams until either side hangs up
 pub(super) struct Session<H: Host> {
     stream: EncryptedStream,
+    role: Role,
     engine: EngineHandle<H>,
 }
 
@@ -35,13 +36,22 @@ impl<H: Host> Session<H> {
     const WATCH_INTERVAL: Duration = Duration::from_millis(100);
     const CAUGHT_UP: Duration = Duration::from_millis(150);
 
-    pub const fn new(stream: EncryptedStream, engine: EngineHandle<H>) -> Self {
-        Self { stream, engine }
+    pub const fn new(stream: EncryptedStream, role: Role, engine: EngineHandle<H>) -> Self {
+        Self {
+            stream,
+            role,
+            engine,
+        }
     }
 
     pub async fn run(mut self) -> Result<()> {
         while let Some(packet) = self.stream.recv().await? {
             debug!("{} asks for {:#06x}", self.stream.peer(), packet.kind());
+
+            if !self.role.allows(&packet) {
+                self.refuse("this key may only read".into()).await?;
+                continue;
+            }
 
             match packet {
                 Packet::DeployRequest(request) => self.deploy(request.order).await?,

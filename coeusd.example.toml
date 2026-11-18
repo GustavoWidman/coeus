@@ -5,6 +5,12 @@
 # such as an agenix secret. `coeus keygen` makes one.
 key_file = "/run/agenix/coeus-key"
 
+# a second key that may only watch: the machine's view, its history,
+# generations and logs, never a deploy, a cancel, a lookup, a catch-up, a
+# reboot or an upload. `read_key` inline, or a file; it must differ from the
+# fleet key
+# read_key_file = "/run/agenix/coeus-read-key"
+
 # the flake repository holding every machine's configuration
 flake = "git+https://github.com/GustavoWidman/nix"
 

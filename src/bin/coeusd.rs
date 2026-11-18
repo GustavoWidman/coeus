@@ -48,7 +48,7 @@ async fn serve(args: &DaemonCLIArgs) -> Result<()> {
 
     let config = daemon_config(&args.config)?;
     let mut settings = (**config).clone();
-    let key = settings.key.load()?;
+    let keys = settings.keys()?;
     settings.state_dir = create_state_dir(&settings.state_dir)?;
 
     let machine = Machine::new(&settings)?;
@@ -64,7 +64,7 @@ async fn serve(args: &DaemonCLIArgs) -> Result<()> {
     )
     .await?;
 
-    let server = CoeusServer::bind(settings.listen, &key, engine).await?;
+    let server = CoeusServer::bind(settings.listen, &keys, engine).await?;
     let served = server.run(restart).await;
     shutdown.cancel();
     served
