@@ -1,5 +1,5 @@
-# `coeus web`'s options and the /etc/coeus/web.toml they render; ./nixos.nix
-# runs it
+# `coeus web`'s options and the /etc/coeus/web.toml they render, the same on
+# NixOS and nix-darwin; ./nixos.nix and ./darwin.nix run it
 { self }:
 {
   config,

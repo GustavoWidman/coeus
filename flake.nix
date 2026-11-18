@@ -8,6 +8,10 @@
       url = "github:baileyluTCD/bun2nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    nix-darwin = {
+      url = "github:nix-darwin/nix-darwin";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -54,6 +58,8 @@
           darwinModules.default.imports = [
             common
             ./nix/modules/darwin.nix
+            web
+            ./nix/modules/web/darwin.nix
           ];
 
           # `{ hosts }` to the offline page Worker's module, the same store path on every system
@@ -107,6 +113,12 @@
             // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
               nixos = pkgs.testers.runNixOSTest (import ./nix/test.nix { inherit self; });
               web = pkgs.testers.runNixOSTest (import ./nix/web-test.nix { inherit self; });
+            }
+            // lib.optionalAttrs pkgs.stdenv.hostPlatform.isDarwin {
+              darwin-module = import ./nix/darwin-check.nix {
+                inherit pkgs self system;
+                inherit (inputs) nix-darwin;
+              };
             };
 
             devshells.default = {
