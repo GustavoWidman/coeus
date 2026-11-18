@@ -1,4 +1,5 @@
 mod card;
+mod deployment;
 
 use crate::common::model::{
     Action, DaemonState, FdaStatus, HostInfo, Hostname, JobId, JobState, JobSummary, MachineView,
