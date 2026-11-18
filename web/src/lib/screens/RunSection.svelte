@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { href } from '#lib/router.svelte.ts';
 	import { clk, hms, mib, num, origin, source } from '#lib/derive/format.ts';
 	import { PHASES, progressOf } from '#lib/derive/status.ts';
 	import { enter, ghost } from '#lib/motion/flip.ts';
@@ -100,7 +101,7 @@
 			</ul>
 		</div>
 	</div>
-	<div class="loglink tap">
+	<a class="loglink tap" href={href({ screen: 'log', host, job: job.id })}>
 		<span>Live log</span><span class="mono">#{job.id}</span><span class="chev">›</span>
-	</div>
+	</a>
 </section>

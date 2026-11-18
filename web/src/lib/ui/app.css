@@ -1243,6 +1243,12 @@ button.vrow {
 	padding-top: 20px;
 	touch-action: none;
 }
+/* a risen sheet leaves only a sliver of the screens' top showing, where the nav has no content
+   and the stage's own background looks the same; drawn, they would cost the compositor layers
+   for both scrollers and for everything over them */
+.stage[data-covered] > .screen {
+	visibility: hidden;
+}
 .done-btn {
 	font-weight: 600;
 	font-size: 15px;

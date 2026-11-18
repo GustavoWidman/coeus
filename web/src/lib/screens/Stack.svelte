@@ -8,6 +8,7 @@
 	import { E, stage } from '#lib/motion/flip.ts';
 	import { reduced } from '#lib/motion/reduced.ts';
 	import Screen from './Screen.svelte';
+	import Sheet from './Sheet.svelte';
 
 	interface Entry {
 		key: string;
@@ -151,7 +152,9 @@
 	});
 
 	const back = () => {
-		if (screens.length > 1) router.back(screens[screens.length - 2].route);
+		const r = router.nav.route;
+		if (r.screen === 'log') router.back({ screen: 'machine', host: r.host });
+		else if (screens.length > 1) router.back(screens[screens.length - 2].route);
 	};
 
 	// in a Safari tab the left edge belongs to Safari
@@ -225,3 +228,4 @@
 		<Screen route={s.route} onback={back} />
 	{/each}
 </div>
+<Sheet stage={() => root} />
