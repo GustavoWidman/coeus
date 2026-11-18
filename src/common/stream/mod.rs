@@ -19,7 +19,7 @@ use tokio::{
     net::TcpStream,
 };
 
-use crate::common::proto::HelloResponse;
+use crate::common::proto::{HelloResponse, Role};
 pub use read::EncryptedReadHalf;
 pub use write::EncryptedWriteHalf;
 
@@ -39,7 +39,7 @@ impl EncryptedStream {
     pub async fn connect(stream: TcpStream, psk: &[u8; 32]) -> Result<(Self, HelloResponse)> {
         // a server that cannot decrypt the first message hangs up, which
         // reads here as nothing more than the end of the stream
-        let mut stream = Self::handshake(stream, psk, true)
+        let mut stream = Self::initiate(stream, psk)
             .await
             .wrap_err("the handshake failed; does the machine use this fleet key?")?;
         let hello = stream.greet().await?;
@@ -63,16 +63,40 @@ impl EncryptedStream {
         (&mut self.reader, &mut self.writer)
     }
 
-    async fn handshake(mut stream: TcpStream, psk: &[u8; 32], initiator: bool) -> Result<Self> {
-        stream.set_nodelay(true)?;
-
+    fn builder(psk: &[u8; 32]) -> Result<Builder<'_>> {
         let params: NoiseParams = Self::PATTERN.parse()?;
-        let builder = Builder::new(params).prologue(Self::PROLOGUE)?.psk(0, psk)?;
+        Ok(Builder::new(params).prologue(Self::PROLOGUE)?.psk(0, psk)?)
+    }
 
-        let mut state: HandshakeState = match initiator {
-            true => builder.build_initiator()?,
-            false => builder.build_responder()?,
-        };
+    async fn initiate(stream: TcpStream, psk: &[u8; 32]) -> Result<Self> {
+        let state = Self::builder(psk)?.build_initiator()?;
+        Self::handshake(stream, state).await
+    }
+
+    /// psk0 mixes the key into the first message, so it decrypts under
+    /// the client's key alone: the first key here that opens it names the
+    /// connection's role
+    async fn respond(mut stream: TcpStream, keys: &[(Role, [u8; 32])]) -> Result<(Self, Role)> {
+        let first = Self::read_frame(&mut stream).await?;
+        let mut payload = vec![0u8; Self::MAX_FRAME];
+
+        for (role, psk) in keys {
+            let mut state = Self::builder(psk)?.build_responder()?;
+            if let Ok(length) = state.read_message(&first, &mut payload) {
+                if length != 0 {
+                    return Err(eyre!("unexpected handshake payload"));
+                }
+                return Ok((Self::handshake(stream, state).await?, *role));
+            }
+        }
+
+        Err(eyre!(
+            "the handshake opens under no key this daemon accepts"
+        ))
+    }
+
+    async fn handshake(mut stream: TcpStream, mut state: HandshakeState) -> Result<Self> {
+        stream.set_nodelay(true)?;
 
         let mut message = vec![0u8; Self::MAX_FRAME];
         let mut payload = vec![0u8; Self::MAX_FRAME];
@@ -85,10 +109,7 @@ impl EncryptedStream {
                     stream.write_all(&message[..length]).await?;
                 }
                 false => {
-                    let length = stream.read_u16().await? as usize;
-                    let mut incoming = vec![0u8; length];
-                    stream.read_exact(&mut incoming).await?;
-
+                    let incoming = Self::read_frame(&mut stream).await?;
                     let payload_length = state.read_message(&incoming, &mut payload)?;
 
                     if payload_length != 0 {
@@ -105,5 +126,12 @@ impl EncryptedStream {
             reader: EncryptedReadHalf::new(read_stream, transport.clone())?,
             writer: EncryptedWriteHalf::new(write_stream, transport),
         })
+    }
+
+    async fn read_frame(stream: &mut TcpStream) -> Result<Vec<u8>> {
+        let length = stream.read_u16().await? as usize;
+        let mut frame = vec![0u8; length];
+        stream.read_exact(&mut frame).await?;
+        Ok(frame)
     }
 }

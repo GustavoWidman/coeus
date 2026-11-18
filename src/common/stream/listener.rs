@@ -6,20 +6,25 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
-use crate::common::{model::HostInfo, stream::EncryptedStream};
+use crate::common::{model::HostInfo, proto::Role, stream::EncryptedStream};
 
 pub struct EncryptedListener {
     listener: TcpListener,
-    psk: [u8; 32],
+    keys: Arc<[(Role, [u8; 32])]>,
     host: Arc<HostInfo>,
 }
 
 impl EncryptedListener {
-    /// binds `address`, introducing itself as `host` to every client
-    pub async fn bind(address: SocketAddr, psk: &[u8; 32], host: HostInfo) -> Result<Self> {
+    /// binds `address`, introducing itself as `host` to every client and
+    /// accepting each of `keys` with its role, tried in order
+    pub async fn bind(
+        address: SocketAddr,
+        keys: Vec<(Role, [u8; 32])>,
+        host: HostInfo,
+    ) -> Result<Self> {
         Ok(Self {
             listener: TcpListener::bind(address).await?,
-            psk: *psk,
+            keys: keys.into(),
             host: Arc::new(host),
         })
     }
@@ -29,11 +34,9 @@ impl EncryptedListener {
     }
 
     /// listens until a new connection is accepted and authenticates it,
-    /// returning the [EncryptedStream] and the peer's [SocketAddr]
-    pub async fn accept(&self) -> Result<(EncryptedStream, SocketAddr)> {
-        let pending = self.listen().await?;
-        let address = pending.stream.peer_addr()?;
-        Ok((pending.authenticate().await?, address))
+    /// returning the [EncryptedStream] and the role its key carries
+    pub async fn accept(&self) -> Result<(EncryptedStream, Role)> {
+        self.listen().await?.authenticate().await
     }
 
     /// listens for new connections and returns a [PendingConnection]
@@ -42,7 +45,7 @@ impl EncryptedListener {
         let (stream, _) = self.listener.accept().await?;
         Ok(PendingConnection {
             stream,
-            psk: self.psk,
+            keys: self.keys.clone(),
             host: self.host.clone(),
         })
     }
@@ -50,15 +53,15 @@ impl EncryptedListener {
 
 pub struct PendingConnection {
     stream: TcpStream,
-    psk: [u8; 32],
+    keys: Arc<[(Role, [u8; 32])]>,
     host: Arc<HostInfo>,
 }
 
 impl PendingConnection {
     /// runs the NOISE handshake and the hello on an accepted connection
-    pub async fn authenticate(self) -> Result<EncryptedStream> {
-        let mut stream = EncryptedStream::handshake(self.stream, &self.psk, false).await?;
+    pub async fn authenticate(self) -> Result<(EncryptedStream, Role)> {
+        let (mut stream, role) = EncryptedStream::respond(self.stream, &self.keys).await?;
         stream.welcome(&self.host).await?;
-        Ok(stream)
+        Ok((stream, role))
     }
 }
