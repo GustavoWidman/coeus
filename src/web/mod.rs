@@ -6,13 +6,16 @@
 //! `coeus web` keeps one live copy of the fleet ([fleet]), streams it to
 //! browsers ([stream]) with job logs ([logs]) and closure diffs ([diffs]),
 //! and serves the built web app beside them ([site]), from the real fleet or a
-//! simulated one ([fixture]).
+//! simulated one ([fixture]). while the host can serve ([ready]) it connects
+//! to the cloudflare tunnel that brings visitors to it ([connector]).
 
+pub mod connector;
 pub mod derive;
 pub mod diffs;
 pub mod fixture;
 pub mod fleet;
 pub mod logs;
+pub mod ready;
 pub mod site;
 pub mod source;
 pub mod stream;

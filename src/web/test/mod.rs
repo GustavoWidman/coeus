@@ -1,8 +1,10 @@
 mod card;
+mod connector;
 mod contract;
 mod deployment;
 mod fixture;
 mod live;
+mod ready;
 mod site;
 mod sse;
 mod stream;

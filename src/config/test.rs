@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use easy_config_store::ConfigStore;
 
@@ -64,6 +64,28 @@ fn the_web_example_parses() {
         settings.web.origin_socket,
         Path::new("/run/coeus-web/origin.sock")
     );
+    let tunnel = settings.web.tunnel.unwrap();
+    assert_eq!(
+        tunnel.credentials_file,
+        Path::new("/run/agenix/coeus-tunnel")
+    );
+    assert_eq!(tunnel.cloudflared, Path::new("cloudflared"));
+    assert_eq!(settings.web.readiness, ReadinessSettings::default());
+}
+
+#[test]
+fn a_web_config_without_a_tunnel_serves_no_one() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        file.path(),
+        "[settings]\nkey_file = \"/run/agenix/coeus-read-key\"\n[settings.web]\norigin_socket = \"/run/o.sock\"\n",
+    )
+    .unwrap();
+    let settings = WebSettings::load(file.path()).unwrap();
+    assert_eq!(settings.web.tunnel, None);
+    assert_eq!(settings.web.readiness.interval, Duration::from_secs(2));
+    assert_eq!(settings.web.readiness.up_after.get(), 3);
+    assert_eq!(settings.web.readiness.down_after.get(), 5);
 }
 
 #[test]
