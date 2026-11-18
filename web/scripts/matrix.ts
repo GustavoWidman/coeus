@@ -151,10 +151,18 @@ interface Result {
 	reference?: number;
 }
 
+/** what one change costs a page by itself, per change */
+interface Calibration {
+	changes: number;
+	recalcs: number;
+	layouts: number;
+}
+
 interface Results {
 	platform: string;
 	browsers: Record<string, string>;
 	window: number;
+	calibration?: Calibration;
 	results: Result[];
 }
 
@@ -758,6 +766,73 @@ function webkitWindow(seconds: number, before: Seen, after: Seen): Window {
 }
 
 // ---------------------------------------------------------------------------------------
+// the calibration: what one change costs by itself
+
+const CHANGES = 20;
+const CALIBRATION_RUNS = 3;
+const CALIBRATION = `<!doctype html><meta name="viewport" content="width=device-width">
+<style>
+body{font:16px/1.4 sans-serif;margin:40px}
+#n>span{display:inline-block;animation:in 170ms cubic-bezier(0.23,1,0.32,1)}
+@keyframes in{from{transform:translateY(0.42em);opacity:0}}
+</style>
+<p>builds <span id="n"><span>0</span></span> of 140</p>`;
+
+/**
+ * The least a change that moves anything costs Chromium in this harness: new text that slides in
+ * with one composited 170 ms CSS animation of its transform, as a rolled digit does, twenty
+ * times 500 ms apart so each animation ends before the next change. Run alone, before the cells,
+ * with the probe the cells run with, the median of a few runs. matrix-budget.json allows each
+ * change this much and a margin.
+ */
+async function calibrate(browser: Browser): Promise<Calibration> {
+	const runs: Calibration[] = [];
+	for (let i = 0; i < CALIBRATION_RUNS; i++) {
+		const ctx = await browser.newContext(VIEWPORTS.desktop);
+		try {
+			await ctx.addInitScript(probe, { now: START, rewrites: [] });
+			await ctx.route('http://calibration.invalid/', (r) =>
+				r.fulfill({ contentType: 'text/html', body: CALIBRATION })
+			);
+			const page = await ctx.newPage();
+			await page.goto('http://calibration.invalid/');
+			await settle(page, false);
+			const instruments = await Instruments.attach(page);
+			const before = await seen(page);
+			await instruments.start();
+			await page.evaluate(
+				(n) =>
+					new Promise<void>((ok) => {
+						const el = document.getElementById('n')!;
+						let i = 0;
+						const timer = setInterval(() => {
+							const digit = document.createElement('span');
+							digit.textContent = String(++i);
+							el.replaceChildren(digit);
+							if (i === n) {
+								clearInterval(timer);
+								setTimeout(ok, 500);
+							}
+						}, 500);
+					}),
+				CHANGES
+			);
+			const w = await instruments.stop(CHANGES / 2, before, await seen(page));
+			runs.push({
+				changes: CHANGES,
+				recalcs: round(w.recalcs! / CHANGES, 2),
+				layouts: round(w.layouts! / CHANGES, 2)
+			});
+		} finally {
+			await ctx.close();
+		}
+	}
+	const median = (k: 'recalcs' | 'layouts') =>
+		runs.map((r) => r[k]).sort((a, b) => a - b)[runs.length >> 1];
+	return { changes: CHANGES, recalcs: median('recalcs'), layouts: median('layouts') };
+}
+
+// ---------------------------------------------------------------------------------------
 // the reference: how far each app screenshot is from the prototype's
 
 async function compare(browser: Browser, a: string, b: string, out: string): Promise<number> {
@@ -999,7 +1074,9 @@ async function main(): Promise<Results> {
 			.map(([name, b]) => [name, b.version()])
 	);
 	const results: Result[] = [];
+	let calibration: Calibration | undefined;
 	try {
+		calibration = await calibrate(browsers[0].chromium);
 		const queue = [...runs];
 		let done = 0;
 		await Promise.all(
@@ -1040,6 +1117,7 @@ async function main(): Promise<Results> {
 		platform: platform(),
 		browsers: versions,
 		window: opt.window,
+		calibration,
 		results
 	};
 }
@@ -1060,6 +1138,13 @@ if (opt.update) {
 	console.error(`matrix: wrote ${file}`);
 }
 if (opt.gate || opt.from) {
+	if (all.calibration) {
+		const { recalcs, layouts } = all.calibration;
+		const c = (JSON.parse(readFileSync(join(WEB, 'matrix-budget.json'), 'utf8')) as Budget).counts;
+		console.error(
+			`matrix: one composited animation per change costs ${recalcs} style recalcs and ${layouts} layouts here; a message may cost ${c.recalcs.perMessage} and ${c.layouts.perMessage}`
+		);
+	}
 	const problems = gate(all, opt.timings);
 	if (problems.length) {
 		console.error(problems.join('\n'));

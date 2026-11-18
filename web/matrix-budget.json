@@ -1,13 +1,22 @@
 {
 	"counts": {
 		"longTasks": 0,
-		"layouts": { "perMessage": 1, "perSecond": 1 },
-		"recalcs": { "perMessage": 2, "perSecond": 1 },
+		"layouts": { "perMessage": 2.5, "perSecond": 1 },
+		"recalcs": { "perMessage": 9, "perSecond": 1 },
 		"idlePaintsPerSecond": 1,
 		"layers": { "phone": 30, "desktop": 45 },
 		"nodes": 2500,
 		"growth": 0.02,
 		"heapMB": 12
 	},
-	"timings": { "dropped": 0.01, "gpuMB": 64 }
+	"timings": { "dropped": 0.01, "gpuMB": 64 },
+	"calibration": {
+		"why": "a message may cost what one composited 170 ms animation costs by itself, as the calibration the matrix runs first measures it on the platform where it costs most, and two style recalcs and half a layout more: the last frames of a dot's 520 ms ring, which ends after the 220 ms rolls and slides of the message that rang it",
+		"perMessage": {
+			"aarch64-darwin": { "recalcs": 6.4, "layouts": 2 },
+			"x86_64-linux": { "recalcs": 7, "layouts": 2 }
+		},
+		"chromium": "156.0.8078.4",
+		"runs": "median of 3 runs of 20 changes, 500 ms apart"
+	}
 }
