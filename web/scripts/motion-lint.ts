@@ -12,9 +12,16 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import postcss, { type AtRule, type Declaration, type Node, type Rule } from 'postcss';
 
-const ALLOWED = new Set(['transform', 'translate', 'scale', 'rotate', 'opacity', 'clip-path']);
+export const ALLOWED = new Set([
+	'transform',
+	'translate',
+	'scale',
+	'rotate',
+	'opacity',
+	'clip-path'
+]);
 
-const EXCEPTIONS: { at: string; property: string; why: string }[] = [
+export const EXCEPTIONS: { at: string; property: string; why: string }[] = [
 	{
 		at: '.tap',
 		property: 'background-color',
@@ -80,41 +87,46 @@ function excepted(at: string[], property: string) {
 	return !!hit;
 }
 
-const targets = process.argv.slice(2);
-const files = (targets.length ? targets : ['build']).flatMap((t) => [...cssFiles(resolve(t))]);
-if (!files.length) throw new Error(`no stylesheets under ${targets.join(' ') || 'build'}`);
+// scripts/matrix.ts imports the rules above and holds the animations a page runs to them.
+if (import.meta.main) lint();
 
-const problems: string[] = [];
-for (const file of files) {
-	postcss.parse(readFileSync(file, 'utf8'), { from: file }).walkDecls((decl) => {
-		const keyframes = inside(decl);
-		let at: string[];
-		let animated: string[];
-		if (keyframes) {
-			if (decl.prop === 'animation-timing-function') return;
-			at = [`@keyframes ${keyframes.params}`];
-			animated = [decl.prop.toLowerCase()];
-		} else if (/^(?:-webkit-)?transition(?:-property)?$/i.test(decl.prop)) {
-			if (decl.value.trim() === 'none') return;
-			const rule = decl.parent?.type === 'rule' ? (decl.parent as Rule) : undefined;
-			at = rule ? split(rule.selector, /,/) : ['?'];
-			animated = transitioned(decl);
-		} else return;
-		for (const property of animated) {
-			if (ALLOWED.has(property) || excepted(at, property)) continue;
-			problems.push(`${file}: ${at.join(', ')} animates ${property}`);
-		}
-	});
-}
-for (const e of EXCEPTIONS) {
-	if (!used.has(e)) problems.push(`exception for ${e.property} at ${e.at} matches nothing`);
-}
+function lint() {
+	const targets = process.argv.slice(2);
+	const files = (targets.length ? targets : ['build']).flatMap((t) => [...cssFiles(resolve(t))]);
+	if (!files.length) throw new Error(`no stylesheets under ${targets.join(' ') || 'build'}`);
 
-if (problems.length) {
-	console.error(problems.join('\n'));
-	console.error(
-		`\n${problems.length} problem(s). Animate transform, opacity or clip-path instead.`
-	);
-	process.exit(1);
+	const problems: string[] = [];
+	for (const file of files) {
+		postcss.parse(readFileSync(file, 'utf8'), { from: file }).walkDecls((decl) => {
+			const keyframes = inside(decl);
+			let at: string[];
+			let animated: string[];
+			if (keyframes) {
+				if (decl.prop === 'animation-timing-function') return;
+				at = [`@keyframes ${keyframes.params}`];
+				animated = [decl.prop.toLowerCase()];
+			} else if (/^(?:-webkit-)?transition(?:-property)?$/i.test(decl.prop)) {
+				if (decl.value.trim() === 'none') return;
+				const rule = decl.parent?.type === 'rule' ? (decl.parent as Rule) : undefined;
+				at = rule ? split(rule.selector, /,/) : ['?'];
+				animated = transitioned(decl);
+			} else return;
+			for (const property of animated) {
+				if (ALLOWED.has(property) || excepted(at, property)) continue;
+				problems.push(`${file}: ${at.join(', ')} animates ${property}`);
+			}
+		});
+	}
+	for (const e of EXCEPTIONS) {
+		if (!used.has(e)) problems.push(`exception for ${e.property} at ${e.at} matches nothing`);
+	}
+
+	if (problems.length) {
+		console.error(problems.join('\n'));
+		console.error(
+			`\n${problems.length} problem(s). Animate transform, opacity or clip-path instead.`
+		);
+		process.exit(1);
+	}
+	console.log(`motion: ${files.length} stylesheet(s) animate only composited properties`);
 }
-console.log(`motion: ${files.length} stylesheet(s) animate only composited properties`);
