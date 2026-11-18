@@ -3,7 +3,9 @@
  * dark, on a phone and a desktop, with full and reduced motion. Each cell opens the built app
  * against `coeus web --fixture instrument` with the fleet's clock where the state needs it,
  * takes a screenshot, and measures what the page costs while it sits still for 2 s, and while
- * 10 s of live updates stream in where the state moves.
+ * 10 s of live updates stream in where the state moves. Once those stop, the clock is held where
+ * they left it and the page sits still for 2 s more, so DOM growth is measured in a state that
+ * does not change: a leak, not what the updates added.
  *
  *   bun scripts/matrix.ts [--only screen=fleet,log] [--only state=building] [--only target=app]
  *     [--engines chromium,webkit] [--workers 4] [--window 10] [--repeat 1]
@@ -114,7 +116,10 @@ interface Window {
 	longTasks: number[] | null;
 	layers: number | null;
 	nodes: number | null;
-	/** DOM node growth over the window, as a fraction */
+	/**
+	 * DOM node growth while the state holds still, as a fraction: over the idle window, and over
+	 * a rest after the live window once its updates have settled
+	 */
 	growth: number | null;
 	listeners: number | null;
 	heapMB: number | null;
@@ -208,8 +213,10 @@ class Fixture {
 		}
 	}
 
-	async seek(t: number, speed = 0): Promise<Status> {
-		const res = await fetch(`${this.base}/fixture/seek?t=${t}&speed=${speed}`, { method: 'POST' });
+	/** moves the clock to `t`, or keeps it where it is, and runs it at `speed` from there */
+	async seek(t: number | null, speed = 0): Promise<Status> {
+		const at = t === null ? '' : `t=${t}&`;
+		const res = await fetch(`${this.base}/fixture/seek?${at}speed=${speed}`, { method: 'POST' });
 		if (!res.ok) throw new Error(`seek: ${res.status}`);
 		return (await res.json()) as Status;
 	}
@@ -377,6 +384,21 @@ class Instruments {
 			heapMB: round(held.JSHeapUsedSize / MiB, 2),
 			gpuMB: gpu(this.events, renderer)
 		};
+	}
+
+	/**
+	 * DOM node growth while the page holds still for `seconds`. A leak shows as nodes that pile
+	 * up while nothing changes; what an update adds is the update.
+	 */
+	async growth(seconds: number): Promise<number | null> {
+		const nodes = async () => {
+			await this.cdp.send('HeapProfiler.collectGarbage');
+			return (await this.read()).Nodes;
+		};
+		const first = await nodes();
+		await new Promise((ok) => setTimeout(ok, seconds * 1000));
+		const last = await nodes();
+		return first ? round((last - first) / first, 3) : null;
 	}
 
 	/** the page's renderer process, which left the mark `start` made */
@@ -579,14 +601,22 @@ class Worker {
 					await page.evaluate((now) => window.__matrix.run(now), status.now);
 				}
 				await page.waitForTimeout(opt.window * 1000);
-				if (target === 'app') await this.fixture!.seek(state.live);
+				// held where it ran to: moving it anywhere would be one more change
+				if (target === 'app') {
+					const held = await this.fixture!.seek(null);
+					await page.evaluate((now) => window.__matrix.hold(now), held.now);
+				}
 				const after = await seen(page);
 				const keep = this.keep(`${name}.live${i ? `.${i}` : ''}`);
-				windows.push(
-					instruments
-						? await instruments.stop(opt.window, before, after, keep)
-						: webkitWindow(opt.window, before, after)
-				);
+				const w = instruments
+					? await instruments.stop(opt.window, before, after, keep)
+					: webkitWindow(opt.window, before, after);
+				// the prototype runs its own clock, so it never holds still
+				if (instruments) {
+					await settle(page, false);
+					w.growth = target === 'app' ? await instruments.growth(IDLE) : null;
+				}
+				windows.push(w);
 				animations(after);
 			} finally {
 				await ctx.close();
@@ -849,7 +879,7 @@ function gate(all: Results, timings: boolean): string[] {
 			over('layouts', w.layouts, per(c.layouts));
 			over('style recalcs', w.recalcs, per(c.recalcs));
 			if (name === 'idle') over('paints', w.paints, c.idlePaintsPerSecond * w.seconds);
-			if (name === 'live') over('DOM growth', w.growth, c.growth);
+			over('DOM growth', w.growth, c.growth);
 			if (timings && w.frames) over('dropped frames', dropped(w), budget.timings.dropped);
 			if (timings) over('GPU MB', w.gpuMB, budget.timings.gpuMB);
 		}
