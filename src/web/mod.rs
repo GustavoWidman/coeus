@@ -4,12 +4,13 @@
 //! [derive] builds them from the domain, which stays the only source of truth.
 //!
 //! `coeus web` keeps one live copy of the fleet ([fleet]), streams it to
-//! browsers ([stream]) with closure diffs ([diffs]),
+//! browsers ([stream]) with job logs ([logs]) and closure diffs ([diffs]),
 //! and serves the built web app beside them ([site]).
 
 pub mod derive;
 pub mod diffs;
 pub mod fleet;
+pub mod logs;
 pub mod site;
 pub mod source;
 pub mod stream;

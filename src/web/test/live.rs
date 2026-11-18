@@ -1,5 +1,7 @@
 //! the site over a real coeusd, reached with the read-only key
 
+use std::time::Duration;
+
 use axum::http::StatusCode;
 use tokio_util::sync::CancellationToken;
 
@@ -109,6 +111,20 @@ impl Drop for Live {
     }
 }
 
+async fn log(live: &Live, last: Option<&str>) -> Events {
+    let headers: Vec<(&str, &str)> = last.map(|id| ("last-event-id", id)).into_iter().collect();
+    Events::open(&live.site.router, "/api/machines/lab/jobs/1/log", &headers).await
+}
+
+fn texts(messages: &[super::sse::Message]) -> Vec<String> {
+    messages
+        .iter()
+        .filter(|message| message.event == "lines")
+        .flat_map(|message| message.data["lines"].as_array().unwrap().clone())
+        .map(|line| line["text"].as_str().unwrap().to_owned())
+        .collect()
+}
+
 #[tokio::test]
 async fn the_stream_shows_what_a_daemon_reports_to_the_read_only_key() {
     let live = Live::start().await;
@@ -135,6 +151,48 @@ async fn the_stream_shows_what_a_daemon_reports_to_the_read_only_key() {
 }
 
 #[tokio::test]
+async fn a_log_resumes_from_the_offset_its_last_message_named() {
+    let live = Live::start().await;
+    live.order().await;
+    live.harness
+        .until(|view| {
+            view.running
+                .as_ref()
+                .is_some_and(|job| job.summary.toplevel.is_some())
+        })
+        .await;
+
+    let mut first = log(&live, None).await;
+    let started = first.next().await.unwrap();
+    assert_eq!(started.event, "started");
+    assert_eq!(started.data["job"]["id"], 1);
+    let lines = first.until(|message| message.event == "lines").await;
+    let before = texts(&lines);
+    assert!(
+        before.iter().any(|text| text.starts_with("runner started")),
+        "{before:?}"
+    );
+    let offset = lines.last().unwrap().id.clone();
+    assert_eq!(
+        offset,
+        lines.last().unwrap().data["end"]
+            .as_u64()
+            .unwrap()
+            .to_string()
+    );
+    drop(first);
+
+    live.harness.release.notify_one();
+    let mut resumed = log(&live, Some(&offset)).await;
+    let after = resumed.until(|message| message.event == "ended").await;
+    assert_eq!(after[0].event, "started");
+    assert_eq!(after.last().unwrap().data["outcome"]["kind"], "succeeded");
+    let after = texts(&after);
+    assert_eq!(after, ["succeeded"], "only what followed offset {offset}");
+    assert!(resumed.within(Duration::from_secs(1)).await.is_none());
+}
+
+#[tokio::test]
 async fn a_job_that_wrote_no_diff_has_none_to_serve() {
     let live = Live::start().await;
     live.order().await;
@@ -146,4 +204,7 @@ async fn a_job_that_wrote_no_diff_has_none_to_serve() {
     let response = get(&live.site.router, "/api/machines/lab/jobs/1/diff", &[]).await;
     assert_eq!(response.status(), StatusCode::NOT_FOUND);
     assert_eq!(body(response).await, "job 1 changed no packages");
+
+    let response = get(&live.site.router, "/api/machines/lab/jobs/9/log", &[]).await;
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
 }
