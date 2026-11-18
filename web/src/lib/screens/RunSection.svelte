@@ -85,7 +85,7 @@
 			<div class="mlab">building now</div>
 			<ul class="drvs">
 				{#each active as { name, key } (key)}
-					<li data-key="d-{key}" in:enter out:ghost><i class="sweep"></i><span>{name}</span></li>
+					<li data-key="d-{key}" in:enter out:ghost><i class="busy"></i><span>{name}</span></li>
 				{:else}
 					<li class="none">
 						{!running
