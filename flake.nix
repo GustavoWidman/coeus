@@ -4,6 +4,10 @@
     crane.url = "github:ipetkov/crane";
     flake-parts.url = "github:hercules-ci/flake-parts";
     devshell.url = "github:numtide/devshell";
+    bun2nix = {
+      url = "github:baileyluTCD/bun2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -11,6 +15,7 @@
       flake-parts,
       crane,
       devshell,
+      bun2nix,
       ...
     }:
     flake-parts.lib.mkFlake { inherit inputs; } (
@@ -52,14 +57,23 @@
             # builds, checks and the devshell alike
             craneLib = crane.mkLib pkgs;
             coeus = pkgs.callPackage ./nix/package.nix { inherit craneLib; };
+            bunLib = bun2nix.packages.${system}.default;
+            coeus-web = pkgs.callPackage ./nix/web.nix {
+              bun2nix = bunLib;
+              inherit (coeus) version;
+            };
           in
           {
-            packages.default = coeus;
+            packages = {
+              default = coeus;
+              inherit coeus-web;
+            };
 
             checks = {
-              inherit coeus;
+              inherit coeus coeus-web;
             }
             // coeus.passthru.checks
+            // lib.mapAttrs' (name: lib.nameValuePair "coeus-web-${name}") coeus-web.passthru.checks
             // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
               nixos = pkgs.testers.runNixOSTest (import ./nix/test.nix { inherit self; });
             };
@@ -71,11 +85,29 @@
                 clippy
                 rustfmt
                 rust-analyzer
+                bun
               ];
               env = [
                 {
                   name = "RUST_SRC_PATH";
                   value = "${pkgs.rustPlatform.rustLibSrc}";
+                }
+              ];
+
+              commands = [
+                {
+                  name = "lock-web";
+                  help = "regenerate web/.bun.nix from web/bun.lock";
+                  # bun2nix refuses bun.lock's lockfileVersion 2, although the package layout
+                  # it reads is the same as in version 1
+                  command = ''
+                    set -eu
+                    cd "$PRJ_ROOT/web"
+                    lock=$(mktemp)
+                    trap 'rm -f "$lock"' EXIT
+                    sed 's/"lockfileVersion": 2,/"lockfileVersion": 1,/' bun.lock > "$lock"
+                    ${lib.getExe bunLib} --lock-file "$lock" --output-file .bun.nix
+                  '';
                 }
               ];
 
