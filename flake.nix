@@ -114,9 +114,35 @@
                   name = "RUST_SRC_PATH";
                   value = "${pkgs.rustPlatform.rustLibSrc}";
                 }
+                # the browsers of the Playwright release web/package.json pins
+                {
+                  name = "PLAYWRIGHT_BROWSERS_PATH";
+                  value = "${pkgs.playwright-driver.browsers}";
+                }
+                {
+                  name = "PLAYWRIGHT_VERSION";
+                  value = pkgs.playwright-driver.version;
+                }
+                {
+                  name = "PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS";
+                  value = "1";
+                }
               ];
 
               commands = [
+                {
+                  name = "matrix";
+                  help = "build coeus and the web app, then run web/scripts/matrix.ts with the given flags";
+                  command = ''
+                    set -eu
+                    cd "$PRJ_ROOT"
+                    cargo build --release
+                    cd web
+                    bun install --frozen-lockfile
+                    bun run build
+                    bun scripts/matrix.ts "$@"
+                  '';
+                }
                 {
                   name = "lock-web";
                   help = "regenerate web/.bun.nix from web/bun.lock";
