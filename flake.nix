@@ -22,6 +22,7 @@
       { self, flake-parts-lib, ... }:
       let
         common = flake-parts-lib.importApply ./nix/modules/common.nix { inherit self; };
+        web = flake-parts-lib.importApply ./nix/modules/web/common.nix { inherit self; };
 
         # the fleet's serving hosts, for the offline Worker that `nix build` and the checks use
         servers = [
@@ -47,6 +48,8 @@
           nixosModules.default.imports = [
             common
             ./nix/modules/nixos.nix
+            web
+            ./nix/modules/web/nixos.nix
           ];
           darwinModules.default.imports = [
             common
@@ -103,6 +106,7 @@
             )
             // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
               nixos = pkgs.testers.runNixOSTest (import ./nix/test.nix { inherit self; });
+              web = pkgs.testers.runNixOSTest (import ./nix/web-test.nix { inherit self; });
             };
 
             devshells.default = {
