@@ -325,7 +325,7 @@ export const STATES: State[] = [
 		name: 'diff expanded',
 		path: `/deployments/${ROLLOUT}`,
 		t: 10,
-		steps: [{ click: '.vrow', text: 'desktop-nixos' }],
+		steps: [{ click: '.vrow', text: 'oracle-1' }],
 		reference: { s: 'deploy' }
 	},
 	{
@@ -334,7 +334,7 @@ export const STATES: State[] = [
 		path: `/deployments/${ROLLOUT}`,
 		t: 10,
 		net: [hold('**/api/machines/*/jobs/*/diff')],
-		steps: [{ click: '.vrow', text: 'desktop-nixos' }],
+		steps: [{ click: '.vrow', text: 'oracle-1' }],
 		reference: null
 	},
 

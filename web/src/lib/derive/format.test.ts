@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { state, T } from '#lib/test/cards.ts';
-import { ago, clk, dur, hms, origin, plat, source } from './format.ts';
+import { ago, clk, delta, dur, hms, origin, plat, source } from './format.ts';
 
 describe('format', () => {
 	test.each([
@@ -43,4 +43,12 @@ describe('format', () => {
 		expect(plat(state())).toBe('nixos · x86_64');
 		expect(plat(state({ platform: 'darwin', system: 'aarch64-darwin' }))).toBe('darwin · arm64');
 	});
+});
+
+describe('delta', () => {
+	test.each([
+		[4_215_273, '+4.0'],
+		[-50_541_363, '−48.2'],
+		[0, '±0.0']
+	])('%d bytes reads %s', (bytes, want) => expect(delta(bytes)).toBe(want));
 });

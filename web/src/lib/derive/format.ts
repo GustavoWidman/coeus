@@ -8,6 +8,11 @@ const MiB = 1_048_576;
 
 export const num = (x: number) => Math.round(x).toLocaleString('en-US');
 export const mib = (bytes: number) => (bytes / MiB).toFixed(1);
+/** a change in size, in MiB, with its sign */
+export const delta = (bytes: number) => {
+	const d = bytes / MiB;
+	return (d > 0 ? '+' : d < 0 ? '−' : '±') + Math.abs(d).toFixed(1);
+};
 const pad = (x: number) => String(x).padStart(2, '0');
 
 export function ago(t: Ms, now: Ms) {
