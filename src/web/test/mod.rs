@@ -10,6 +10,7 @@ mod signin;
 mod site;
 mod sse;
 mod stream;
+mod tls;
 mod transcript;
 mod typescript;
 mod whois;

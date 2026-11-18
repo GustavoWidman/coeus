@@ -20,7 +20,7 @@ use crate::{
     config::Key,
     web::{
         session::{Proof, Sessions},
-        signin::{SignIn, Signin},
+        signin::{Caller, SignIn, Signin},
         whois::{Peer, Policy, Whois},
     },
 };
@@ -53,7 +53,7 @@ fn signin(sessions: &Arc<Sessions>, whois: Whois, policy: Policy) -> Router {
     }
     .router()
     .unwrap()
-    .layer(MockConnectInfo(PEER.parse::<SocketAddr>().unwrap()))
+    .layer(MockConnectInfo(Caller(PEER.parse::<SocketAddr>().unwrap())))
 }
 
 pub fn sessions() -> Arc<Sessions> {

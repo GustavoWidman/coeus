@@ -21,6 +21,7 @@ pub mod signin;
 pub mod site;
 pub mod source;
 pub mod stream;
+pub mod tls;
 pub mod transcript;
 pub mod view;
 pub mod whois;
