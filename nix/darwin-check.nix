@@ -25,7 +25,7 @@ let
             enable = true;
             publicOrigin = "https://coeus.example.com";
             sessionKeyFile = "/run/agenix/coeus-session-key";
-            signin.urls = [ "https://altar.tail0000.ts.net:8443" ];
+            signin.urls = [ "https://altar.tail0000.ts.net:45730" ];
             tunnel = {
               id = "6f1c2a9e-3b7d-4e58-9a0c-d2e4f6a8b1c3";
               credentialsFile = "/run/agenix/coeus-tunnel";

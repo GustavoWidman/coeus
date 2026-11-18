@@ -22,7 +22,7 @@ use crate::{
 };
 
 const INDEX: &str = "<!doctype html><title>coeus</title>";
-const SIGNIN: &str = "https://lab.tail0000.ts.net:8443";
+const SIGNIN: &str = "https://lab.tail0000.ts.net:45730";
 const DAY: i64 = 24 * 60 * 60 * 1000;
 
 fn sessions() -> Arc<Sessions> {
