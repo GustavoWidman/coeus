@@ -14,6 +14,7 @@ pub mod runner;
 pub mod server;
 pub mod ui;
 pub mod utils;
+pub mod web;
 
 #[cfg(test)]
 pub mod testing;
