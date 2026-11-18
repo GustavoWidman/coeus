@@ -23,7 +23,7 @@
       let
         common = flake-parts-lib.importApply ./nix/modules/common.nix { inherit self; };
 
-        # the fleet's serving hosts, for the offline Worker that `nix build` builds
+        # the fleet's serving hosts, for the offline Worker that `nix build` and the checks use
         servers = [
           "altar"
           "lab"
@@ -90,6 +90,12 @@
             }
             // coeus.passthru.checks
             // lib.mapAttrs' (name: lib.nameValuePair "coeus-web-${name}") coeus-web.passthru.checks
+            // lib.mapAttrs' (name: lib.nameValuePair "offline-worker-${name}") (
+              import ./nix/offline-worker-checks.nix {
+                inherit pkgs self servers;
+                module = offlineWorker;
+              }
+            )
             // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
               nixos = pkgs.testers.runNixOSTest (import ./nix/test.nix { inherit self; });
             };
