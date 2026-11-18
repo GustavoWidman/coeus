@@ -39,7 +39,7 @@ jobs:
 
   # Every system the fleet runs. macOS compiles the platform code Linux never does:
   # launchd runners, the launcher that holds Full Disk Access, and its probe. The NixOS
-  # VM test boots on x86_64-linux; the module and the daemon it boots are the same on
+  # VM tests boot on x86_64-linux; the modules and the programs they boot are the same on
   # aarch64-linux, which builds every other check. macOS skips the package: beside the
   # tests and clippy it would compile coeus a third time on a three-core runner, while
   # the tests compile and link the same crate, clippy checks every target, and the
@@ -61,7 +61,7 @@ jobs:
           - system: aarch64-linux
             runner: ubuntu-24.04-arm
             vm: false
-            skip: '[ "nixos" ]'
+            skip: '[ "nixos" "web" ]'
           - system: aarch64-darwin
             runner: macos-15
             vm: false
