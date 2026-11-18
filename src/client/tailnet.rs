@@ -1,7 +1,7 @@
 use std::{collections::HashMap, net::IpAddr, time::Duration};
 
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 
 use crate::{common::model::Timestamp, ui::format};
 
@@ -15,10 +15,10 @@ pub struct Tailnet {
     backend_state: String,
     #[serde(rename = "Self")]
     this: Option<Node>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "empty_if_null")]
     peer: HashMap<String, Node>,
     /// tailscale's warnings, in its own words
-    #[serde(default)]
+    #[serde(default, deserialize_with = "empty_if_null")]
     health: Vec<String>,
 }
 
@@ -27,11 +27,21 @@ pub struct Tailnet {
 struct Node {
     #[serde(rename = "DNSName", default)]
     dns_name: String,
-    #[serde(rename = "TailscaleIPs", default)]
+    #[serde(rename = "TailscaleIPs", default, deserialize_with = "empty_if_null")]
     tailscale_ips: Vec<IpAddr>,
     #[serde(default)]
     online: bool,
     last_seen: Option<DateTime<Utc>>,
+}
+
+/// tailscale writes an empty list or map as `null`, as it does for every one
+/// of them while logged out
+fn empty_if_null<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
 /// a machine the coordination server sees offline: nothing reaches it until

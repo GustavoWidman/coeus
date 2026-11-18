@@ -245,6 +245,22 @@ mod tailnet {
         assert_eq!(Tailnet::default().offline("gone"), None);
     }
 
+    #[test]
+    fn a_logged_out_tailscale_is_in_trouble_and_has_no_addresses() {
+        // tailscale 1.104.6 before its first login, writing every empty list as null
+        let status = br#"{"Version":"1.104.6","TUN":true,"BackendState":"NeedsLogin",
+            "AuthURL":"","TailscaleIPs":null,
+            "Self":{"ID":"","DNSName":"","TailscaleIPs":null,"Online":false,"LastSeen":"0001-01-01T00:00:00Z"},
+            "Health":null,"MagicDNSSuffix":"","CurrentTailnet":null,"Peer":null,"User":null}"#;
+        let tailnet = Tailnet::parse(status).unwrap();
+        assert_eq!(
+            tailnet.trouble().as_deref(),
+            Some("tailscale is NeedsLogin")
+        );
+        assert!(tailnet.addresses().is_empty());
+        assert_eq!(tailnet.address("lab"), None);
+    }
+
     /// tailscale with `health` as its warnings, `online` as its long poll to
     /// the coordination server
     fn warning(state: &str, online: bool, health: &[&str]) -> Tailnet {
