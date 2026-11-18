@@ -12,5 +12,12 @@
 		"verbatimModuleSyntax": true,
 		"skipLibCheck": true
 	},
-	"include": ["src", "scripts", "tests", "vite.config.ts", "prettier.config.js"]
+	"include": [
+		"src",
+		"scripts",
+		"tests",
+		"vite.config.ts",
+		"playwright.config.ts",
+		"prettier.config.js"
+	]
 }

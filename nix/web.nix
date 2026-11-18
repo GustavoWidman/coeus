@@ -147,6 +147,7 @@ let
               ../web/scripts
               ../web/tests
               ../web/matrix-budget.json
+              ../web/playwright.config.ts
               ../web/prettier.config.js
               ../web/.prettierignore
             ]

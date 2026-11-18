@@ -165,6 +165,19 @@
                   '';
                 }
                 {
+                  name = "e2e";
+                  help = "build coeus and the web app, then run the end-to-end tests on a phone and a desktop";
+                  command = ''
+                    set -eu
+                    cd "$PRJ_ROOT"
+                    cargo build --release
+                    cd web
+                    bun install --frozen-lockfile
+                    bun run build
+                    bunx playwright test "$@"
+                  '';
+                }
+                {
                   name = "matrix-bless";
                   help = "run the state matrix on x86_64-linux and write its screenshots' hashes as the check's baselines";
                   command = ''
