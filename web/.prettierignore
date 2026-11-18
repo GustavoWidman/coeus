@@ -1,0 +1,5 @@
+bun.lock
+.bun.nix
+/build
+/static/*.png
+/static/icons
