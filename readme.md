@@ -47,6 +47,7 @@ enable the module. the flake exports `nixosModules.default` and `darwinModules.d
 services.coeus = {
   enable = true;
   keyFile = config.age.secrets.coeus-key.path; # `coeus keygen`, shared by the fleet
+  readKeyFile = config.age.secrets.coeus-read-key.path; # optional: a key that may only watch
   flake = "git+https://github.com/you/nix";
   follow.ref = "deployed"; # optional: catch up with this ref on its own
   hosts = {
@@ -220,6 +221,8 @@ a newer order replaces one that is still waiting, `--now` replaces one that hasn
 ## the protocol
 
 `coeus` and `coeusd` talk over tcp encrypted with noise (`NNpsk0_25519_ChaChaPoly_BLAKE2s`) under the fleet's pre-shared key. packets are postcard-encoded and numbered by `#[packet_enum]`; every connection starts with a hello that names the machine and checks both ends speak the same protocol version.
+
+a daemon can accept a second key, `read_key_file` (`readKeyFile` in the module), for things that should see the fleet and never touch it. the first noise message only decrypts under the key the client used, so coeusd tries the fleet key, then the read-only one, and the one that opens it decides what the connection may ask. a read-only connection may watch, read history and generations, and attach to a log as plain frames. everything else gets `this key may only read` and the connection stays open: deploy, cancel and reboot obviously, but also resolving a ref, which makes the daemon fetch git, catching up, which can start a job, uploads, and a drawn attach, which spawns nix-output-monitor on the machine. `Role::allows` names every packet with no wildcard, so a new one does not compile until someone decides. coeusd refuses to start when both keys are the same.
 
 ## development
 
