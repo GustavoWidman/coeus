@@ -245,6 +245,66 @@ mod tailnet {
         assert_eq!(Tailnet::default().offline("gone"), None);
     }
 
+    /// tailscale with `health` as its warnings, `online` as its long poll to
+    /// the coordination server
+    fn warning(state: &str, online: bool, health: &[&str]) -> Tailnet {
+        let status = serde_json::json!({
+            "BackendState": state,
+            "Self": { "Online": online },
+            "Health": health,
+        });
+        Tailnet::parse(status.to_string().as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn a_tailscale_cut_off_from_its_coordination_server_or_relays_is_in_trouble() {
+        assert_eq!(current().trouble(), None);
+        assert_eq!(
+            warning("Running", true, &[]).trouble(),
+            None,
+            "how a healthy tailscale 1.104 reports itself"
+        );
+        assert_eq!(
+            warning("Stopped", true, &[]).trouble().as_deref(),
+            Some("tailscale is Stopped")
+        );
+        assert_eq!(
+            warning("Running", false, &[]).trouble().as_deref(),
+            Some("tailscale is out of touch with its coordination server")
+        );
+
+        // tailscale 1.104's own words, from its health package
+        for cut_off in [
+            "Unable to connect to the Tailscale coordination server to synchronize the state of \
+             your tailnet. Peer reachability might degrade over time.",
+            "Tailscale hasn't received a network map from the coordination server in 2m0s.",
+            "Tailscale could not connect to any relay server. Check your Internet connection.",
+            "Tailscale could not connect to the 'São Paulo' relay server. Your Internet \
+             connection might be down, or the server might be temporarily unavailable.",
+            "Tailscale hasn't heard from the 'São Paulo' relay server in 1m5s. The server might \
+             be temporarily unavailable, or your Internet connection might be down.",
+            "Tailscale cannot connect because the network is down. Check your Internet \
+             connection.",
+        ] {
+            let tailnet = warning("Running", true, &["An update is available.", cut_off]);
+            assert_eq!(
+                tailnet.trouble(),
+                Some(format!("tailscale warns: {cut_off}"))
+            );
+        }
+
+        for harmless in [
+            "An update from version 1.104.5 to 1.104.6 is available.",
+            "Some peers are advertising routes but --accept-routes is false",
+        ] {
+            assert_eq!(
+                warning("Running", true, &[harmless]).trouble(),
+                None,
+                "{harmless}"
+            );
+        }
+    }
+
     #[test]
     fn an_offline_machine_says_when_tailscale_last_saw_it() {
         let seen = Timestamp(1_794_786_060_000);
