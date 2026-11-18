@@ -18,6 +18,8 @@ export interface Seen {
 	messages: number;
 	/** streams opened */
 	streams: number;
+	/** when the last stream message arrived, on the page's `performance.now()` */
+	last: number;
 	longTasks: number[] | null;
 	/** `kind|property|where` (a selector or `@keyframes name`) → times started */
 	animations: Record<string, number>;
@@ -41,6 +43,7 @@ export function probe(config: ProbeConfig) {
 	const seen: Seen = {
 		messages: 0,
 		streams: 0,
+		last: 0,
 		longTasks: null,
 		animations: {},
 		lasting: 0,
@@ -111,6 +114,7 @@ export function probe(config: ProbeConfig) {
 				.map((l) => l.slice(5).trimStart());
 			if (!data.length) return text;
 			seen.messages++;
+			seen.last = performance.now();
 			if (!config.rewrites.length) return text;
 			const event = rewrite(JSON.parse(data.join('\n')));
 			if (!event) return null;
