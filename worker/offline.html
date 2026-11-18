@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+		<meta name="robots" content="noindex" />
+		<title>coeus · offline</title>
+		<link rel="icon" href="@icon@" type="image/svg+xml" />
+		@style@
+	</head>
+	<body>
+		<main>
+			<p class="wm">coeus</p>
+			<h1>No coeus host answered</h1>
+			<p class="sub">
+				None of the hosts that serve this dashboard is connected. A host disconnects when it loses
+				the tailnet or its coeusd stops answering, and this page reloads as soon as one is back.
+			</p>
+			<div class="retry">
+				<span>retrying every 15s</span>
+				<div class="line"><i></i></div>
+			</div>
+			<p class="probe"><i class="dot"></i><span id="ago">no answer · checked just now</span></p>
+
+			<h2 class="lbl">Serving hosts<hr /><span class="v">@count@</span></h2>
+			<ul class="hosts">@hosts@</ul>
+
+			<h2 class="lbl">From the tailnet<hr /></h2>
+			<div class="cmd">
+				<code id="cmd">coeus status @all</code>
+				<button id="copy" type="button">copy</button>
+			</div>
+			<p class="note">what every machine runs, its generation and its last job</p>
+		</main>
+		@script@
+	</body>
+</html>

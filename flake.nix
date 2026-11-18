@@ -22,6 +22,15 @@
       { self, flake-parts-lib, ... }:
       let
         common = flake-parts-lib.importApply ./nix/modules/common.nix { inherit self; };
+
+        # the fleet's serving hosts, for the offline Worker that `nix build` builds
+        servers = [
+          "altar"
+          "lab"
+          "oracle-1"
+          "oracle-2"
+        ];
+        offlineWorker = self.lib.offlineWorker { hosts = servers; };
       in
       {
         # nixpkgs no longer evaluates for x86_64-darwin
@@ -43,6 +52,9 @@
             common
             ./nix/modules/darwin.nix
           ];
+
+          # `{ hosts }` to the offline page Worker's module, the same store path on every system
+          lib.offlineWorker = import ./nix/offline-worker.nix;
         };
 
         perSystem =
@@ -67,6 +79,10 @@
             packages = {
               default = coeus;
               inherit coeus-web;
+              offline-worker = pkgs.runCommandLocal "coeus-offline-worker" { } ''
+                mkdir $out
+                cp ${offlineWorker} $out/worker.js
+              '';
             };
 
             checks = {
