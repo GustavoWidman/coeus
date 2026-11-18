@@ -611,7 +611,7 @@ dependencies = [
 
 [[package]]
 name = "coeus"
-version = "0.12.2"
+version = "0.13.0"
 dependencies = [
  "age",
  "axum",
