@@ -9,18 +9,21 @@ use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
     Json, Router,
-    extract::{ConnectInfo, State},
+    extract::{ConnectInfo, State, connect_info::Connected},
     http::{HeaderValue, Method, StatusCode, header},
     response::{IntoResponse, Response},
     routing::{get, post},
+    serve::IncomingStream,
 };
 use eyre::{Result, WrapErr};
 use log::{info, warn};
 use serde::Deserialize;
+use tokio::net::TcpListener;
 use tower_http::cors::CorsLayer;
 
 use super::{
     session::{DeviceKey, Jwk, Proof, Sessions, fresh, signature},
+    tls::TlsListener,
     view::{SignedIn, Viewer},
     whois::{Policy, Verdict, Whois},
 };
@@ -35,6 +38,23 @@ pub struct SignIn {
     pub ts: Timestamp,
     /// `r || s`, base64url, as WebCrypto signs
     pub sig: String,
+}
+
+/// the address a sign-in came from, which WireGuard vouches for
+#[derive(Clone, Copy, Debug)]
+pub struct Caller(pub SocketAddr);
+
+impl Connected<IncomingStream<'_, TlsListener>> for Caller {
+    fn connect_info(stream: IncomingStream<'_, TlsListener>) -> Self {
+        Self(*stream.remote_addr())
+    }
+}
+
+/// a simulated fleet signs in over plain TCP
+impl Connected<IncomingStream<'_, TcpListener>> for Caller {
+    fn connect_info(stream: IncomingStream<'_, TcpListener>) -> Self {
+        Self(*stream.remote_addr())
+    }
 }
 
 pub struct Signin {
@@ -67,7 +87,7 @@ impl Signin {
 
 async fn session(
     State(signin): State<Arc<Signin>>,
-    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    ConnectInfo(Caller(peer)): ConnectInfo<Caller>,
     Json(request): Json<SignIn>,
 ) -> Response {
     let refused = |status: StatusCode, why: &'static str| (status, why).into_response();
