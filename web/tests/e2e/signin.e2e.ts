@@ -58,6 +58,20 @@ test('a device without a session signs itself in on the tailnet, then opens the 
 	await expect(page.locator('.live').first()).toContainText('live');
 });
 
+test('a session past a day old renews itself unseen', async ({ page, fleet }) => {
+	await signIn(page, fleet.base);
+	await page.locator('.btn').click();
+	await expect(rows(page)).toBeVisible();
+	const before = await device(page, 25 * 60 * 60 * 1000);
+	const renewed = page.waitForRequest((r) => r.url().endsWith('/auth/session'));
+	await page.reload();
+	await renewed;
+	await expect.poll(async () => (await device(page)).token).not.toBe(before.token);
+	expect((await device(page)).iat).toBeGreaterThan(before.iat!);
+	await expect(page).toHaveURL(/\/$/);
+	await expect(rows(page)).toBeVisible();
+});
+
 test('a session the server stops taking ends on the sign-in page', async ({ page, fleet }) => {
 	// signed in before the fleet's screens first load, so their stream starts with the session
 	await page.goto(fleet.base + '/signin');
