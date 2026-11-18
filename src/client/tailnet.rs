@@ -55,20 +55,7 @@ impl Tailnet {
     /// the tailnet as this machine's tailscale sees it, `None` when no
     /// tailscale answers
     pub async fn read() -> Option<Self> {
-        for program in [
-            "tailscale",
-            "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
-        ] {
-            let status = tokio::process::Command::new(program)
-                .args(["status", "--json"])
-                .kill_on_drop(true)
-                .output();
-            let Ok(Ok(output)) = tokio::time::timeout(Self::PATIENCE, status).await else {
-                continue;
-            };
-            return Self::parse(&output.stdout);
-        }
-        None
+        Self::parse(&tailscale(&["status", "--json"]).await?.stdout)
     }
 
     pub fn parse(status: &[u8]) -> Option<Self> {
@@ -116,6 +103,24 @@ impl Tailnet {
             last_seen: peer.last_seen(),
         })
     }
+}
+
+/// what the tailscale CLI says to `args`, wherever it is installed; `None`
+/// when none answers in time
+pub async fn tailscale(args: &[&str]) -> Option<std::process::Output> {
+    for program in [
+        "tailscale",
+        "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    ] {
+        let output = tokio::process::Command::new(program)
+            .args(args)
+            .kill_on_drop(true)
+            .output();
+        if let Ok(Ok(output)) = tokio::time::timeout(Tailnet::PATIENCE, output).await {
+            return Some(output);
+        }
+    }
+    None
 }
 
 impl Node {

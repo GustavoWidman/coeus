@@ -11,6 +11,7 @@ mod sse;
 mod stream;
 mod transcript;
 mod typescript;
+mod whois;
 
 use crate::{
     common::model::{
