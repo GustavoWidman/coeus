@@ -56,6 +56,7 @@ pub struct Site {
     pub router: Router,
     pub inputs: mpsc::Sender<Input>,
     pub fleet: watch::Receiver<Arc<FleetState>>,
+    pub diffs: Arc<Diffs>,
 }
 
 struct App {
@@ -89,7 +90,7 @@ impl Site {
             fleet: fleet.clone(),
             hosts,
             source,
-            diffs,
+            diffs: diffs.clone(),
             build: settings.web_dir.as_deref().map_or_else(String::new, build),
             served_by: settings.served_by,
             access: settings.access,
@@ -111,6 +112,7 @@ impl Site {
             router,
             inputs,
             fleet,
+            diffs,
         }
     }
 }

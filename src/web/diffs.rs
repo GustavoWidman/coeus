@@ -4,7 +4,10 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::Duration,
 };
 
@@ -32,6 +35,9 @@ type Key = (Hostname, u64);
 #[derive(Default)]
 pub struct Diffs {
     entries: Mutex<VecDeque<(Key, Option<Arc<ClosureDiff>>)>>,
+    /// how many times the cache was emptied, so a read that began before
+    /// keeps what it found to itself
+    forgotten: AtomicU64,
 }
 
 impl Diffs {
@@ -51,6 +57,14 @@ impl Diffs {
         Some(diff)
     }
 
+    /// empties the cache, for a fleet whose past changed: the simulated one
+    /// when its clock moves back
+    pub fn forget(&self) {
+        let mut entries = self.entries.lock().unwrap();
+        self.forgotten.fetch_add(1, Ordering::SeqCst);
+        entries.clear();
+    }
+
     /// the job's diff, read from its log unless it was read before
     pub async fn get(
         &self,
@@ -62,14 +76,16 @@ impl Diffs {
             return Ok(diff);
         }
 
+        let forgotten = self.forgotten.load(Ordering::SeqCst);
         let diff = tokio::time::timeout(Self::PATIENCE, read(source, host, job))
             .await
             .map_err(|_| eyre!("job {job} on {host} wrote no diff yet"))??
             .map(Arc::new);
         let mut entries = self.entries.lock().unwrap();
-        if !entries
-            .iter()
-            .any(|(key, _)| key.0 == *host && key.1 == job)
+        if self.forgotten.load(Ordering::SeqCst) == forgotten
+            && !entries
+                .iter()
+                .any(|(key, _)| key.0 == *host && key.1 == job)
         {
             if entries.len() == Self::CAPACITY {
                 entries.pop_front();

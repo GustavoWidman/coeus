@@ -267,6 +267,30 @@ async fn a_moment_looks_the_same_however_the_clock_reached_it() {
     assert_eq!(direct["machines"], fresh["machines"]);
 }
 
+#[tokio::test]
+async fn moving_the_clock_back_forgets_the_diffs_of_jobs_not_yet_built() {
+    let (_, fresh) = simulated();
+    seek(&fresh, 10.0).await;
+    let direct = summed(&fresh).await;
+
+    let (_, router) = simulated();
+    let period = seek(&router, 0.0).await["period"].as_f64().unwrap();
+    seek(&router, period - 1.0).await;
+    summed(&router).await;
+    seek(&router, 10.0).await;
+    let again = summed(&router).await;
+
+    let lab = again["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["host"] == "lab")
+        .unwrap();
+    assert_eq!(lab["verdict"], "running");
+    assert!(lab["diff"].is_null(), "{lab}");
+    assert_eq!(direct["rows"], again["rows"]);
+}
+
 fn texts(messages: &[Message]) -> Vec<String> {
     messages
         .iter()
