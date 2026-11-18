@@ -45,6 +45,7 @@ export class Tail {
 	private stuck = true;
 	/** the view is gliding to the end, which counts as being there until it stops or is stopped */
 	private gliding = false;
+	private target = 0;
 	private unseen = 0;
 	private view = 0;
 	private scroll = 0;
@@ -103,14 +104,23 @@ export class Tail {
 	/** to the end of the log */
 	jump() {
 		const { box } = this;
-		const end = box.scrollHeight - box.clientHeight;
-		if (reduced()) box.scrollTop = end;
-		else {
-			// a long way is mostly skipped, so the smooth part only shows that it moved
-			if (end - box.scrollTop > 2 * box.clientHeight) box.scrollTop = end - box.clientHeight;
-			box.scrollTo({ top: end, behavior: 'smooth' });
-		}
 		this.see(0);
+		this.stuck = true;
+		if (reduced()) {
+			box.scrollTop = 1e9;
+			this.gliding = false;
+			return;
+		}
+		const end = box.scrollHeight - box.clientHeight;
+		// a long way is mostly skipped, so the smooth part only shows that it moved
+		if (end - box.scrollTop > 2 * box.clientHeight) box.scrollTop = end - box.clientHeight;
+		this.glide(end);
+	}
+
+	private glide(to: number) {
+		this.box.scrollTo({ top: to, behavior: 'smooth' });
+		this.target = to;
+		this.gliding = true;
 	}
 
 	private see(n: number) {
@@ -156,8 +166,16 @@ export class Tail {
 			this.moved = false;
 			this.view = box.clientHeight;
 			this.scroll = box.scrollTop;
-			const left = box.scrollHeight - this.scroll - this.view;
-			if (left < 1) this.gliding = false;
+			let left = box.scrollHeight - this.scroll - this.view;
+			if (this.gliding && (left < 1 || Math.abs(this.scroll - this.target) < 1)) {
+				this.gliding = false;
+				// lines measured on the way down moved the end past where the glide was going
+				if (left >= 1) {
+					box.scrollTop = 1e9;
+					this.scroll = box.scrollTop;
+					left = 0;
+				}
+			}
 			this.stuck = this.gliding || left < NEAR;
 			if (this.stuck) this.see(0);
 		}
@@ -212,9 +230,11 @@ export class Tail {
 			// the layout these force is the frame's own, so measuring after it is free
 			const glide =
 				added > 0 && n > added && this.sum(n - added, n) < view && !reduced() && onScreen(box);
-			if (glide) box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
-			else box.scrollTop = 1e9;
-			this.gliding = glide;
+			if (glide) this.glide(box.scrollHeight - view);
+			else if (added || !this.gliding) {
+				box.scrollTop = 1e9;
+				this.gliding = false;
+			}
 			this.measure();
 		} else if (prepended) {
 			// lines drawn above the screen take their real heights; what is on screen stays put
