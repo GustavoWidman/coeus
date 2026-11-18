@@ -123,7 +123,7 @@ async fn a_sign_in_must_be_signed_now_for_this_site_by_its_key() {
 }
 
 #[tokio::test]
-async fn only_a_users_granted_or_listed_device_signs_in() {
+async fn only_a_granted_device_or_a_listed_user_signs_in() {
     let sessions = sessions();
     let browser = Browser::new();
     let now = Timestamp::now();
@@ -134,6 +134,10 @@ async fn only_a_users_granted_or_listed_device_signs_in() {
     let tagged = Peer {
         tagged: true,
         ..phone()
+    };
+    let ungranted_tagged = Peer {
+        tagged: true,
+        ..ungranted.clone()
     };
     let listed = Policy {
         logins: vec!["someone@example.com".into()],
@@ -150,8 +154,9 @@ async fn only_a_users_granted_or_listed_device_signs_in() {
             policy(),
             StatusCode::FORBIDDEN,
         ),
+        (Whois::Fixed(tagged), policy(), StatusCode::OK),
         (
-            Whois::Fixed(tagged.clone()),
+            Whois::Fixed(ungranted_tagged),
             listed.clone(),
             StatusCode::FORBIDDEN,
         ),

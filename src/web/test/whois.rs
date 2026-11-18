@@ -110,11 +110,12 @@ fn a_users_device_signs_in_when_granted_or_listed() {
 }
 
 #[test]
-fn a_tagged_node_never_signs_in() {
+fn a_tagged_node_signs_in_only_when_the_policy_grants_it() {
     let server = Peer::parse(SERVER.as_bytes()).unwrap();
     let mut granted_server = server.clone();
     granted_server.capabilities.insert(CAPABILITY.into());
 
+    assert_eq!(policy(&[]).judge(&granted_server), Verdict::Welcome);
+    assert_eq!(policy(&[]).judge(&server), Verdict::Tagged);
     assert_eq!(policy(&["tagged-devices"]).judge(&server), Verdict::Tagged);
-    assert_eq!(policy(&[]).judge(&granted_server), Verdict::Tagged);
 }

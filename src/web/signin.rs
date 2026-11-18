@@ -119,7 +119,10 @@ async fn session(
     match signin.policy.judge(&peer) {
         Verdict::Welcome => {}
         Verdict::Tagged => {
-            return refused(StatusCode::FORBIDDEN, "a tagged node cannot sign in");
+            return refused(
+                StatusCode::FORBIDDEN,
+                "the tailnet policy grants this tagged node no access",
+            );
         }
         Verdict::NotGranted => {
             info!("refused {} on {}: not granted", peer.login, peer.device);
