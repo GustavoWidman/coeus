@@ -3,6 +3,7 @@
 	changes. This and the reading load only when a row first opens.
 -->
 <script module lang="ts">
+	import { device } from '#lib/auth/device.ts';
 	import { parseDiff } from '#lib/wire/parse-log.ts';
 	import type { DiffView } from '#lib/wire/types.ts';
 
@@ -15,7 +16,8 @@
 		const known = read.get(key);
 		if (known) return { diff: known };
 		try {
-			const res = await fetch(`/api/machines/${encodeURIComponent(host)}/jobs/${job}/diff`);
+			const path = `/api/machines/${encodeURIComponent(host)}/jobs/${job}/diff`;
+			const res = await fetch(path, { headers: await device.headers('GET', path) });
 			// the server answers 404 for a job that wrote a diff without changes, or none at all
 			const diff =
 				res.status === 404 ? { changes: [] } : res.ok ? parseDiff(await res.text()) : null;

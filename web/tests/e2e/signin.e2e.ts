@@ -58,6 +58,17 @@ test('a device without a session signs itself in on the tailnet, then opens the 
 	await expect(page.locator('.live').first()).toContainText('live');
 });
 
+test('a signed-in device reads a job log and a deployment diff', async ({ page, fleet }) => {
+	await signIn(page, fleet.base);
+	await fleet.seek(10);
+	await page.goto(fleet.base + '/machines/lab/jobs/61');
+	await expect(page.locator('.ln').first()).toBeVisible();
+	await expect(page.locator('.logp')).not.toContainText('401');
+	await page.goto(fleet.base + '/deployments/2d2eef4459f7ebbf');
+	await page.locator('.vrow', { hasText: 'oracle-1' }).last().click();
+	await expect(page.locator('.diff').last().locator('.drow')).toHaveCount(5);
+});
+
 test('a session past a day old renews itself unseen', async ({ page, fleet }) => {
 	await signIn(page, fleet.base);
 	await page.locator('.btn').click();
