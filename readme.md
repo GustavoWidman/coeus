@@ -237,13 +237,32 @@ a session is a token every serving host checks on its own: an hmac, under the fl
 
 a serving host connects to the cloudflare tunnel in `[settings.web.tunnel]` only while it can serve. every 2 s it checks that tailscale runs, holds its long poll to the coordination server and warns about neither that server nor its relays, and that its own coeusd shows its view to the read-only key on 127.0.0.1. three passes in a row bring the tunnel up and five fails in a row take it down, so a coeusd restarting into a new version, which listens again within tens of milliseconds, never bounces it. no other machine is asked, so the last host standing keeps serving. cloudflared runs as coeus web's child, `cloudflared tunnel --config cloudflared.json --protocol quic run` with a 10 s grace period, the config written beside the origin socket: the tunnel, its credentials, and the socket as its only ingress (`--url unix:` would carry raw tcp over websockets instead). leaving the tunnel sends it SIGTERM, then SIGKILL 15 s later; one that dies while the host is ready comes back after 1, 2, 5, then 10 s. it stays in coeus web's process group, so systemd's control group and launchd's process group (with `AbandonProcessGroup` false) take it down with coeus web however that dies.
 
+on a serving host the module runs it, beside `readKeyFile` and the `hosts` it shows, in order:
+
+```nix
+services.coeus.web = {
+  enable = true;
+  publicOrigin = "https://coeus.example.com";
+  # 64 hex digits a line (`coeus keygen`), the same file on every serving host
+  sessionKeyFile = config.age.secrets.coeus-session-key.path;
+  # every serving host's, so the app finds whichever answers
+  signin.urls = [ "https://lab.tail0000.ts.net:8443" "https://altar.tail0000.ts.net:8443" ];
+  tunnel = {
+    id = "6f1c2a9e-3b7d-4e58-9a0c-d2e4f6a8b1c3"; # `cloudflared tunnel create`
+    credentialsFile = config.age.secrets.coeus-tunnel.path;
+  };
+};
+```
+
+on nixos it is `coeus-web.service`, running as the `coeus-web` system user in a tight sandbox, which cloudflared and the tailscale cli it runs share. it gets the read key, the session key and the tunnel's credentials as systemd credentials, so they can stay root's, and keeps the origin socket and cloudflared's config in `/run/coeus-web`. the credentials are linked from `/run/credstore`, where systemd leaves out one whose file is missing instead of failing the start, and coeus web then names the file in the journal and tries again a minute later, so a secret that isn't there yet never fails the switch. `coeus-web-cert` asks tailscaled for the machine's `*.ts.net` certificate when coeus web starts and every hour after, which needs https certificates enabled for the tailnet, and coeus web picks a renewed one up without restarting. `signin.certFile` and `signin.keyFile` point it at one you already have instead. the sign-in port opens on the tailscale interface alone. on macos it is a launchd daemon running as `_coeusweb` (uid 471, `services.coeus.web.uid`), which must be able to read the files it is given, agenix's `owner`. there it keeps everything in `/var/lib/coeus-web`, since `/var/run` empties at boot and only root could make its directory again. either way it logs at info, to the journal or `/var/log/coeus-web.log`, so the host becoming ready, and the tunnel coming and going, show there.
+
 `coeus web --fixture instrument` runs the same site over a simulated fleet on `127.0.0.1:7979`, with sign-in on that same address taking anyone as the fixture's viewer under a session key made up per run (`--open` skips signing in): the design prototype's six machines in the middle of a rollout, a failed build, a laptop that wakes to catch up, and then it all starts over (about 108 s). it never dials a coeusd. one seeded generator draws every number, so a moment looks the same however the clock got there. `POST /fixture/seek?t=<seconds>` moves the clock there and holds it, `&speed=1` runs it from there, and the answer, which comes once the site shows that moment, says what time it is in the simulated fleet, for a test to pin the browser's clock to.
 
 ## development
 
 ```sh
 nix develop -c cargo test   # unit and end-to-end tests over the real protocol
-nix flake check             # the package and clippy, plus a nixos vm running coeusd on linux
+nix flake check             # the package and clippy, plus nixos vms running coeusd and coeus web on linux
 ```
 
 the dashboard lives in `web/`, a svelte 5 app that vite builds into static files. `bun run dev` serves it with hot reload, talking to `cargo run -- web --fixture instrument`, and `nix build .#coeus-web` builds what ships. its checks hold what `index.html` loads to `web/perf-budget.json` (gzipped js and css) and the built css to animating only `transform`, `opacity` and `clip-path`. after changing its dependencies, run `nix develop -c lock-web` so nix fetches the same ones.
@@ -256,4 +275,4 @@ the web dashboard's types live in `src/web/view.rs`. `web/src/lib/wire/types.ts`
 
 when every serving host is down, cloudflare answers the dashboard's address with its own error 1033 page, and the free plan can't swap it for yours. `worker/` is a cloudflare worker for the dashboard's route that can. it passes every request through untouched, and when the tunnel answers 530 or the origin can't be reached, a page load gets coeus's own offline page (a 503 that checks again every 15 s and reloads once a host is back) and anything else gets `503 {"offline":true}`. the page splices in the app's `web/src/lib/ui/tokens.css`, so it can't drift from the dashboard's colors. `lib.offlineWorker { hosts = [ ... ]; }` builds it into one es module with `builtins.toFile`, which gives it the same store path on every system, as norn's `cloudflare.fleet.workers.<name>.module` requires of every peer. `nix build .#offline-worker` builds it for the fleet's servers, and `nix flake check` runs `worker/worker.test.ts` against that build.
 
-every pull request checks the flake on every system the fleet runs: `nix flake check` on x86_64-linux, the vm test included, and on aarch64-darwin, and every check but the vm test on aarch64-linux. its commits must follow conventional commits. the version lives in `Cargo.toml`, with `Cargo.lock` agreeing, and a pull request must raise it unless labeled `no-release`. a push to `main` that brings a version with no release yet builds coeus for x86_64-linux, aarch64-linux and aarch64-darwin, pushes it to `https://cache.r3dlust.com` (key `cache.r3dlust.com-1:Wdkf9mes2ued0P7C7CL3Jax1b4KPuJwQpM3h4G/Z+yI=`) pinned as `coeus-<system>`, then tags it `v<version>` and releases it. a push that releases nothing builds nothing. keep the input's own `nixpkgs` (no `follows`) and a machine gets that exact build from the cache.
+every pull request checks the flake on every system the fleet runs: `nix flake check` on x86_64-linux, the vm tests included, and on aarch64-darwin, where a nix-darwin system serving the dashboard evaluates, and every check but the vm tests on aarch64-linux. its commits must follow conventional commits. the version lives in `Cargo.toml`, with `Cargo.lock` agreeing, and a pull request must raise it unless labeled `no-release`. a push to `main` that brings a version with no release yet builds coeus for x86_64-linux, aarch64-linux and aarch64-darwin, pushes it to `https://cache.r3dlust.com` (key `cache.r3dlust.com-1:Wdkf9mes2ued0P7C7CL3Jax1b4KPuJwQpM3h4G/Z+yI=`) pinned as `coeus-<system>`, then tags it `v<version>` and releases it. a push that releases nothing builds nothing. keep the input's own `nixpkgs` (no `follows`) and a machine gets that exact build from the cache.
