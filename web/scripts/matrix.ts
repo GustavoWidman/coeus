@@ -965,6 +965,8 @@ function gate(all: Results, timings: boolean): string[] {
 			const over = (what: string, value: number | null, limit: number) => {
 				if (value !== null && value > limit) fail(`${name}: ${what} ${value} > ${limit}`);
 			};
+			// a long task is 50 ms of wall time, so a builder busy with another job at the same
+			// time fails cells whose page stays within budget alone: build the matrix by itself
 			over('long tasks', w.longTasks?.length ?? null, c.longTasks);
 			over('layers', w.layers, c.layers[r.viewport]);
 			over('DOM nodes', w.nodes, c.nodes);
