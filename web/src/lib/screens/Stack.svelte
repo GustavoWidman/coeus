@@ -144,6 +144,8 @@
 
 	// the sheet loads with the first log opened, and stays to put that one and the next away
 	let Sheet = $state.raw<typeof SheetView | null>(null);
+	/** a sheet stands fully risen over the screens */
+	let covered = $state(false);
 	$effect(() => {
 		if (router.nav.route.screen === 'log' && !Sheet)
 			import('./Sheet.svelte').then((m) => (Sheet = m.default));
@@ -230,9 +232,14 @@
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && back()} />
 
-<div class="stage" bind:this={root} {@attach gestures}>
+<div
+	class="stage"
+	aria-busy={router.nav.route.screen === 'log' && !covered}
+	bind:this={root}
+	{@attach gestures}
+>
 	{#each screens as s (s.key)}
 		<Screen route={s.route} onback={back} />
 	{/each}
 </div>
-{#if Sheet}<Sheet stage={() => root} />{/if}
+{#if Sheet}<Sheet stage={() => root} oncover={(on) => (covered = on)} />{/if}

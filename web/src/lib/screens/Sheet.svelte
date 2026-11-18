@@ -10,7 +10,7 @@
 	import { reduced } from '#lib/motion/reduced.ts';
 	import type LogView from './Log.svelte';
 
-	let { stage }: { stage: () => HTMLElement } = $props();
+	let { stage, oncover }: { stage: () => HTMLElement; oncover: (on: boolean) => void } = $props();
 
 	type Shown = { host: string; id: number };
 	const SUNK = 'translateY(8px) scale(.94)';
@@ -52,7 +52,7 @@
 		app().classList.toggle('sheeted', on);
 		if (!on) {
 			s.style.transform = '';
-			s.removeAttribute('data-covered');
+			cover(false);
 		}
 	}
 
@@ -81,6 +81,7 @@
 	/** the sheet stands fully risen over the screens, or is about to move */
 	function cover(on: boolean) {
 		stage().toggleAttribute('data-covered', on);
+		oncover(on);
 		if (on) sheet().style.transform = '';
 	}
 

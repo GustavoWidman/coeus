@@ -65,6 +65,9 @@
 		return () => clearTimeout(t);
 	});
 
+	/** the pane names a log it does not show yet */
+	const loading = $derived(log !== null && (!Log || named !== `${shown?.host}/${shown?.id}`));
+
 	let mid: HTMLElement;
 	$effect(() => {
 		key;
@@ -115,7 +118,7 @@
 			{/key}
 		{/if}
 	</main>
-	<section class="pane right">
+	<section class="pane right" aria-busy={loading}>
 		{#if boot.view === 'fleet' && shown && Log}
 			{#key `${shown.host}/${shown.id}`}
 				<Log host={shown.host} id={shown.id} wide />

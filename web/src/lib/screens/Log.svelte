@@ -38,6 +38,8 @@
 	const running = $derived(!done && job?.state.kind === 'running');
 	/** every host is down, so the log can't be read and the job stands as last seen */
 	const down = $derived(fleet.down !== null);
+	/** nothing has answered for the log yet, not even with why it can't be read */
+	const waiting = $derived(!started && failed === null && !down);
 	const queued = $derived(!done && job?.state.kind === 'queued');
 	const said = $derived.by(() => {
 		if (done) {
@@ -84,7 +86,7 @@
 	});
 </script>
 
-<div class="logp">
+<div class="logp" aria-busy={waiting}>
 	<div class="logh">
 		<div style="min-width:0">
 			<div class="t">
