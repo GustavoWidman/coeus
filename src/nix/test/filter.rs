@@ -1,16 +1,24 @@
 use super::{BUILD, DOWNLOAD, FAILING};
 use crate::nix::*;
 
-fn filtered(log: &str) -> Vec<&str> {
+/// what a job log keeps of `log`, in the order it writes it
+fn filtered(log: &str) -> Vec<String> {
     let mut filter = LogFilter::new();
-    log.lines()
-        .filter(|line| filter.keep(&Line::parse(line)))
-        .collect()
+    let mut kept = Vec::new();
+    for raw in log.lines() {
+        match filter.keep(raw, &Line::parse(raw)) {
+            Kept::Nothing => continue,
+            Kept::After(held) => kept.push(held),
+            Kept::Line => {}
+        }
+        kept.push(raw.to_owned());
+    }
+    kept
 }
 
-fn fold(lines: &[&str]) -> LogFold {
+fn fold<S: AsRef<str>>(lines: &[S]) -> LogFold {
     let mut fold = LogFold::new();
-    lines.iter().for_each(|line| fold.feed(line));
+    lines.iter().for_each(|line| fold.feed(line.as_ref()));
     fold
 }
 
@@ -37,15 +45,24 @@ fn keeps_everything_the_fold_reads() {
 
 #[test]
 fn keeps_lines_verbatim_and_in_order() {
-    let kept = filtered(FAILING);
-    let mut rest = FAILING.lines();
-    assert!(kept.iter().all(|line| rest.any(|raw| raw == *line)));
+    for log in [BUILD, DOWNLOAD, FAILING] {
+        let kept = filtered(log);
+        assert!(kept.iter().all(|line| log.lines().any(|raw| raw == line)));
+        // progress left out until its activity stops goes in just before the stop, past
+        // other activities' lines; everything else stays in order
+        let mut rest = log.lines();
+        assert!(
+            kept.iter()
+                .filter(|line| !line.contains(r#""type":105"#))
+                .all(|line| rest.any(|raw| raw == line))
+        );
+    }
 }
 
 #[test]
 fn judges_each_kind_of_line() {
     let mut filter = LogFilter::new();
-    let mut keep = |raw| filter.keep(&Line::parse(raw));
+    let mut keep = |raw| filter.keep(raw, &Line::parse(raw)) != Kept::Nothing;
 
     assert!(keep("plain output"));
     assert!(keep(
@@ -80,4 +97,49 @@ fn judges_each_kind_of_line() {
     // what a stopped activity reported is forgotten
     assert!(keep(r#"@nix {"action":"stop","id":3}"#));
     assert!(keep(progress));
+}
+
+#[test]
+fn keeps_progress_a_whole_percent_at_a_time() {
+    let mut filter = LogFilter::new();
+    let mut keep = |raw: &str| filter.keep(raw, &Line::parse(raw));
+    let at = |done: u64, running: u64| {
+        format!(
+            r#"@nix {{"action":"result","fields":[{done},1000,{running},0],"id":9,"type":105}}"#
+        )
+    };
+
+    assert_eq!(keep(&at(0, 0)), Kept::Line);
+    // a byte or a few is not a percent
+    assert_eq!(keep(&at(3, 0)), Kept::Nothing);
+    assert_eq!(keep(&at(9, 0)), Kept::Nothing);
+    assert_eq!(keep(&at(10, 0)), Kept::Line);
+    assert_eq!(keep(&at(15, 0)), Kept::Nothing);
+    // what is running counts whatever the percent
+    assert_eq!(keep(&at(15, 1)), Kept::Line);
+    assert_eq!(keep(&at(998, 1)), Kept::Line);
+    assert_eq!(keep(&at(999, 1)), Kept::Nothing);
+    assert_eq!(keep(&at(1000, 1)), Kept::Line);
+
+    // the newest report left out goes in before the activity stops
+    assert_eq!(keep(&at(1000, 0)), Kept::Line);
+    let stop = r#"@nix {"action":"stop","id":9}"#;
+    assert_eq!(keep(&at(1000, 0)), Kept::Nothing);
+    assert_eq!(keep(stop), Kept::Line);
+    let _ = keep(&at(0, 0));
+    assert_eq!(keep(&at(4, 0)), Kept::Nothing);
+    assert_eq!(keep(stop), Kept::After(at(4, 0)));
+}
+
+#[test]
+fn keeps_every_change_of_progress_without_a_size() {
+    let mut filter = LogFilter::new();
+    let mut keep = |done: u64| {
+        let raw =
+            format!(r#"@nix {{"action":"result","fields":[{done},0,0,0],"id":5,"type":105}}"#);
+        filter.keep(&raw, &Line::parse(&raw))
+    };
+    assert_eq!(keep(1), Kept::Line);
+    assert_eq!(keep(2), Kept::Line);
+    assert_eq!(keep(2), Kept::Nothing);
 }

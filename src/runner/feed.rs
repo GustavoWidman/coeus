@@ -5,7 +5,7 @@ use eyre::Result;
 use crate::{
     common::model::JobEvent,
     job::LogWriter,
-    nix::{Line, LogFilter, LogFold},
+    nix::{Kept, Line, LogFilter, LogFold},
 };
 
 /// one process's output on its way into the job log: folded into progress
@@ -36,10 +36,13 @@ impl<'a> Feed<'a> {
         let line = Line::parse(raw);
         self.fold.apply(&line);
 
-        if self.filter.keep(&line) {
-            self.writer.output(raw)?;
-            self.unflushed = true;
+        match self.filter.keep(raw, &line) {
+            Kept::Nothing => return Ok(()),
+            Kept::After(held) => self.writer.output(&held)?,
+            Kept::Line => {}
         }
+        self.writer.output(raw)?;
+        self.unflushed = true;
         Ok(())
     }
 
