@@ -70,6 +70,11 @@ let
       '';
 
       passthru.checks = {
+        # fails when the JS or CSS that index.html loads outgrows web/perf-budget.json
+        budget = check "budget" [ ../web/scripts/budget.ts ../web/perf-budget.json ] ''
+          bun --bun run build
+          bun --bun scripts/budget.ts
+        '';
         # types and formatting
         check =
           check "check"
