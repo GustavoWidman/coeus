@@ -704,6 +704,8 @@ class Worker {
 				await page.waitForTimeout(step.advance * 1000);
 				const held = await this.fixture!.seek(t + step.advance);
 				await page.evaluate((now) => window.__matrix.hold(now), held.now);
+				// the page's clock reads the time once a second, so its next tick shows where it held
+				await page.waitForTimeout(1100);
 			} else {
 				// the prototype's speed lives in its developer panel
 				await page.keyboard.press('.');
