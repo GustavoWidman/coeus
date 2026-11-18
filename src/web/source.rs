@@ -1,7 +1,12 @@
+use std::sync::Arc;
+
 use eyre::{Result, eyre};
 use tokio::sync::mpsc;
 
-use super::fleet::Input;
+use super::{
+    fixture::{self, Fixture},
+    fleet::Input,
+};
 use crate::{
     client::{Attachment, AttachmentEvent, Fleet},
     common::model::{Hostname, JobId, JobSelector, Timestamp},
@@ -12,11 +17,14 @@ use crate::{
 pub enum Source {
     /// every machine's coeusd, reached with the read-only key
     Live(Fleet),
+    /// a simulated fleet, whose clock can be moved
+    Fixture(Arc<Fixture>),
 }
 
 /// one job's log, from some offset on
 pub enum Feed {
-    Live(Attachment),
+    Live(Box<Attachment>),
+    Fixture(fixture::Feed),
 }
 
 impl Source {
@@ -24,6 +32,7 @@ impl Source {
     pub fn hosts(&self) -> Vec<Hostname> {
         match self {
             Self::Live(fleet) => fleet.hosts().to_vec(),
+            Self::Fixture(fixture) => fixture.hosts(),
         }
     }
 
@@ -45,6 +54,7 @@ impl Source {
                     }
                 });
             }
+            Self::Fixture(fixture) => fixture.feed(inputs),
         }
     }
 
@@ -57,8 +67,9 @@ impl Source {
                 }
                 let client = fleet.connect(host).await?;
                 let attachment = client.attach(JobSelector::Id(JobId(job)), from, None);
-                Ok(Feed::Live(attachment.await?))
+                Ok(Feed::Live(Box::new(attachment.await?)))
             }
+            Self::Fixture(fixture) => Ok(Feed::Fixture(fixture.attach(host, job, from)?)),
         }
     }
 }
@@ -68,6 +79,7 @@ impl Feed {
     pub async fn next(&mut self) -> Result<Option<AttachmentEvent>> {
         match self {
             Self::Live(attachment) => attachment.next().await,
+            Self::Fixture(feed) => feed.next().await,
         }
     }
 }

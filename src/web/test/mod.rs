@@ -1,6 +1,7 @@
 mod card;
 mod contract;
 mod deployment;
+mod fixture;
 mod live;
 mod site;
 mod sse;
