@@ -112,6 +112,25 @@ let
       );
 
       passthru.checks = {
+        # the stream's parser, which reads every message of contract/web.json, and what the
+        # screens derive from the fleet
+        unit = bun2nix.mkDerivation (
+          common
+          // {
+            pname = "coeus-web-unit";
+            src = lib.fileset.toSource {
+              root = ../.;
+              fileset = lib.fileset.unions (sources ++ [ ../contract/web.json ]);
+            };
+            sourceRoot = "source/web";
+            buildPhase = ''
+              runHook preBuild
+              bun --bun run test
+              runHook postBuild
+            '';
+            installPhase = "touch $out";
+          }
+        );
         # fails when the JS or CSS that index.html loads outgrows web/perf-budget.json
         budget = check "budget" [ ../web/scripts/budget.ts ../web/perf-budget.json ] ''
           bun --bun run build
