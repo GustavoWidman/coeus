@@ -1,5 +1,6 @@
 use super::*;
 use crate::{
+    client::Unreach,
     common::model::{JobState, Outcome},
     ui::{Summary, board::Ordering},
 };
@@ -10,7 +11,7 @@ fn settled() -> Board {
     admit(&mut board, "lab", 12);
     board.order(
         &host("oracle"),
-        Ordering::Unreachable("no answer within 5s".into()),
+        Ordering::Unreachable(Unreach::Failed("no answer within 5s".into())),
     );
     show(
         &mut board,

@@ -34,10 +34,9 @@ impl EncryptedStream {
     const MAX_FRAME: usize = u16::MAX as usize;
     const TAG_LEN: usize = 16;
 
-    /// connects, authenticates and runs the hello, returning the server's
-    /// introduction along with the stream
-    pub async fn connect(address: SocketAddr, psk: &[u8; 32]) -> Result<(Self, HelloResponse)> {
-        let stream = TcpStream::connect(address).await?;
+    /// authenticates over `stream` and runs the hello, returning the
+    /// server's introduction along with the stream
+    pub async fn connect(stream: TcpStream, psk: &[u8; 32]) -> Result<(Self, HelloResponse)> {
         // a server that cannot decrypt the first message hangs up, which
         // reads here as nothing more than the end of the stream
         let mut stream = Self::handshake(stream, psk, true)

@@ -82,7 +82,7 @@ impl Attach<'_> {
             };
             let attachment = match self.fleet.connect(self.host).await {
                 Ok(client) => client.attach(self.job, from, terminal).await,
-                Err(error) => Err(error),
+                Err(unreach) => Err(unreach.into()),
             };
             let mut attachment = match attachment {
                 Ok(attachment) => attachment,

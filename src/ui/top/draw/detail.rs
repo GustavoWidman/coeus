@@ -83,7 +83,9 @@ fn identity(view: &MachineView, link: &Link) -> String {
     let link = match link {
         Link::Connected => format!("{} connected", "●".green()),
         Link::Connecting => format!("{} reconnecting", "↻".yellow().bold()),
-        Link::Unreachable(reason) => format!("{} {}", "⊘ unreachable:".red(), reason.dimmed()),
+        Link::Unreachable(reason) => {
+            format!("{} {}", "⊘ unreachable:".red(), reason.to_string().dimmed())
+        }
     };
     format!(
         "{}   {link}",

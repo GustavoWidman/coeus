@@ -9,7 +9,7 @@ use crate::{
         exit::Exit,
         follow::{Follow, View},
     },
-    client::{FleetEvent, Link},
+    client::{FleetEvent, Link, Unreach},
     common::model::Timestamp,
     ui::{Board, Heading, board::Verdict, status},
 };
@@ -71,7 +71,7 @@ impl StatusArgs {
                     unreachable.push(Verdict::Unreachable);
                     FleetEvent::Link {
                         host,
-                        link: Link::Unreachable(error.to_string()),
+                        link: Link::Unreachable(Unreach::of(error)),
                     }
                 }
             });

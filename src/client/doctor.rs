@@ -45,7 +45,7 @@ impl Checkup {
     /// what System Settings needs Full Disk Access granted to
     pub const LAUNCHER: &'static str = "/Library/Application Support/coeus/coeus-launcher";
 
-    pub fn unreachable(host: Hostname, error: &str) -> Self {
+    pub fn unreachable(host: Hostname, error: &dyn std::fmt::Display) -> Self {
         Self {
             findings: vec![
                 Finding::new(Severity::Fail, format!("unreachable: {error}")).fix(format!(
