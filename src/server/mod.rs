@@ -12,7 +12,10 @@ use tokio::{task::JoinSet, time::timeout};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::stream::{EncryptedListener, PendingConnection},
+    common::{
+        proto::Role,
+        stream::{EncryptedListener, PendingConnection},
+    },
     config::Key,
     engine::{EngineHandle, Host},
 };
@@ -26,8 +29,12 @@ pub struct CoeusServer<H: Host> {
 
 impl<H: Host> CoeusServer<H> {
     pub async fn bind(address: SocketAddr, key: &Key, engine: EngineHandle<H>) -> Result<Self> {
-        let listener =
-            EncryptedListener::bind(address, key.as_bytes(), engine.host().clone()).await?;
+        let listener = EncryptedListener::bind(
+            address,
+            vec![(Role::Full, *key.as_bytes())],
+            engine.host().clone(),
+        )
+        .await?;
         info!(
             "coeus server listening on {}",
             listener.local_addr()?.to_string().magenta()
@@ -95,7 +102,7 @@ impl<H: Host> CoeusServer<H> {
     }
 
     async fn handle_connection(&self, pending: PendingConnection) -> Result<()> {
-        let stream = timeout(HANDSHAKE_DEADLINE, pending.authenticate())
+        let (stream, _) = timeout(HANDSHAKE_DEADLINE, pending.authenticate())
             .await
             .wrap_err("Noise handshake deadline reached")??;
 

@@ -8,7 +8,7 @@ use tokio::{
 
 use crate::common::{
     model::{HostInfo, Platform},
-    proto::{AttachScreen, Error as ErrorPacket, Packet, ResolveRequest},
+    proto::{AttachScreen, Error as ErrorPacket, Packet, ResolveRequest, Role},
 };
 
 use super::{EncryptedListener, EncryptedStream};
@@ -16,6 +16,7 @@ use super::{EncryptedListener, EncryptedStream};
 type TestResult<T = ()> = Result<T, Box<dyn Error + Send + Sync>>;
 
 const PSK: [u8; 32] = [0x42; 32];
+const READ_PSK: [u8; 32] = [0x17; 32];
 const WRONG_PSK: [u8; 32] = [0x24; 32];
 
 fn host() -> HostInfo {
@@ -28,7 +29,8 @@ fn host() -> HostInfo {
 }
 
 async fn bind() -> TestResult<EncryptedListener> {
-    Ok(EncryptedListener::bind("127.0.0.1:0".parse()?, &PSK, host()).await?)
+    let keys = vec![(Role::Full, PSK), (Role::Read, READ_PSK)];
+    Ok(EncryptedListener::bind("127.0.0.1:0".parse()?, keys, host()).await?)
 }
 
 async fn echo(payload: Vec<u8>) -> TestResult<Vec<u8>> {
@@ -111,7 +113,7 @@ async fn serves_plaintext_in_small_read_buffers() -> TestResult {
 }
 
 #[tokio::test]
-async fn rejects_a_mismatched_psk() -> TestResult {
+async fn rejects_a_key_the_listener_does_not_hold() -> TestResult {
     let listener = bind().await?;
     let address = listener.local_addr()?;
 
@@ -133,7 +135,31 @@ async fn rejects_a_mismatched_psk() -> TestResult {
         format!("{error:#}").contains("fleet key"),
         "the error names the likely cause: {error:#}"
     );
-    let _server_completed = server.await??;
+    assert!(
+        !server.await??,
+        "a key the listener does not hold never authenticates"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn each_key_authenticates_with_its_role() -> TestResult {
+    let mut listener = bind().await?;
+    let address = listener.local_addr()?;
+
+    for (psk, role) in [(PSK, Role::Full), (READ_PSK, Role::Read)] {
+        let server = tokio::spawn(async move {
+            let (_, role) = listener.accept().await?;
+            Ok::<_, Box<dyn Error + Send + Sync>>((listener, role))
+        });
+        let (_client, hello) =
+            EncryptedStream::connect(TcpStream::connect(address).await?, &psk).await?;
+        assert_eq!(hello.host, host());
+
+        let (returned, accepted) = server.await??;
+        assert_eq!(accepted, role);
+        listener = returned;
+    }
     Ok(())
 }
 
