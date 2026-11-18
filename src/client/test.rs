@@ -339,6 +339,27 @@ mod tailnet {
         );
     }
 
+    #[test]
+    fn a_connect_turned_away_refuses_and_anything_else_fails() {
+        for kind in [
+            std::io::ErrorKind::ConnectionRefused,
+            std::io::ErrorKind::ConnectionReset,
+            std::io::ErrorKind::ConnectionAborted,
+        ] {
+            assert!(
+                matches!(
+                    super::super::connect_error(kind.into()),
+                    Unreach::Refused(_)
+                ),
+                "{kind:?}"
+            );
+        }
+        assert!(matches!(
+            super::super::connect_error(std::io::ErrorKind::TimedOut.into()),
+            Unreach::Failed(_)
+        ));
+    }
+
     #[tokio::test]
     async fn a_machine_that_turns_the_connection_away_refuses_it() {
         let (fleet, listener, host) = silent("127.0.0.1", Duration::from_secs(5)).await;

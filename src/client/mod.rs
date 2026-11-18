@@ -67,12 +67,7 @@ impl CoeusClient {
                 .map_err(|error| failed(&error))?
                 .next()
                 .ok_or_else(|| failed(&format!("{} does not resolve", endpoint.host)))?;
-            let stream = TcpStream::connect(address)
-                .await
-                .map_err(|error| match error.kind() {
-                    ErrorKind::ConnectionRefused => Unreach::Refused(error.to_string()),
-                    _ => failed(&error),
-                })?;
+            let stream = TcpStream::connect(address).await.map_err(connect_error)?;
 
             EncryptedStream::connect(stream, key.as_bytes())
                 .await
@@ -232,4 +227,15 @@ fn unexpected<T>(packet: Packet) -> Result<T> {
         "the daemon answered with an unexpected packet {:#06x}",
         packet.kind()
     ))
+}
+
+/// why a tcp connect to a machine failed. a port whose listener just closed
+/// can answer with a reset rather than a refusal; both turn the client away.
+fn connect_error(error: std::io::Error) -> Unreach {
+    match error.kind() {
+        ErrorKind::ConnectionRefused
+        | ErrorKind::ConnectionReset
+        | ErrorKind::ConnectionAborted => Unreach::Refused(error.to_string()),
+        _ => Unreach::Failed(error.to_string()),
+    }
 }
