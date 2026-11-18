@@ -88,14 +88,16 @@ export class Tail {
 		this.heights.splice(0, dropped);
 		this.added += n;
 		if (this.frame || this.timer) return;
-		// scrolled up, new lines only add to a count
+		// scrolled up, new lines only add to a count. Drawn here rather than in a frame
+		// callback, the lines are ready when the browser wakes to show them, not a frame later.
 		const wait = this.stuck ? this.shown + PACE - performance.now() : 0;
-		if (wait <= 0) this.schedule();
-		else
-			this.timer = setTimeout(() => {
+		this.timer = setTimeout(
+			() => {
 				this.timer = undefined;
-				this.schedule();
-			}, wait);
+				if (!this.frame) this.draw();
+			},
+			Math.max(0, wait)
+		);
 	}
 
 	/** to the end of the log */
@@ -180,11 +182,14 @@ export class Tail {
 		const ai = this.a - gone;
 		const bi = this.b - gone;
 		if (this.stuck) {
-			// from wherever the view stands, which a glide (never longer than a screen) leaves
-			// above the end for a moment
+			// from wherever the view stands, which a glide leaves above the end for a moment;
+			// what is drawn stays while it reaches a quarter screen above that and not much more,
+			// so a glide moves nothing on the page
 			const end = this.sum(0, n);
-			const lo = Math.min(scroll - TOP - view / 2, end - view * 1.5);
-			na = this.around(Math.max(end - view * 2.5, lo), end)[0];
+			const top = Math.min(scroll - TOP, end - view);
+			const at = this.drawn.size && ai >= 0 ? this.sum(0, ai) : -Infinity;
+			if (at <= top - view / 4 && at >= top - view * 1.5) na = ai;
+			else na = this.around(top - view / 2, end)[0];
 		} else {
 			const top = scroll - TOP;
 			const covered =
