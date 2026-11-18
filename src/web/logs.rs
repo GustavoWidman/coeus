@@ -104,6 +104,7 @@ impl Kind for LogEvent {
             Self::Started { .. } => "started",
             Self::Lines { .. } => "lines",
             Self::Ended { .. } => "ended",
+            Self::Expired => "expired",
         }
     }
 }

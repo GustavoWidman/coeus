@@ -64,6 +64,11 @@ fn the_web_example_parses() {
         settings.web.origin_socket,
         Path::new("/run/coeus-web/origin.sock")
     );
+    assert_eq!(settings.web.public_origin, "https://coeus.example.com");
+    assert_eq!(settings.web.session_days, 7);
+    assert_eq!(settings.web.signin.port, 8443);
+    assert_eq!(settings.web.signin.urls.len(), 2);
+    assert_eq!(settings.web.signin.capability, "example.com/cap/coeus");
     let tunnel = settings.web.tunnel.unwrap();
     assert_eq!(
         tunnel.credentials_file,
@@ -74,14 +79,28 @@ fn the_web_example_parses() {
 }
 
 #[test]
-fn a_web_config_without_a_tunnel_serves_no_one() {
+fn a_web_config_leaves_out_what_has_a_default() {
     let file = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(
         file.path(),
-        "[settings]\nkey_file = \"/run/agenix/coeus-read-key\"\n[settings.web]\norigin_socket = \"/run/o.sock\"\n",
+        r#"[settings]
+key_file = "/run/agenix/coeus-read-key"
+[settings.web]
+public_origin = "https://coeus.example.com"
+origin_socket = "/run/o.sock"
+session_key_file = "/run/agenix/coeus-session-key"
+[settings.web.signin]
+cert = "/var/lib/coeus-web/tls.crt"
+key = "/var/lib/coeus-web/tls.key"
+urls = []
+"#,
     )
     .unwrap();
     let settings = WebSettings::load(file.path()).unwrap();
+    assert_eq!(settings.web.session_days, 7);
+    assert_eq!(settings.web.signin.port, 8443);
+    assert_eq!(settings.web.signin.capability, "r3dlust.com/cap/coeus");
+    assert!(settings.web.signin.logins.is_empty());
     assert_eq!(settings.web.tunnel, None);
     assert_eq!(settings.web.readiness.interval, Duration::from_secs(2));
     assert_eq!(settings.web.readiness.up_after.get(), 3);

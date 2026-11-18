@@ -22,8 +22,17 @@ pub struct WebSettings {
 
 #[derive(Debug, PartialEq, Deserialize, Clone)]
 pub struct WebSection {
+    /// where browsers load the app from, `https://coeus.example.com`
+    pub public_origin: String,
     /// the unix socket the public site is served on, for cloudflared alone
     pub origin_socket: PathBuf,
+    /// the fleet's session keys, 64 hex digits each, one per line; the
+    /// first signs, all check, and every serving host holds the same file
+    pub session_key_file: PathBuf,
+    /// how long a session lasts after its last sign-in on the tailnet
+    #[serde(default = "WebSection::session_days")]
+    pub session_days: u32,
+    pub signin: SigninSettings,
 
     /// the cloudflare tunnel this host connects to while it is ready to
     /// serve; without one nothing reaches the origin socket
@@ -32,6 +41,41 @@ pub struct WebSection {
 
     #[serde(default)]
     pub readiness: ReadinessSettings,
+}
+
+/// signing in, served on this machine's tailnet addresses alone
+#[derive(Debug, PartialEq, Deserialize, Clone)]
+pub struct SigninSettings {
+    #[serde(default = "SigninSettings::port")]
+    pub port: u16,
+    /// this machine's `*.ts.net` certificate and key, as PEM files
+    pub cert: PathBuf,
+    pub key: PathBuf,
+    /// every serving host's sign-in address, `https://<host>.<tailnet>.ts.net:<port>`,
+    /// which the app tries in turn
+    pub urls: Vec<String>,
+    /// the app capability a tailnet policy grant gives a node that may sign in
+    #[serde(default = "SigninSettings::capability")]
+    pub capability: String,
+    /// logins that may sign in without the grant
+    #[serde(default)]
+    pub logins: Vec<String>,
+}
+
+impl WebSection {
+    fn session_days() -> u32 {
+        7
+    }
+}
+
+impl SigninSettings {
+    fn port() -> u16 {
+        8443
+    }
+
+    fn capability() -> String {
+        "r3dlust.com/cap/coeus".into()
+    }
 }
 
 /// a tunnel managed here, not in cloudflare's dashboard

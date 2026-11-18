@@ -9,6 +9,8 @@ mod story;
 mod world;
 
 use std::{
+    collections::BTreeSet,
+    path::PathBuf,
     sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
@@ -23,10 +25,19 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch};
 
 use self::world::{HOSTS, STEP, World};
-use super::{fleet::Input, view::Viewer};
+use super::{
+    fleet::Input,
+    session::Sessions,
+    signin::Signin,
+    site::{Access, Settings, Site},
+    source::Source,
+    view::Viewer,
+    whois::{Peer, Policy, Whois},
+};
 use crate::{
     client::{AttachmentEvent, FleetEvent, Link, Offline, Unreach},
     common::model::{Hostname, JobState, MachineView, Timestamp},
+    config::Key,
 };
 
 /// a simulated fleet
@@ -115,6 +126,57 @@ impl Fixture {
             device: "iphone".into(),
             expires_at: Timestamp(START + 7 * 24 * 60 * 60 * 1000),
         }
+    }
+
+    /// the whole simulated site, served at `origin`: the fleet, its clock,
+    /// and, unless `open`, signing in on the same address as
+    /// [Fixture::viewer], with a session key made up for this run
+    pub fn site(
+        self: &Arc<Self>,
+        web_dir: Option<PathBuf>,
+        origin: &str,
+        open: bool,
+    ) -> Result<Router> {
+        let viewer = Self::viewer();
+        let sessions = Arc::new(Sessions::new(vec![Key::generate()], 7)?);
+        let access = match open {
+            true => Access::Open(viewer.clone()),
+            false => Access::Sessions {
+                sessions: sessions.clone(),
+                signin: vec![origin.to_owned()],
+            },
+        };
+        let source = Source::Fixture(self.clone());
+        let site = Site::start(
+            self.hosts(),
+            source.clone(),
+            Settings {
+                web_dir,
+                served_by: "lab".parse()?,
+                access,
+            },
+        );
+        source.feed(site.inputs.clone());
+
+        let router = site.router.merge(self.routes());
+        if open {
+            return Ok(router);
+        }
+        let signin = Signin {
+            sessions,
+            whois: Whois::Fixed(Peer {
+                login: viewer.login.clone(),
+                device: viewer.device,
+                tagged: false,
+                capabilities: BTreeSet::new(),
+            }),
+            policy: Policy {
+                capability: String::new(),
+                logins: vec![viewer.login],
+            },
+            origin: origin.to_owned(),
+        };
+        Ok(router.merge(signin.router()?))
     }
 
     /// tells the aggregator what every machine says, then runs the clock

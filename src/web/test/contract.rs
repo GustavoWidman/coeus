@@ -330,6 +330,7 @@ fn contract() -> String {
         FleetEvent::DeploymentRemoved {
             order: "0000000000005038".into(),
         },
+        FleetEvent::Expired,
     ];
     let log = vec![
         LogEvent::Started {
@@ -342,16 +343,26 @@ fn contract() -> String {
         LogEvent::Ended {
             outcome: OutcomeView::Succeeded,
         },
+        LogEvent::Expired,
     ];
 
     #[derive(serde::Serialize)]
     struct Auth {
+        hello: Hello,
         signin: SignIn,
         signed_in: SignedIn,
     }
     // RFC 6979 signs deterministically, so a fixed key signs the same bytes
     let browser = Browser::seeded(7);
     let auth = Auth {
+        hello: Hello {
+            signin: vec![
+                "https://lab.tail0000.ts.net:8443".into(),
+                "https://oracle.tail0000.ts.net:8443".into(),
+            ],
+            build: "0.6.0-4f2a9c1".into(),
+            schema: SCHEMA,
+        },
         signin: signin::request(&browser, "https://coeus.example.com", NOW),
         signed_in: SignedIn {
             token: "v1.eyJ2IjoxfQ.c2lnbmF0dXJl".into(),

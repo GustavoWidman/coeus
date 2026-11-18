@@ -1,5 +1,6 @@
 //! the site cloudflared reaches: the built web app, and the fleet under
-//! `/api`
+//! `/api` for a browser that proves its session on every request. signing
+//! in is not a route of this site ([super::signin])
 
 use std::{
     path::{Path, PathBuf},
@@ -8,7 +9,7 @@ use std::{
 
 use axum::{
     Json, Router,
-    extract::{FromRequestParts, Path as Segments, Request, State},
+    extract::{FromRequestParts, OriginalUri, Path as Segments, Request, State},
     http::{HeaderMap, HeaderValue, StatusCode, header, request::Parts},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -22,17 +23,22 @@ use super::{
     diffs::Diffs,
     fleet::{Aggregator, FleetState, Input},
     logs,
+    session::Sessions,
     source::Source,
     stream::{self, Cursor, Masthead},
-    view::{DiffView, Viewer},
+    view::{DiffView, FleetEvent, Hello, LogEvent, SCHEMA, Viewer},
 };
-use crate::common::model::Hostname;
+use crate::common::model::{Hostname, Timestamp};
 
 /// who may read the fleet
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Access {
-    /// no one: nothing under `/api` answers until browsers can sign in
-    Closed,
+    /// a browser signed in on the tailnet, at one of `signin`, the sign-in
+    /// addresses `/api/hello` offers
+    Sessions {
+        sessions: Arc<Sessions>,
+        signin: Vec<String>,
+    },
     /// everyone, as this viewer: a simulated fleet has nothing to hide
     Open(Viewer),
 }
@@ -90,6 +96,7 @@ impl Site {
         });
 
         let api = Router::new()
+            .route("/hello", get(hello))
             .route("/stream", get(fleet_stream))
             .route("/machines/{host}/jobs/{id}/log", get(log))
             .route("/machines/{host}/jobs/{id}/diff", get(diff))
@@ -122,36 +129,74 @@ fn build(web_dir: &Path) -> String {
     )
 }
 
-/// a request someone may make: holding one means [Access] lets them in
-struct Signed(Viewer);
+/// where the app signs in, and what it is talking to; the one thing under
+/// `/api` that answers before signing in, and it carries no fleet data
+async fn hello(State(app): State<Shared>) -> Json<Hello> {
+    let signin = match &app.access {
+        Access::Sessions { signin, .. } => signin.clone(),
+        Access::Open(_) => Vec::new(),
+    };
+    Json(Hello {
+        signin,
+        build: app.build.clone(),
+        schema: SCHEMA,
+    })
+}
+
+/// a request [Access] lets in: holding one means its session checked and
+/// its proof is over this very request
+struct Signed {
+    viewer: Viewer,
+    /// when its session ends, if it does
+    expires: Option<Timestamp>,
+}
 
 impl FromRequestParts<Shared> for Signed {
     type Rejection = StatusCode;
 
-    async fn from_request_parts(_: &mut Parts, app: &Shared) -> Result<Self, Self::Rejection> {
-        match &app.access {
-            Access::Open(viewer) => Ok(Self(viewer.clone())),
-            Access::Closed => Err(StatusCode::UNAUTHORIZED),
-        }
+    async fn from_request_parts(parts: &mut Parts, app: &Shared) -> Result<Self, Self::Rejection> {
+        let sessions = match &app.access {
+            Access::Open(viewer) => {
+                return Ok(Self {
+                    viewer: viewer.clone(),
+                    expires: None,
+                });
+            }
+            Access::Sessions { sessions, .. } => sessions,
+        };
+        // the browser signed the path it asked for, `/api` included
+        let uri = parts
+            .extensions
+            .get::<OriginalUri>()
+            .map_or(&parts.uri, |original| &original.0);
+        let path = uri.path_and_query().map_or("/", |path| path.as_str());
+        let claims = sessions
+            .authenticate(&parts.method, path, &parts.headers, Timestamp::now())
+            .map_err(|_| StatusCode::UNAUTHORIZED)?;
+        Ok(Self {
+            viewer: Viewer {
+                login: claims.sub,
+                device: claims.device,
+                expires_at: claims.exp,
+            },
+            expires: Some(claims.exp),
+        })
     }
 }
 
-async fn fleet_stream(
-    Signed(viewer): Signed,
-    State(app): State<Shared>,
-    headers: HeaderMap,
-) -> Response {
+async fn fleet_stream(signed: Signed, State(app): State<Shared>, headers: HeaderMap) -> Response {
     let resume = last_event_id(&headers).and_then(|id| id.parse::<Cursor>().ok());
     let masthead = Masthead {
         build: app.build.clone(),
         served_by: app.served_by.clone(),
-        viewer,
+        viewer: signed.viewer,
     };
-    events(stream::fleet(app.fleet.clone(), resume, masthead))
+    let body = stream::fleet(app.fleet.clone(), resume, masthead);
+    events(stream::expiring(body, signed.expires, &FleetEvent::Expired))
 }
 
 async fn log(
-    Signed(_): Signed,
+    signed: Signed,
     State(app): State<Shared>,
     Segments((host, job)): Segments<(String, u64)>,
     headers: HeaderMap,
@@ -164,13 +209,13 @@ async fn log(
         .unwrap_or(0);
 
     match logs::follow(&app.source, &host, job, from).await {
-        Ok(body) => events(body),
+        Ok(body) => events(stream::expiring(body, signed.expires, &LogEvent::Expired)),
         Err(error) => (StatusCode::BAD_GATEWAY, format!("{error:#}")).into_response(),
     }
 }
 
 async fn diff(
-    Signed(_): Signed,
+    _: Signed,
     State(app): State<Shared>,
     Segments((host, job)): Segments<(String, u64)>,
 ) -> Response {

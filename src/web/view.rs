@@ -31,6 +31,17 @@ pub struct Viewer {
     pub expires_at: Timestamp,
 }
 
+/// `/api/hello`, the one thing under `/api` that answers before signing in
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct Hello {
+    /// the serving hosts' sign-in addresses, reachable only on the tailnet
+    pub signin: Vec<String>,
+    /// the web app build this server serves
+    pub build: String,
+    pub schema: u16,
+}
+
 /// what signing in on the tailnet answers: the session to send as
 /// `Authorization: Coeus <token>`, and who it is for
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -63,6 +74,8 @@ pub enum FleetEvent {
         #[cfg_attr(test, ts(type = "OrderId"))]
         order: String,
     },
+    /// the session ended; the stream closes after this
+    Expired,
 }
 
 /// a machine, all but its running job's progress
@@ -391,6 +404,8 @@ pub enum LogEvent {
     Ended {
         outcome: OutcomeView,
     },
+    /// the session ended; the stream closes after this
+    Expired,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

@@ -7,6 +7,7 @@ use std::{fmt, str::FromStr, sync::Arc, time::Duration};
 
 use axum::body::{Body, Bytes};
 use eyre::{Report, eyre};
+use futures_util::StreamExt;
 use serde::Serialize;
 use tokio::{
     sync::{mpsc, watch},
@@ -17,7 +18,7 @@ use super::{
     fleet::FleetState,
     view::{FleetEvent, SCHEMA, Snapshot, Viewer},
 };
-use crate::common::model::Hostname;
+use crate::common::model::{Hostname, Timestamp};
 
 /// how far a browser has read this process's stream: `<epoch>.<seq>`, sent
 /// as each message's id and back as `Last-Event-ID`
@@ -283,6 +284,32 @@ fn snapshot(state: &FleetState, masthead: &Masthead) -> Snapshot {
     }
 }
 
+/// `body` until `expires`, when `last` is sent with no id, so the browser
+/// resumes from where it was once signed in again, and the stream ends
+pub fn expiring(body: Body, expires: Option<Timestamp>, last: &(impl Serialize + Kind)) -> Body {
+    let Some(expires) = expires else {
+        return body;
+    };
+    let data = serde_json::to_string(last).expect("view types always serialize");
+    let last = Bytes::from(format!("event: {}\ndata: {data}\n\n", last.kind()));
+    let deadline = Box::pin(sleep(Timestamp::now().until(expires)));
+    let frames = body.into_data_stream();
+
+    Body::from_stream(futures_util::stream::unfold(
+        Some((frames, deadline, last)),
+        |state| async move {
+            let (mut frames, mut deadline, last) = state?;
+            tokio::select! {
+                frame = frames.next() => {
+                    let frame = frame?;
+                    Some((frame, Some((frames, deadline, last))))
+                }
+                () = &mut deadline => Some((Ok(last), None)),
+            }
+        },
+    ))
+}
+
 /// one server-sent event
 pub fn message(id: impl fmt::Display, event: &(impl Serialize + Kind)) -> String {
     let data = serde_json::to_string(event).expect("view types always serialize");
@@ -303,6 +330,7 @@ impl Kind for FleetEvent {
             Self::ProgressCleared { .. } => "progress_cleared",
             Self::Deployment { .. } => "deployment",
             Self::DeploymentRemoved { .. } => "deployment_removed",
+            Self::Expired => "expired",
         }
     }
 }

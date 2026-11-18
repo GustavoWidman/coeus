@@ -13,7 +13,8 @@ export type FleetEvent =
   | { kind: "progress"; progress: LiveProgress }
   | { kind: "progress_cleared"; host: Hostname }
   | { kind: "deployment"; deployment: DeploymentView }
-  | { kind: "deployment_removed"; order: OrderId };
+  | { kind: "deployment_removed"; order: OrderId }
+  | { kind: "expired" };
 
 /** what a browser receives first, and again whenever it cannot resume */
 export type Snapshot = {
@@ -34,6 +35,15 @@ export type Viewer = {
   login: string;
   device: string;
   expires_at: Ms;
+};
+
+/** `/api/hello`, the one thing under `/api` that answers before signing in */
+export type Hello = {
+  /** the serving hosts' sign-in addresses, reachable only on the tailnet */
+  signin: Array<string>;
+  /** the web app build this server serves */
+  build: string;
+  schema: number;
 };
 
 /** what a browser sends to sign in: its public key, and its signature over `coeus-signin-v1\n<public origin>\n<ts>` by the matching private key */
@@ -260,7 +270,8 @@ export type LogEvent =
       /** the daemon's log offset after these lines, where a reconnect resumes */
       end: number;
     }
-  | { kind: "ended"; outcome: OutcomeView };
+  | { kind: "ended"; outcome: OutcomeView }
+  | { kind: "expired" };
 
 export type LogLine = {
   /** when coeus recorded it; nix's own lines carry no time */

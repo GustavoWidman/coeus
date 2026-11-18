@@ -14,8 +14,31 @@ tags = ["darwin", "dev-server"]
 tags = ["nixos", "dev-server"]
 
 [settings.web]
+# where browsers load the dashboard from
+public_origin = "https://coeus.example.com"
 # the site is served here, for cloudflared alone
 origin_socket = "/run/coeus-web/origin.sock"
+# the fleet's session keys, 64 hex digits per line, the same file on every
+# serving host. the first signs new sessions and every one checks them, so a
+# new key goes first and the old one stays a week, until its sessions end
+session_key_file = "/run/agenix/coeus-session-key"
+session_days = 7
+
+# signing in, served only on this machine's tailnet addresses, over its own
+# *.ts.net certificate (`tailscale cert`)
+[settings.web.signin]
+port = 8443
+cert = "/var/lib/coeus-web/altar.tail0000.ts.net.crt"
+key = "/var/lib/coeus-web/altar.tail0000.ts.net.key"
+# every serving host's, offered to the app by /api/hello
+urls = [
+  "https://altar.tail0000.ts.net:8443",
+  "https://lab.tail0000.ts.net:8443",
+]
+# a user's node may sign in when the tailnet policy grants it this app
+# capability toward the serving host, or when its login is listed here
+capability = "example.com/cap/coeus"
+logins = []
 
 # the cloudflare tunnel this machine connects to while it can serve: tailscale
 # running, in touch with its coordination server and relays, and this

@@ -10,30 +10,27 @@ use axum::{
 use serde_json::Value;
 use tower::ServiceExt;
 
-use super::sse::{Events, Message, body};
-use crate::web::{
-    fixture::{Fixture, START, Scenario},
-    site::{Access, Settings, Site},
-    source::Source,
+use super::{
+    session::Browser,
+    signin,
+    sse::{Events, Message, body, get},
 };
+use crate::{
+    common::model::Timestamp,
+    web::{
+        fixture::{Fixture, START, Scenario},
+        signin::Caller,
+    },
+};
+
+const ORIGIN: &str = "http://127.0.0.1:7979";
 
 const MINUTE: i64 = 60_000;
 
-/// the simulated fleet's site, its clock held at 0
+/// the simulated fleet's site, its clock held at 0, open to anyone
 fn simulated() -> (Arc<Fixture>, Router) {
     let fixture = Fixture::new(Scenario::Instrument, 0.0);
-    let source = Source::Fixture(fixture.clone());
-    let site = Site::start(
-        fixture.hosts(),
-        source.clone(),
-        Settings {
-            web_dir: None,
-            served_by: "lab".parse().unwrap(),
-            access: Access::Open(Fixture::viewer()),
-        },
-    );
-    source.feed(site.inputs.clone());
-    let router = site.router.merge(fixture.routes());
+    let router = fixture.site(None, ORIGIN, true).unwrap();
     (fixture, router)
 }
 
@@ -330,4 +327,32 @@ async fn a_job_the_fleet_never_ran_is_not_found() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+}
+
+#[tokio::test]
+async fn signing_in_to_the_simulated_fleet_opens_its_stream() {
+    let fixture = Fixture::new(Scenario::Instrument, 0.0);
+    let router = fixture.site(None, ORIGIN, false).unwrap().layer(
+        axum::extract::connect_info::MockConnectInfo(Caller("127.0.0.1:50000".parse().unwrap())),
+    );
+
+    let response = get(&router, "/api/stream", &[]).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let hello: Value =
+        serde_json::from_str(&body(get(&router, "/api/hello", &[]).await).await).unwrap();
+    assert_eq!(hello["signin"], serde_json::json!([ORIGIN]));
+
+    let browser = Browser::new();
+    let request = signin::request(&browser, ORIGIN, Timestamp::now());
+    let (status, answer) = signin::post(&router, &request).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    let answer: Value = serde_json::from_str(&answer).unwrap();
+    assert_eq!(answer["viewer"]["login"], Fixture::viewer().login);
+    let token = answer["token"].as_str().unwrap();
+
+    let mut events = Events::signed(&router, &browser, token, "/api/stream").await;
+    let snapshot = events.next().await.unwrap();
+    assert_eq!(snapshot.event, "snapshot");
+    assert_eq!(snapshot.data["viewer"], answer["viewer"]);
+    assert_eq!(snapshot.data["machines"].as_array().unwrap().len(), 6);
 }

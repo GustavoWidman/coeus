@@ -5,12 +5,13 @@ use std::time::Duration;
 use axum::{
     Router,
     body::Body,
-    http::{Request, Response, StatusCode},
+    http::{Method, Request, Response, StatusCode},
 };
 use http_body_util::BodyExt;
 use serde_json::Value;
 use tower::ServiceExt;
 
+use super::session::Browser;
 use crate::{
     client::{FleetEvent, Link},
     common::model::{Hostname, MachineView, Timestamp},
@@ -117,10 +118,25 @@ pub struct Events {
     pub comments: usize,
 }
 
+/// `GET path` as `browser` proves it for its session `token`
+pub async fn signed(router: &Router, browser: &Browser, token: &str, path: &str) -> Response<Body> {
+    let mut request = Request::get(path).body(Body::empty()).unwrap();
+    *request.headers_mut() = browser.headers(&Method::GET, path, token, Timestamp::now());
+    router.clone().oneshot(request).await.unwrap()
+}
+
 impl Events {
     pub async fn open(router: &Router, path: &str, headers: &[(&str, &str)]) -> Self {
-        let response = get(router, path, headers).await;
-        assert_eq!(response.status(), StatusCode::OK);
+        Self::of(get(router, path, headers).await, path)
+    }
+
+    /// the stream `browser` reads at `path` with its session `token`
+    pub async fn signed(router: &Router, browser: &Browser, token: &str, path: &str) -> Self {
+        Self::of(signed(router, browser, token, path).await, path)
+    }
+
+    fn of(response: Response<Body>, path: &str) -> Self {
+        assert_eq!(response.status(), StatusCode::OK, "{path}");
         assert_eq!(
             response.headers()["content-type"],
             "text/event-stream",
@@ -177,7 +193,11 @@ fn parse(raw: &str) -> Message {
             .to_owned()
     };
     Message {
-        id: field("id: "),
+        id: raw
+            .lines()
+            .find_map(|line| line.strip_prefix("id: "))
+            .unwrap_or_default()
+            .to_owned(),
         event: field("event: "),
         data: serde_json::from_str(&field("data: ")).unwrap(),
     }

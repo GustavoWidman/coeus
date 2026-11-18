@@ -79,6 +79,14 @@ impl Tailnet {
             .map(|warning| format!("tailscale warns: {warning}"))
     }
 
+    /// this machine's own tailnet addresses
+    pub fn addresses(&self) -> Vec<IpAddr> {
+        self.this
+            .as_ref()
+            .map(|this| this.tailscale_ips.clone())
+            .unwrap_or_default()
+    }
+
     /// the first tailnet address of the machine MagicDNS names `host`
     pub fn address(&self, host: &str) -> Option<String> {
         let peer = self.peer.values().find(|peer| peer.named(host))?;
