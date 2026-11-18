@@ -1,0 +1,83 @@
+<!--
+	The desktop: the fleet always on the left, and in the middle the machine picked from it, or
+	else a deployment, the newest one across machines unless the address names another.
+-->
+<script lang="ts">
+	import { untrack } from 'svelte';
+	import { router, type Route } from '#lib/router.svelte.ts';
+	import { hms } from '#lib/derive/format.ts';
+	import { latest } from '#lib/derive/status.ts';
+	import { enter, stage } from '#lib/motion/flip.ts';
+	import { fleet } from '#lib/stream/fleet.svelte.ts';
+	import { now } from '#lib/time/now.svelte.ts';
+	import LiveTag from '#lib/ui/LiveTag.svelte';
+	import { boot } from './boot.svelte.ts';
+	import Center from './Center.svelte';
+	import Fleet from './Fleet.svelte';
+
+	const route = $derived(router.nav.route);
+	const host = $derived(route.screen === 'machine' || route.screen === 'log' ? route.host : null);
+	const center = $derived.by((): Route | null => {
+		if (host) return { screen: 'machine', host };
+		if (route.screen === 'deployment') return route;
+		const d = latest(fleet.deployments);
+		return d ? { screen: 'deployment', order: d.order } : null;
+	});
+	const key = $derived(
+		center?.screen === 'machine'
+			? `m-${center.host}`
+			: center?.screen === 'deployment'
+				? `d-${center.order}`
+				: '-'
+	);
+
+	let mid: HTMLElement;
+	$effect(() => {
+		key;
+		untrack(() => (mid.scrollTop = 0));
+	});
+
+	const attach = (el: HTMLElement) => {
+		stage.roots = [el];
+		return () => (stage.roots = []);
+	};
+</script>
+
+<div class="console" {@attach attach}>
+	<header class="top">
+		<span class="wm">coeus</span>
+		<div class="crumbs">
+			<span>fleet</span><span>/</span><b>{host ?? 'deployment'}</b>
+		</div>
+		<span class="sp"></span>
+		<LiveTag />
+		<span class="clock">{hms(now.ms)}</span>
+		{#if fleet.viewer}
+			<span class="crumbs">{fleet.viewer.login.split('@')[0]} · {fleet.viewer.device}</span>
+		{/if}
+	</header>
+	<aside class="pane left">
+		<div class="scroll"><Fleet wide selected={host} /></div>
+	</aside>
+	<main class="pane mid" bind:this={mid}>
+		{#if boot.view === 'fleet'}
+			{#key key}
+				<div data-key="c-{key}" in:enter>
+					<div class="scroll">
+						{#if center}
+							<Center route={center} />
+						{:else}
+							<div class="ctr">
+								<div class="lt">
+									<div class="kicker">deployment</div>
+									<p class="sub">No deployment reached more than one machine in the last day.</p>
+								</div>
+							</div>
+						{/if}
+					</div>
+				</div>
+			{/key}
+		{/if}
+	</main>
+	<section class="pane right"></section>
+</div>
