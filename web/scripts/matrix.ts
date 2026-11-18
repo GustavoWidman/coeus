@@ -333,7 +333,10 @@ class Instruments {
 		await this.cdp.send('Tracing.end');
 		await done;
 		this.cdp.off('Tracing.dataCollected', this.collect);
-		// nodes and heap once garbage is gone, so they count what the page holds
+		// nodes and heap once garbage is gone, so they count what the page holds. The memory dump
+		// keeps nodes the page already let go of alive for a moment after it, as many as a screen
+		// that a job finishing replaced, so the garbage is collected once the dump is done with them
+		await new Promise((ok) => setTimeout(ok, 500));
 		await this.cdp.send('HeapProfiler.collectGarbage');
 		const held = await this.read();
 		if (keep) writeFileSync(keep, JSON.stringify({ traceEvents: this.events }));
