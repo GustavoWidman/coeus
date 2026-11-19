@@ -117,13 +117,17 @@ let
       );
 
       passthru.checks = {
-        # the stream's parser, which reads every message of contract/web.json, and what the
-        # screens derive from the fleet
+        # the stream's parser, which reads every message of contract/web.json, the service
+        # worker's reading of the push in contract/push.json, and what the screens derive
+        # from the fleet
         unit = bun2nix.mkDerivation (
           common
           // {
             pname = "coeus-web-unit";
-            src = source [ ../contract/web.json ];
+            src = source [
+              ../contract/web.json
+              ../contract/push.json
+            ];
             buildPhase = ''
               runHook preBuild
               bun --bun run test
