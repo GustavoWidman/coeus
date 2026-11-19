@@ -21,7 +21,9 @@
 			? { key: `m:${r.host}`, route: { screen: 'machine', host: r.host } }
 			: r.screen === 'deployment'
 				? { key: `d:${r.order}`, route: r }
-				: FLEET;
+				: r.screen === 'device'
+					? { key: 'device', route: r }
+					: FLEET;
 	const build = (r: Route) => {
 		const e = entry(r);
 		return e === FLEET ? [FLEET] : [FLEET, e];

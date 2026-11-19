@@ -14,7 +14,9 @@
 			? route.host
 			: route.screen === 'deployment'
 				? 'Deployment'
-				: 'Fleet'
+				: route.screen === 'device'
+					? 'This device'
+					: 'Fleet'
 	);
 </script>
 

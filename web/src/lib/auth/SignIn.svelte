@@ -4,32 +4,18 @@
 -->
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { hms } from '#lib/derive/format.ts';
+	import { day } from '#lib/derive/format.ts';
 	import { router } from '#lib/router.svelte.ts';
 	import { now } from '#lib/time/now.svelte.ts';
 	import Dot from '#lib/ui/Dot.svelte';
+	import { noun, standalone as isStandalone } from '#lib/ui/platform.ts';
 	import Tick from '#lib/ui/Tick.svelte';
 	import { device as stored } from './device.ts';
 	import { PROBING, hosts, name, next, ping, signIn, step, type Phase } from './signin.ts';
 
 	const D = 864e5;
-	const ua = navigator.userAgent;
-	const device = /iPhone/.test(ua)
-		? 'iPhone'
-		: /iPad/.test(ua)
-			? 'iPad'
-			: /Android/.test(ua)
-				? 'phone'
-				: /Macintosh/.test(ua)
-					? 'Mac'
-					: 'computer';
-	const standalone =
-		matchMedia('(display-mode: standalone)').matches ||
-		(navigator as { standalone?: boolean }).standalone === true;
-	const day = (t: number) =>
-		new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) +
-		', ' +
-		hms(t).slice(0, 5);
+	const device = noun();
+	const standalone = isStandalone();
 
 	let phase = $state.raw<Phase>(PROBING);
 	/** a session this device held, which the server no longer takes */

@@ -13,6 +13,8 @@ export type Route =
 	| { screen: 'machine'; host: string }
 	| { screen: 'log'; host: string; job: number }
 	| { screen: 'deployment'; order: string }
+	/** this device: its session, and its notifications */
+	| { screen: 'device' }
 	| { screen: 'signin' };
 
 export type Nav = {
@@ -29,6 +31,7 @@ const routes: [RegExp, (...params: string[]) => Route][] = [
 	[/^\/machines\/([^/]+)$/, (host) => ({ screen: 'machine', host })],
 	[/^\/machines\/([^/]+)\/jobs\/(\d+)$/, (host, id) => ({ screen: 'log', host, job: +id })],
 	[/^\/deployments\/([^/]+)$/, (order) => ({ screen: 'deployment', order })],
+	[/^\/device$/, () => ({ screen: 'device' })],
 	[/^\/signin$/, () => ({ screen: 'signin' })]
 ];
 
@@ -57,6 +60,8 @@ export function href(route: Route): string {
 			return `/machines/${e(route.host)}/jobs/${route.job}`;
 		case 'deployment':
 			return `/deployments/${e(route.order)}`;
+		case 'device':
+			return '/device';
 		case 'signin':
 			return '/signin';
 	}

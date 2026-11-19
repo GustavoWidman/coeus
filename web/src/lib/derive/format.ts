@@ -42,6 +42,12 @@ export const hms = (t: Ms) => {
 	return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
 };
 
+/** a moment days away: `24 Nov, 15:00` */
+export const day = (t: Ms) =>
+	new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) +
+	', ' +
+	hms(t).slice(0, 5);
+
 export const short = (rev: string) => rev.slice(0, 7);
 
 export function source(s: SourceView) {
