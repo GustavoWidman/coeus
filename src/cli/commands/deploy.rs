@@ -10,6 +10,7 @@ use crate::{
         deployment::{Deployment, Following},
         dispatch::Shipment,
         exit::Exit,
+        push,
         rollout::Rollout,
     },
     client::{Fleet, Snapshot, detect_origin},
@@ -135,7 +136,15 @@ impl DeployArgs {
             Some(snapshot) => snapshot.source(),
             None => match self.pin(&fleet).await? {
                 Some(source) => source,
-                None => return Ok(Exit::of([Verdict::Unreachable], self.skip_unreachable)),
+                None => {
+                    if let Some(settings) = context.settings.push.clone().filter(|_| !self.detach) {
+                        let git_ref = self.git_ref().to_owned();
+                        let action = self.action.action();
+                        push::announce(settings, move || push::unresolved_notice(&git_ref, action))
+                            .await;
+                    }
+                    return Ok(Exit::of([Verdict::Unreachable], self.skip_unreachable));
+                }
             },
         };
 
@@ -175,9 +184,15 @@ impl DeployArgs {
             following,
             notify: self.notify,
             skip_unreachable: self.skip_unreachable,
+            push: context.settings.push.clone(),
         }
         .run()
         .await
+    }
+
+    /// the ref a deploy without `--rev` resolves
+    fn git_ref(&self) -> &str {
+        self.git_ref.as_deref().unwrap_or("main")
     }
 
     /// the commit to deploy, pinned once on the first machine that answers
@@ -188,7 +203,7 @@ impl DeployArgs {
             return Ok(Some(Source::Git { rev, git_ref }));
         }
 
-        let git_ref = self.git_ref.as_deref().unwrap_or("main");
+        let git_ref = self.git_ref();
 
         let mut failures = Vec::new();
         for host in fleet.hosts() {
