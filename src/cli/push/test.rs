@@ -635,3 +635,30 @@ async fn a_followed_deploy_pushes_one_summary_and_a_detached_one_none() {
     releasing.abort();
     served.stop();
 }
+
+/// what the dashboard's service worker receives, pinned from the sending end:
+/// the app's tests read `contract/push.json`, and a change to how a notice
+/// becomes a message fails here until it is rewritten with
+/// `COEUS_BLESS=1 cargo test cli::push`
+#[test]
+fn the_contract_holds_the_message_a_deploy_sends() {
+    const CONTRACT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/contract/push.json");
+    let notice = deploy_notice(
+        &order(Action::Switch, git()),
+        &[switched("lab"), switched("altar"), asleep("laptop-mac")],
+        Duration::from_secs(400),
+        Some(SUBJECT),
+    );
+    let at = SystemTime::UNIX_EPOCH + Duration::from_millis(1_795_038_000_000);
+    let message = notice.message(&origin(), at).unwrap();
+    let sent = format!("{}\n", std::str::from_utf8(message.payload()).unwrap());
+
+    if std::env::var_os("COEUS_BLESS").is_some() {
+        std::fs::write(CONTRACT, &sent).unwrap();
+        return;
+    }
+    assert!(
+        std::fs::read_to_string(CONTRACT).unwrap_or_default() == sent,
+        "{CONTRACT} is not the message a deploy sends; rewrite it with `COEUS_BLESS=1 cargo test cli::push`"
+    );
+}

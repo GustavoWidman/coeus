@@ -87,6 +87,9 @@ export function serviceWorker(): Plugin {
 				.replace(/(["'`])__COEUS_BUILD__\1/, JSON.stringify(version.digest('hex').slice(0, 12)))
 				.replace(/(["'`])__COEUS_FILES__\1/, JSON.stringify(JSON.stringify(precache)));
 			if (source.includes('__COEUS_')) throw new Error(`${SERVICE_WORKER}: a placeholder is left`);
+			// it registers as a classic script, which cannot load a chunk it shares with the app
+			if (/(?:^|[;}\s])import\s*[{*"']/.test(source))
+				throw new Error(`${SERVICE_WORKER}: imports a module the app also imports`);
 			writeFileSync(sw, source);
 		}
 	};
