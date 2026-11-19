@@ -5,18 +5,16 @@
 //! apply), and lives in memory only.
 
 use std::{
-    io::{self, Read},
-    iter,
+    io,
     path::{Path, PathBuf},
     process::Stdio,
 };
 
-use age::armor::ArmoredReader;
 use eyre::{WrapErr, bail, eyre};
 use tokio::process::Command;
 use zeroize::Zeroizing;
 
-use crate::bootstrap::SshKey;
+use crate::{bootstrap::SshKey, utils::secret};
 
 pub struct AdminIdentity {
     public: SshKey,
@@ -53,17 +51,7 @@ impl AdminIdentity {
 
     /// an unencrypted OpenSSH private key, whose public half must be `public`
     fn from_private(public: SshKey, private: &[u8]) -> eyre::Result<Self> {
-        let identity = age::ssh::Identity::from_buffer(private, None)
-            .map_err(|error| eyre!("not an ssh private key: {error}"))?;
-        match &identity {
-            age::ssh::Identity::Unencrypted(_) => {}
-            age::ssh::Identity::Encrypted(_) => {
-                bail!("the key is protected by a passphrase, which coeus does not ask");
-            }
-            age::ssh::Identity::Unsupported(_) => {
-                bail!("an ssh-ed25519 or ssh-rsa key is needed");
-            }
-        }
+        let identity = secret::ssh_identity(private)?;
         let found = age::ssh::Recipient::try_from(identity.clone())
             .map_err(|_| eyre!("an ssh-ed25519 or ssh-rsa key is needed"))?;
         if SshKey::parse(&found.to_string())? != public {
@@ -78,13 +66,7 @@ impl AdminIdentity {
 
     /// the plaintext of an age file, binary or armored
     pub fn decrypt(&self, ciphertext: &[u8]) -> eyre::Result<Zeroizing<Vec<u8>>> {
-        let decryptor = age::Decryptor::new(ArmoredReader::new(ciphertext))?;
-        let mut reader = decryptor.decrypt(iter::once(&self.identity as &dyn age::Identity))?;
-        // the plaintext is never longer than the file, so the buffer never
-        // grows and leaves no copy behind
-        let mut plaintext = Zeroizing::new(Vec::with_capacity(ciphertext.len()));
-        reader.read_to_end(&mut plaintext)?;
-        Ok(plaintext)
+        secret::decrypt(&self.identity, ciphertext)
     }
 }
 
