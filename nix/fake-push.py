@@ -72,6 +72,7 @@ class Handler(BaseHTTPRequestHandler):
             "claims": claims,
             "ttl": self.headers["TTL"],
             "topic": self.headers["Topic"],
+            "urgency": self.headers["Urgency"],
             "message": json.loads(decrypt(body)),
         }
         with open(sys.argv[1], "a") as log:

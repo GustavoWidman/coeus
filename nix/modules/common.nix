@@ -14,6 +14,13 @@ let
   # option names match the TOML keys; null means "leave it to coeus' default"
   render = settings: lib.filterAttrsRecursive (_: value: value != null) { inherit settings; };
 
+  push = lib.mapNullable (push: {
+    inherit (push) origin;
+    vapid_key_file = push.vapidKeyFile;
+    subscriptions_file = push.subscriptionsFile;
+    identity_file = push.identityFile;
+  }) cfg.push;
+
   daemon = render (
     lib.recursiveUpdate {
       key_file = cfg.keyFile;
@@ -31,6 +38,7 @@ let
         guard
         notify
         ;
+      inherit push;
     } cfg.settings
   );
 
@@ -38,12 +46,7 @@ let
     lib.recursiveUpdate {
       key_file = cfg.keyFile;
       inherit (cfg) hosts;
-      push = lib.mapNullable (push: {
-        inherit (push) origin;
-        vapid_key_file = push.vapidKeyFile;
-        subscriptions_file = push.subscriptionsFile;
-        identity_file = push.identityFile;
-      }) cfg.push;
+      inherit push;
     } cfg.clientSettings
   );
 in
@@ -204,8 +207,10 @@ in
     push = mkOption {
       default = null;
       description = ''
-        Where `coeus push test` sends Web Push notifications from. Both files
-        are read at every send, so changing them needs no restart.
+        Where Web Push notifications are sent from: coeusd's catch-ups and
+        `coeus push test`, rendered into both `coeusd.toml` and the CLI's
+        `coeus.toml`. Both files are read at every send, so changing them
+        needs no restart.
       '';
       type = types.nullOr (
         types.submodule {
