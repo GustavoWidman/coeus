@@ -28,6 +28,8 @@
 			</div>
 		</div>
 	{/if}
+{:else if route.screen === 'device'}
+	{#await import('./Device.svelte') then m}<m.default />{/await}
 {:else}
 	<Fleet />
 {/if}

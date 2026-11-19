@@ -69,11 +69,11 @@
 		{/each}
 	</ul>
 	{#if !wide}
-		<div class="foot">
+		<a class="foot tap" href="/device" onpointerdown={() => import('./Device.svelte')}>
 			<span>served by {fleet.servedBy}</span><span>
-				{down ? 'cached' : 'stream'} · {hms(now.ms)}
+				{down ? 'cached' : 'stream'} · {hms(now.ms)}<span class="chev">›</span>
 			</span>
-		</div>
+		</a>
 	{/if}
 {:else if boot.view === 'skeleton'}
 	<div class="lt">

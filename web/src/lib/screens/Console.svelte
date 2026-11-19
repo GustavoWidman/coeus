@@ -22,7 +22,7 @@
 	const host = $derived(route.screen === 'machine' || route.screen === 'log' ? route.host : null);
 	const center = $derived.by((): Route | null => {
 		if (host) return { screen: 'machine', host };
-		if (route.screen === 'deployment') return route;
+		if (route.screen === 'deployment' || route.screen === 'device') return route;
 		const d = latest(fleet.deployments);
 		return d ? { screen: 'deployment', order: d.order } : null;
 	});
@@ -31,7 +31,9 @@
 			? `m-${center.host}`
 			: center?.screen === 'deployment'
 				? `d-${center.order}`
-				: '-'
+				: center?.screen === 'device'
+					? 'device'
+					: '-'
 	);
 
 	const log = $derived.by((): { host: string; id: number } | null => {
@@ -84,13 +86,22 @@
 	<header class="top">
 		<span class="wm">coeus</span>
 		<div class="crumbs">
-			<span>fleet</span><span>/</span><b>{host ?? 'deployment'}</b>
+			<span>fleet</span><span>/</span><b>
+				{host ?? (route.screen === 'device' ? 'device' : 'deployment')}
+			</b>
 		</div>
 		<span class="sp"></span>
 		<LiveTag />
 		<span class="clock">{hms(now.ms)}</span>
 		{#if fleet.viewer}
-			<span class="crumbs">{fleet.viewer.login.split('@')[0]} · {fleet.viewer.device}</span>
+			<a
+				class="crumbs me"
+				href="/device"
+				aria-current={route.screen === 'device' ? 'page' : undefined}
+				onpointerdown={() => import('./Device.svelte')}
+			>
+				{fleet.viewer.login.split('@')[0]} · {fleet.viewer.device}
+			</a>
 		{/if}
 	</header>
 	<aside class="pane left">

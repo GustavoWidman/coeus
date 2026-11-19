@@ -569,6 +569,10 @@ code {
 	justify-content: space-between;
 	gap: 12px;
 }
+.foot .chev {
+	margin-left: 8px;
+	font-size: 13px;
+}
 
 /* banner (cached) */
 .banner {
@@ -1464,6 +1468,10 @@ button.vrow {
 }
 .top .crumbs b {
 	font-weight: 500;
+	color: var(--ink2);
+}
+.top .me:hover,
+.top .me[aria-current] {
 	color: var(--ink2);
 }
 .top .sp {
