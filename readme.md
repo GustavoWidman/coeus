@@ -210,7 +210,7 @@ every successful lookup, scheduled or asked for, rewrites `/run/coeus/follow.jso
 
 ## push notifications
 
-coeus sends web push notifications to the devices you subscribed, the dashboard on your phone's home screen or a desktop browser tab, through [gjallar](https://crates.io/crates/gjallar). the module renders `[settings.push]` into the cli's `coeus.toml`:
+coeus sends web push notifications to the devices you subscribed, the dashboard on your phone's home screen or a desktop browser tab, through [gjallar](https://crates.io/crates/gjallar). the module renders `[settings.push]` into both `coeusd.toml` and the cli's `coeus.toml`:
 
 ```nix
 services.coeus.push = {
@@ -253,6 +253,19 @@ pending: laptop-mac, desktop-nixos (asleep)
 ```
 
 a machine that is asleep or out of reach is pending, not failed, since it catches up once it's back. only a failure or a refusal makes the notification urgent. a tap opens the deployment in the dashboard. the tag comes from the action and the commit, so a retried ci run replaces the notification from the run it retries instead of stacking a second one. a detached deploy doesn't know how things ended, so it sends nothing. sending waits at most ten seconds and, like everything push does, never changes the exit status. a device that comes back gone is a warning on stderr and a line in the GitHub Actions step summary.
+
+`coeusd` speaks for the machine when it catches up on its own. a deploy's jobs are left to the deploy's own notification above, so a fleet-wide rollout never turns into one notification per machine. a catch-up that worked always says so. one that failed says so only when the machine stops trying that commit: a failure past evaluating does it at once, while one before building, usually a network not up yet after a wake, is tried twice more within minutes and speaks on the third. every notice of a machine shares one tag, so the next replaces it on the lock screen, and a tap opens the job's log:
+
+```text
+laptop-mac caught up to 3f2a9c1
+switched in 4m10s
+
+laptop-mac stopped catching up to 3f2a9c1
+failed fetching 3 times: could not resolve github.com
+tries again when deployed moves
+```
+
+the machine's history holds the tries, so a restart never repeats a notice. a `coeusd` restarting into a newer version waits up to ten seconds for the notices still on their way. a cancelled or superseded catch-up says nothing, and what a push service answers only lands in the journal.
 
 ## how a deployment runs
 
