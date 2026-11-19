@@ -5,8 +5,8 @@ use log::LevelFilter;
 
 use super::commands::{
     AttachArgs, BootstrapArgs, CancelArgs, CatchUpArgs, CompletionsArgs, DeployArgs, DoctorArgs,
-    GenerationsArgs, HistoryArgs, LogsArgs, RebootArgs, RollbackArgs, StatusArgs, TopArgs,
-    WatchArgs, WebArgs,
+    GenerationsArgs, HistoryArgs, LogsArgs, PushArgs, RebootArgs, RollbackArgs, StatusArgs,
+    TopArgs, WatchArgs, WebArgs,
 };
 
 #[derive(Parser, Debug)]
@@ -63,6 +63,8 @@ pub enum Command {
     Web(WebArgs),
     /// Generate a new fleet key
     Keygen,
+    /// Make a key for push notifications, or send a test one
+    Push(PushArgs),
     /// Print shell completions
     Completions(CompletionsArgs),
 }

@@ -6,6 +6,7 @@ mod deploy;
 mod doctor;
 mod generations;
 mod history;
+pub(crate) mod push;
 mod reboot;
 pub(super) mod rollback;
 mod setup;
@@ -22,6 +23,7 @@ pub use deploy::DeployArgs;
 pub use doctor::DoctorArgs;
 pub use generations::GenerationsArgs;
 pub use history::HistoryArgs;
+pub use push::PushArgs;
 pub use reboot::RebootArgs;
 pub use rollback::RollbackArgs;
 pub use setup::{CompletionsArgs, keygen};
@@ -59,6 +61,7 @@ impl Command {
             Self::Doctor(args) => args.run(&context()?).await,
             Self::Top(args) => args.run(&context()?).await,
             Self::Web(args) => args.run(config).await,
+            Self::Push(args) => args.run(config).await,
             Self::Keygen => Ok(keygen()),
             Self::Completions(args) => Ok(args.run()),
         }

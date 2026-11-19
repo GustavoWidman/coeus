@@ -19,3 +19,12 @@ tags = ["nixos", "dev-server", "canary"]
 address = "oracle-1"
 port = 45729
 tags = ["nixos", "server"]
+
+# where `coeus push test` sends Web Push notifications from. without it,
+# nothing is pushed. both files are read at every send
+[settings.push]
+origin = "https://coeus.example.com"
+vapid_key_file = "/run/agenix/coeus-push-vapid"
+subscriptions_file = "/run/agenix/coeus-push-subscriptions"
+# an ssh key that opens both in memory while they are still age files
+# identity_file = "/run/secrets/push-identity"

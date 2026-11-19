@@ -48,6 +48,13 @@ fn the_client_example_parses_into_an_inventory() {
     );
     assert_eq!(settings.endpoint(&oracle).port, DEFAULT_PORT);
     assert_eq!(settings.endpoint(&unknown).host, "phone");
+    let push = settings.push.unwrap();
+    assert_eq!(push.origin.as_str(), "https://coeus.example.com");
+    assert_eq!(
+        push.subscriptions_file,
+        Path::new("/run/agenix/coeus-push-subscriptions")
+    );
+    assert_eq!(push.identity_file, None);
 }
 
 #[test]

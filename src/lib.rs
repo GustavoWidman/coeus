@@ -10,6 +10,7 @@ pub mod engine;
 pub mod job;
 pub mod nix;
 pub mod platform;
+pub mod push;
 pub mod runner;
 pub mod server;
 pub mod ui;
