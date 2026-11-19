@@ -267,6 +267,20 @@ tries again when deployed moves
 
 the machine's history holds the tries, so a restart never repeats a notice. a `coeusd` restarting into a newer version waits up to ten seconds for the notices still on their way. a cancelled or superseded catch-up says nothing, and what a push service answers only lands in the journal.
 
+the dashboard is where a device subscribes. give it the public key and the same list, and nothing else, since it never sends:
+
+```nix
+services.coeus.web.push = {
+  publicKey = "BBgq…"; # what `coeus push keygen` put on stderr
+  subscriptionsFile = config.age.secrets.coeus-push-subscriptions.path;
+  edit = "agenix -e secrets/coeus-push-subscriptions.age"; # shown beside a new entry
+};
+```
+
+`/device`, which the fleet's foot opens on a phone and the account in the header on a desktop, has a notifications section, and the signed-in page a "turn on notifications" button under "open the fleet". a tap subscribes (safari asks only during one), and the app shows the entry to add to the list, name and all, with a copy button and the `edit` command. `/api/push` answers the key and, for each subscription in the list, the first 16 hex digits of its endpoint's sha-256. the app hashes its own the same way, which is how it knows "subscribed, not in the list yet" from "on" while the server learns nothing it didn't have. a subscription the browser replaced, or one made under a key the server no longer serves (which the app makes again on its own), shows as changed, with the new entry to put in place of the old one. turning it off shows the name to take out. on an iphone only the home screen app gets notifications, so a safari tab says to add it there. without `services.coeus.web.push`, `/api/push` is a 404 and the app offers nothing.
+
+safari shows the fleet's declarative messages by itself and opens their link on a tap. elsewhere the service worker shows them, anything it can't read as a plain "coeus" (a site whose push shows nothing loses the permission), and a tap opens the screen they name in the window already open, or in a new one.
+
 ## how a deployment runs
 
 each job is a directory under `/var/lib/coeus/jobs` holding its order, an append-only log and, once finished, a summary. `coeusd` hands the job to a runner it starts through the service manager, a transient systemd unit or a transient launchd job, so the runner survives `coeusd` restarting, crashing or replacing itself with a newer version in the middle of a switch. the runner:
