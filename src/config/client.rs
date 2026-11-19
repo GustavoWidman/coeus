@@ -9,7 +9,7 @@ use eyre::Result;
 use log::debug;
 use serde::{Deserialize, Serialize};
 
-use super::{DEFAULT_PORT, KeySource};
+use super::{DEFAULT_PORT, KeySource, PushSettings};
 use crate::common::model::Hostname;
 
 /// the CLI's settings: its key and the fleet inventory
@@ -25,6 +25,10 @@ pub struct ClientSettings {
 
     #[serde(with = "humantime_serde", default = "ClientSettings::default_timeout")]
     pub connect_timeout: Duration,
+
+    /// where `coeus push test` sends from; nothing is pushed without it
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub push: Option<PushSettings>,
 }
 
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize, Clone)]
@@ -100,6 +104,7 @@ impl Default for ClientSettings {
             key: KeySource::default(),
             hosts: BTreeMap::new(),
             connect_timeout: Self::default_timeout(),
+            push: None,
         }
     }
 }
