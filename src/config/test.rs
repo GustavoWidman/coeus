@@ -27,6 +27,12 @@ fn the_daemon_example_parses() {
     );
     assert_eq!(settings.guard.timeout.as_secs(), 120);
     assert!(settings.notify.is_none());
+    let push = settings.push.unwrap();
+    assert_eq!(push.origin.as_str(), "https://coeus.example.com");
+    assert_eq!(
+        push.vapid_key_file,
+        Path::new("/run/agenix/coeus-push-vapid")
+    );
 }
 
 #[test]

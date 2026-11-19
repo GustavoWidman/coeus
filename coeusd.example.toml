@@ -56,3 +56,11 @@ tailscale = true
 # [settings.notify]
 # url = "https://ntfy.sh/my-fleet"
 # on = "failure"
+
+# report catch-ups by Web Push: a machine that caught up, or one that stopped
+# trying a commit until the ref moves. without it, nothing is pushed. both
+# files are read at every send
+[settings.push]
+origin = "https://coeus.example.com"
+vapid_key_file = "/run/agenix/coeus-push-vapid"
+subscriptions_file = "/run/agenix/coeus-push-subscriptions"

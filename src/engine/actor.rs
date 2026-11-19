@@ -64,7 +64,7 @@ pub(super) struct Actor<H: Host> {
     fda: FdaStatus,
     daemon: DaemonState,
     follower: Option<Follower>,
-    notifier: Option<Notifier>,
+    notifier: Notifier,
     upgrade: UpgradeWatch,
     view: watch::Sender<MachineView>,
     restart: CancellationToken,
@@ -123,7 +123,7 @@ impl<H: Host> Actor<H> {
                 .inspect_err(|error| error!("{error}"))
                 .ok()
         });
-        let notifier = settings.notify.clone().map(Notifier::new);
+        let notifier = Notifier::new(&settings);
         let next_id = store.next_id()?;
 
         let view = MachineView {
@@ -435,10 +435,9 @@ impl<H: Host> Actor<H> {
     }
 
     fn remember(&mut self, summary: JobSummary) {
-        if let Some(notifier) = &self.notifier {
-            notifier.announce(&self.host.info().hostname, &summary);
-        }
         self.recent.push_front(summary);
+        self.notifier
+            .announce(&self.host.info().hostname, &self.recent[0], &self.recent);
         self.recent.truncate(Self::RECENT);
     }
 

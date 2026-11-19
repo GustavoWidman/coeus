@@ -11,7 +11,7 @@ use eyre::{Result, WrapErr, eyre};
 use log::debug;
 use serde::{Deserialize, Serialize};
 
-use super::{DEFAULT_PORT, Key, KeySource};
+use super::{DEFAULT_PORT, Key, KeySource, PushSettings};
 use crate::common::{model::Hostname, proto::Role};
 
 pub type DaemonConfig = Arc<ConfigStore<DaemonSettings>>;
@@ -80,6 +80,10 @@ pub struct DaemonSettings {
     #[serde(default)]
     pub notify: Option<NotifySettings>,
 
+    /// where catch-ups are reported by Web Push; nothing is pushed without it
+    #[serde(default)]
+    pub push: Option<PushSettings>,
+
     /// the program macOS runners start under, which holds their Full Disk
     /// Access grant. coeusd installs it here once from its own package and
     /// never replaces it, so the grant survives coeus updates.
@@ -138,6 +142,7 @@ impl Default for DaemonSettings {
             follow: None,
             guard: GuardSettings::default(),
             notify: None,
+            push: None,
             launcher: Self::default_launcher(),
         }
     }
