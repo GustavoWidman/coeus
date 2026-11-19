@@ -46,6 +46,11 @@ let
           credentials_file = secret "tunnel" tunnel.credentialsFile;
           cloudflared = lib.getExe tunnel.package;
         }) web.tunnel;
+        push = lib.mapNullable (push: {
+          inherit (push) edit;
+          public_key = push.publicKey;
+          subscriptions_file = secret "push-subscriptions" push.subscriptionsFile;
+        }) web.push;
       };
     } web.settings
   );
@@ -173,6 +178,43 @@ in
               description = "The credentials JSON `cloudflared tunnel create` wrote for the tunnel.";
             };
             package = lib.mkPackageOption pkgs "cloudflared" { };
+          };
+        }
+      );
+    };
+
+    push = mkOption {
+      default = null;
+      description = ''
+        What the dashboard needs to turn on notifications for a device: the
+        key it subscribes with, and the subscription list the fleet sends
+        to, which it checks the device's subscription against. coeus web
+        never holds the VAPID private key. When null, the dashboard offers
+        no notifications.
+      '';
+      type = types.nullOr (
+        types.submodule {
+          options = {
+            publicKey = mkOption {
+              type = types.str;
+              example = "BBgqG0VbQAPnBlmSzWD_uRkfTJJ7rNkfZc3HbxlUfhd8DBhqYt_DqIxDFK71gxU01Umj-1CqpRCOP0NQP_4183g";
+              description = "The VAPID public key `coeus push keygen` printed. It is public: every push carries it.";
+            };
+            subscriptionsFile = mkOption {
+              type = types.str;
+              example = "/run/agenix/coeus-push-subscriptions";
+              description = ''
+                The subscription list `services.coeus.push` sends to, a JSON
+                array, read on every request so an edit needs no restart.
+                It must be readable by the service's user on nix-darwin.
+              '';
+            };
+            edit = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              example = "agenix -e push/subscriptions.age";
+              description = "The command that edits the subscription list, which the dashboard shows beside a subscription to add.";
+            };
           };
         }
       );
