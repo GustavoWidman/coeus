@@ -1,81 +1,17 @@
 use std::time::Duration;
 
-use tokio_util::sync::CancellationToken;
-
-use super::CoeusServer;
 use crate::{
-    client::{AttachmentEvent, CoeusClient},
+    client::AttachmentEvent,
     common::{
         model::{
             Action, AttachFrame, JobEvent, JobId, JobSelector, JobState, NixOptions, Order,
             OrderId, Origin, Outcome, Placement, Source,
         },
-        proto::{Role, TerminalSize},
+        proto::TerminalSize,
     },
-    config::{ClientSettings, Endpoint, FollowSettings, Key},
-    testing::{GitFlake, Harness},
+    config::FollowSettings,
+    testing::{GitFlake, Harness, Served},
 };
-
-struct Served {
-    harness: Harness,
-    endpoint: Endpoint,
-    key: Key,
-    read_key: Key,
-    restart: CancellationToken,
-}
-
-impl Served {
-    async fn start() -> Self {
-        Self::serve(Harness::start(tempfile::tempdir().unwrap()).await).await
-    }
-
-    async fn serve(harness: Harness) -> Self {
-        let key = Key::generate();
-        let read_key = Key::generate();
-        let keys = [(Role::Full, key.clone()), (Role::Read, read_key.clone())];
-        let server = CoeusServer::bind(
-            "127.0.0.1:0".parse().unwrap(),
-            &keys,
-            harness.engine.clone(),
-        )
-        .await
-        .unwrap();
-        let endpoint = Endpoint {
-            host: "127.0.0.1".into(),
-            port: server.local_addr().unwrap().port(),
-        };
-
-        let restart = CancellationToken::new();
-        tokio::spawn(server.run(restart.clone()));
-
-        Self {
-            harness,
-            endpoint,
-            key,
-            read_key,
-            restart,
-        }
-    }
-
-    async fn client(&self) -> CoeusClient {
-        self.client_with(&self.key).await
-    }
-
-    async fn reader(&self) -> CoeusClient {
-        self.client_with(&self.read_key).await
-    }
-
-    async fn client_with(&self, key: &Key) -> CoeusClient {
-        CoeusClient::connect(&ClientSettings::default(), &self.endpoint, key)
-            .await
-            .unwrap()
-    }
-
-    fn stop(&self) {
-        self.restart.cancel();
-        self.harness.shutdown.cancel();
-    }
-}
 
 fn order(id: u64) -> Order {
     Order {
