@@ -36,6 +36,8 @@ nobody has to babysit it. a push to `main` can roll out to the whole fleet, cana
 | `coeus doctor [targets]` | problems and how to fix them; `--fix` on a mac walks through the one permission it needs |
 | `coeus web` | serve the fleet's dashboard, live, to browsers signed in on the tailnet; `--fixture instrument` serves a simulated fleet instead |
 | `coeus keygen` | a new fleet key |
+| `coeus push keygen` | a new VAPID key for push notifications: the private half on stdout, the public half on stderr |
+| `coeus push test` | send a test notification to every subscribed device and say how each went |
 | `coeus completions <shell>` | completions for bash, zsh, fish and nushell |
 
 targets are machine names, `@all`, `@<tag>` from the inventory, and `!name` or `!@tag` to leave some out. names outside the inventory are reached as tailnet hostnames. a machine the local tailscale sees offline counts as unreachable at once, with the time tailscale last saw it, instead of after the connect timeout. `status`, `history`, `generations` and `doctor` take `--json`, and `deploy` exits 0 when every job succeeded, 1 when one failed, and 2 when a machine could not be reached. `catch-up` exits 2 when a machine could not be reached or could not look its ref up.
@@ -205,6 +207,41 @@ every successful lookup, scheduled or asked for, rewrites `/run/coeus/follow.jso
 ```
 
 `committed` is the commit's time, exactly the flake's `lastModified`, and `checked` when the lookup succeeded, both in unix seconds. a failed lookup leaves the file as it was, so `checked` only ages while the repository is out of reach, and a reader should stop trusting a file it last checked long ago. a write that fails is logged and changes nothing else. a dns reconciler like norn, for example, deletes a record shared by the fleet only once `committed` is at least the `lastModified` of the configuration that dropped it.
+
+## push notifications
+
+coeus sends web push notifications to the devices you subscribed, the dashboard on your phone's home screen or a desktop browser tab, through [gjallar](https://crates.io/crates/gjallar). the module renders `[settings.push]` into the cli's `coeus.toml`:
+
+```nix
+services.coeus.push = {
+  origin = "https://coeus.example.com"; # the vapid subject, and where a tap leads
+  vapidKeyFile = config.age.secrets.coeus-push-vapid.path;
+  subscriptionsFile = config.age.secrets.coeus-push-subscriptions.path;
+};
+```
+
+the vapid key is the base64url of a p-256 private scalar. `coeus push keygen` prints it on stdout and the public half, the page's `applicationServerKey`, on stderr, so the secret goes straight into agenix without landing on the screen:
+
+```sh
+coeus push keygen 2> vapid.pub | agenix -e secrets/coeus-push-vapid.age
+```
+
+the subscription file is a json array of what each browser's `PushSubscription.toJSON()` gave, with a name beside it. the name is all coeus ever prints, since the endpoint and its keys are enough to push to that browser:
+
+```json
+[{ "name": "iphone", "endpoint": "https://web.push.apple.com/…", "keys": { "p256dh": "B…", "auth": "…" } }]
+```
+
+both files are read at every send, so a deploy that changes them needs no restart. where they are still age files, as in a ci checkout, `identityFile` (`identity_file`) names an ssh private key that opens them in memory, and nothing is ever written in clear. `coeus push test` sends "coeus test · from <host>" and prints one line per device:
+
+```text
+[✓] iphone: delivered
+[⚠] old-laptop: gone (410): the device dropped this subscription, remove it from the list
+[✗] desktop: refused (403): VapidPkHashMismatch
+[•] ipad: retry later: the push service answered 429
+```
+
+a gone subscription stays in the file until you take it out, and a `VapidPkHashMismatch` is a subscription made under another vapid key, which the browser has to make again. what a push service answers never changes an exit status: `coeus push test` fails only when the settings or their files can't be used.
 
 ## how a deployment runs
 
