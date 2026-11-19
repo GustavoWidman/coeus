@@ -45,6 +45,7 @@ pub fn typescript() -> String {
         (Snapshot::docs(), Snapshot::decl(&config)),
         (Viewer::docs(), Viewer::decl(&config)),
         (Hello::docs(), Hello::decl(&config)),
+        (PushView::docs(), PushView::decl(&config)),
         (SignIn::docs(), SignIn::decl(&config)),
         (Jwk::docs(), Jwk::decl(&config)),
         (SignedIn::docs(), SignedIn::decl(&config)),

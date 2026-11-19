@@ -54,6 +54,7 @@ async fn nothing_under_api_answers_without_a_session() {
     let token = session(&sessions, &browser, Timestamp::now()).token;
     let paths = [
         "/api/stream",
+        "/api/push",
         "/api/machines/lab/jobs/1/log",
         "/api/machines/lab/jobs/1/diff",
         "/api/anything",

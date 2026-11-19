@@ -28,11 +28,12 @@ use self::world::{HOSTS, STEP, World};
 use super::{
     diffs::Diffs,
     fleet::Input,
+    push::{Push, endpoint_hash},
     session::Sessions,
     signin::Signin,
     site::{Access, Settings, Site},
     source::Source,
-    view::Viewer,
+    view::{PushView, Viewer},
     whois::{Peer, Policy, Whois},
 };
 use crate::{
@@ -51,6 +52,12 @@ pub enum Scenario {
 
 /// the moment the timeline starts: 2026-11-17 15:00 UTC
 pub const START: i64 = 1_794_927_600_000;
+
+/// the VAPID public key the simulated fleet's notifications come from
+pub const PUSH_KEY: &str =
+    "BBgqG0VbQAPnBlmSzWD_uRkfTJJ7rNkfZc3HbxlUfhd8DBhqYt_DqIxDFK71gxU01Umj-1CqpRCOP0NQP_4183g";
+/// the one subscription in the simulated fleet's list
+pub const PUSH_SUBSCRIBED: &str = "https://web.push.apple.com/QGxfixture-iphone";
 
 pub struct Fixture {
     clock: Mutex<Clock>,
@@ -124,6 +131,15 @@ impl Fixture {
         HOSTS.iter().map(|host| host.parse().unwrap()).collect()
     }
 
+    /// what the simulated fleet's `/api/push` answers
+    pub fn push() -> PushView {
+        PushView {
+            key: PUSH_KEY.into(),
+            subscribed: vec![endpoint_hash(PUSH_SUBSCRIBED)],
+            edit: Some("agenix -e modules/common/coeus/push/subscriptions.age".into()),
+        }
+    }
+
     /// who reads the simulated fleet
     pub fn viewer() -> Viewer {
         Viewer {
@@ -159,6 +175,7 @@ impl Fixture {
                 web_dir,
                 served_by: "lab".parse()?,
                 access,
+                push: Some(Push::Fixed(Self::push())),
             },
         );
         let _ = self.diffs.set(site.diffs.clone());

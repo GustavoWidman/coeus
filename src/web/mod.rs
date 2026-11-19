@@ -15,6 +15,7 @@ pub mod diffs;
 pub mod fixture;
 pub mod fleet;
 pub mod logs;
+pub mod push;
 pub mod ready;
 pub mod session;
 pub mod signin;

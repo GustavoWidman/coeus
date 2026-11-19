@@ -26,6 +26,7 @@ use crate::{
     web::{
         connector::{self, Timing},
         fixture::{Fixture, Scenario},
+        push::Push,
         ready,
         session::Sessions,
         signin::{Caller, Signin},
@@ -110,6 +111,7 @@ impl WebArgs {
                     sessions,
                     signin: web.signin.urls.clone(),
                 },
+                push: web.push.clone().map(Push::Live),
             },
         );
         source.feed(site.inputs.clone());

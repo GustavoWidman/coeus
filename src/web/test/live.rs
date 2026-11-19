@@ -64,6 +64,7 @@ impl Live {
                 web_dir: None,
                 served_by: "lab".parse().unwrap(),
                 access: Access::Open(viewer()),
+                push: None,
             },
         );
         source.feed(site.inputs.clone());

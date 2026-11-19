@@ -89,6 +89,16 @@ fn the_web_example_parses() {
     );
     assert_eq!(tunnel.cloudflared, Path::new("cloudflared"));
     assert_eq!(settings.web.readiness, ReadinessSettings::default());
+    let push = settings.web.push.unwrap();
+    assert_eq!(push.public_key.len(), 87);
+    assert_eq!(
+        push.subscriptions_file,
+        Path::new("/run/agenix/coeus-push-subscriptions")
+    );
+    assert_eq!(
+        push.edit.as_deref(),
+        Some("agenix -e push/subscriptions.age")
+    );
 }
 
 #[test]
@@ -118,6 +128,7 @@ urls = []
     assert_eq!(settings.web.readiness.interval, Duration::from_secs(2));
     assert_eq!(settings.web.readiness.up_after.get(), 3);
     assert_eq!(settings.web.readiness.down_after.get(), 5);
+    assert_eq!(settings.web.push, None);
 }
 
 #[test]

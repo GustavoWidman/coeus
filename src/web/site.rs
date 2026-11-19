@@ -15,6 +15,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use log::warn;
 use sha2::{Digest, Sha256};
 use tokio::sync::{mpsc, watch};
 use tower_http::services::{ServeDir, ServeFile};
@@ -23,6 +24,7 @@ use super::{
     diffs::Diffs,
     fleet::{Aggregator, FleetState, Input},
     logs,
+    push::Push,
     session::Sessions,
     source::Source,
     stream::{self, Cursor, Masthead},
@@ -49,6 +51,9 @@ pub struct Settings {
     pub web_dir: Option<PathBuf>,
     pub served_by: Hostname,
     pub access: Access,
+    /// what `/api/push` answers; without it, 404, and the app offers no
+    /// notifications
+    pub push: Option<Push>,
 }
 
 /// the site, and where the aggregator takes what the machines say
@@ -67,6 +72,7 @@ struct App {
     build: String,
     served_by: Hostname,
     access: Access,
+    push: Option<Push>,
 }
 
 type Shared = Arc<App>;
@@ -94,11 +100,13 @@ impl Site {
             build: settings.web_dir.as_deref().map_or_else(String::new, build),
             served_by: settings.served_by,
             access: settings.access,
+            push: settings.push,
         });
 
         let api = Router::new()
             .route("/hello", get(hello))
             .route("/stream", get(fleet_stream))
+            .route("/push", get(push))
             .route("/machines/{host}/jobs/{id}/log", get(log))
             .route("/machines/{host}/jobs/{id}/diff", get(diff))
             .fallback(|_: Signed| async { StatusCode::NOT_FOUND });
@@ -195,6 +203,23 @@ async fn fleet_stream(signed: Signed, State(app): State<Shared>, headers: Header
     };
     let body = stream::fleet(app.fleet.clone(), resume, masthead);
     events(stream::expiring(body, signed.expires, &FleetEvent::Expired))
+}
+
+async fn push(_: Signed, State(app): State<Shared>) -> Response {
+    let Some(push) = &app.push else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    match push.view().await {
+        Ok(view) => Json(view).into_response(),
+        Err(error) => {
+            warn!("cannot tell the app which devices get notifications: {error:#}");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "the subscription list could not be read",
+            )
+                .into_response()
+        }
+    }
 }
 
 async fn log(

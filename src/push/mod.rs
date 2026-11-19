@@ -119,6 +119,11 @@ impl Push {
     }
 }
 
+/// the subscription list in the plain file at `path`
+pub fn list(path: &Path) -> Result<Vec<Device>> {
+    devices(&read(path)?).wrap_err_with(|| format!("in {}", path.display()))
+}
+
 fn read(path: &Path) -> Result<Zeroizing<Vec<u8>>> {
     std::fs::read(path)
         .map(Zeroizing::new)
