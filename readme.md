@@ -267,12 +267,17 @@ tries again when deployed moves
 
 the machine's history holds the tries, so a restart never repeats a notice. a `coeusd` restarting into a newer version waits up to ten seconds for the notices still on their way. a cancelled or superseded catch-up says nothing, and what a push service answers only lands in the journal.
 
-the dashboard is where a device subscribes. give it the public key and the same list, and nothing else, since it never sends:
+the dashboard is where a device subscribes. give it the public key and the same list, and nothing else, since it never sends. it reads the list on every request as its own user, `coeus-web` (`_coeusweb` on macos), so it gets a copy that user owns, and a device shows as on right after the switch that adds it:
 
 ```nix
+age.secrets.coeus-push-subscriptions-web = {
+  file = ./secrets/coeus-push-subscriptions.age;
+  owner = "coeus-web";
+};
+
 services.coeus.web.push = {
   publicKey = "BBgq…"; # what `coeus push keygen` put on stderr
-  subscriptionsFile = config.age.secrets.coeus-push-subscriptions.path;
+  subscriptionsFile = config.age.secrets.coeus-push-subscriptions-web.path;
   edit = "agenix -e secrets/coeus-push-subscriptions.age"; # shown beside a new entry
 };
 ```
