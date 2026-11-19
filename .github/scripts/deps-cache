@@ -26,7 +26,14 @@ case "${1:-}" in
     nix copy --no-check-sigs --from "file://$cache" "${2:?missing store path}"
     ;;
   export)
-    nix copy --to "file://$cache?compression=zstd" "${2:?missing store path}"
+    path=${2:?missing store path}
+    # a package fetched whole from the binary cache never built its dependencies here,
+    # so there is nothing to save
+    if ! nix path-info "$path" >/dev/null 2>&1; then
+      echo "$path was not built on this runner; nothing to save"
+      exit 0
+    fi
+    nix copy --to "file://$cache?compression=zstd" "$path"
     du -sh "$cache"
     ;;
   *)
