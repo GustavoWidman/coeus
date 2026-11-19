@@ -4,21 +4,39 @@ use crate::common::model::{JobState, JobSummary, Outcome, Phase, Source, Timesta
 
 /// how many failed tries of one commit catching up makes before it waits for
 /// the ref to move
-const LIMIT: u32 = 3;
+pub(super) const LIMIT: u32 = 3;
 /// the wait after the first failed try, doubling after each one
 const BACKOFF: Duration = Duration::from_secs(60);
 
-/// whether catching up may order `source` at `now`, judged by this machine's
-/// own tries of it in `recent`, newest first.
+/// when catching up may order a commit again
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum Retry {
+    Now,
+    At(Timestamp),
+    /// not before the ref moves
+    Never,
+}
+
+/// whether catching up may order `source` at `now`
+pub(super) fn may_try(recent: &VecDeque<JobSummary>, source: &Source, now: Timestamp) -> bool {
+    match retry(recent, source) {
+        Retry::Now => true,
+        Retry::At(at) => now >= at,
+        Retry::Never => false,
+    }
+}
+
+/// when catching up may order `source` again, judged by this machine's own
+/// tries of it in `recent`, newest first.
 ///
 /// a try that failed before building most likely met a network that was not
 /// up yet after a boot or a wake, and costs little to repeat, so the commit
 /// is tried again after a while, a few times. one that failed later, that
 /// someone cancelled, or whose activation was cut short waits for the ref to
 /// move.
-pub(super) fn may_try(recent: &VecDeque<JobSummary>, source: &Source, now: Timestamp) -> bool {
+pub(super) fn retry(recent: &VecDeque<JobSummary>, source: &Source) -> Retry {
     let Source::Git { rev, .. } = source else {
-        return true;
+        return Retry::Now;
     };
 
     let mut failures = 0;
@@ -34,7 +52,7 @@ pub(super) fn may_try(recent: &VecDeque<JobSummary>, source: &Source, now: Times
             break;
         }
         if !passing(outcome) {
-            return false;
+            return Retry::Never;
         }
 
         failures += 1;
@@ -42,14 +60,14 @@ pub(super) fn may_try(recent: &VecDeque<JobSummary>, source: &Source, now: Times
     }
 
     match last {
-        None => true,
-        Some(_) if failures >= LIMIT => false,
-        Some(last) => now >= last.after(BACKOFF.saturating_mul(1 << (failures - 1))),
+        None => Retry::Now,
+        Some(_) if failures >= LIMIT => Retry::Never,
+        Some(last) => Retry::At(last.after(BACKOFF.saturating_mul(1 << (failures - 1)))),
     }
 }
 
 /// a failure before building, where the network is the usual cause
-fn passing(outcome: &Outcome) -> bool {
+pub(super) fn passing(outcome: &Outcome) -> bool {
     matches!(
         outcome,
         Outcome::Failed(failure)

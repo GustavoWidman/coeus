@@ -1,6 +1,9 @@
 //! a fake machine and an engine around it, for tests across modules
 
-use std::{sync::Mutex, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use eyre::Result;
 use tokio::sync::Notify;
@@ -15,7 +18,9 @@ use crate::{
         },
         proto::Role,
     },
-    config::{ClientSettings, DaemonSettings, Endpoint, FollowSettings, GuardSettings, Key},
+    config::{
+        ClientSettings, DaemonSettings, Endpoint, FollowSettings, GuardSettings, Key, PushSettings,
+    },
     engine::{Engine, EngineHandle, Host, SystemFacts},
     job::JobDir,
     server::CoeusServer,
@@ -24,10 +29,11 @@ use crate::{
 pub const TOPLEVEL: &str = "/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-nixos-system-lab-26.11";
 
 /// a machine whose runners are tasks in this process that build instantly
-/// and finish when the test releases them
+/// and finish when the test releases them, as `outcome` says
 pub struct FakeHost {
     info: HostInfo,
     release: std::sync::Arc<Notify>,
+    outcome: Arc<Mutex<Outcome>>,
     spawned: Mutex<Vec<JobId>>,
     /// runners die before taking their job
     stillborn: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -57,6 +63,7 @@ impl Host for FakeHost {
         }
         let dir = dir.clone();
         let release = self.release.clone();
+        let outcome = self.outcome.clone();
 
         let (taken, ready) = tokio::sync::oneshot::channel();
         tokio::spawn(async move {
@@ -81,7 +88,7 @@ impl Host for FakeHost {
             let outcome = dir
                 .stop_request()
                 .unwrap()
-                .map_or(Outcome::Succeeded, |stop| stop.outcome());
+                .map_or_else(|| outcome.lock().unwrap().clone(), |stop| stop.outcome());
             writer.finish(outcome).unwrap();
         });
         let _ = ready.await;
@@ -105,6 +112,8 @@ pub struct Harness {
     pub engine: EngineHandle<FakeHost>,
     pub release: std::sync::Arc<Notify>,
     pub stillborn: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// how the runners finish when nobody asked them to stop
+    pub outcome: Arc<Mutex<Outcome>>,
     pub state: tempfile::TempDir,
     pub shutdown: CancellationToken,
 }
@@ -117,7 +126,26 @@ impl Harness {
     /// an engine whose runners share `release` with an earlier engine's, as
     /// detached runners outlive the daemon that started them
     pub async fn start_with(state: tempfile::TempDir, release: std::sync::Arc<Notify>) -> Self {
-        Self::launch(state, release, "git+https://example.com/nix".into(), None).await
+        Self::launch(
+            state,
+            release,
+            "git+https://example.com/nix".into(),
+            None,
+            None,
+        )
+        .await
+    }
+
+    /// an engine that reports catch-ups by push
+    pub async fn pushing(state: tempfile::TempDir, push: PushSettings) -> Self {
+        Self::launch(
+            state,
+            std::sync::Arc::default(),
+            "git+https://example.com/nix".into(),
+            None,
+            Some(push),
+        )
+        .await
     }
 
     /// an engine that follows a ref of the repository at `flake`
@@ -126,7 +154,7 @@ impl Harness {
         flake: String,
         follow: FollowSettings,
     ) -> Self {
-        Self::launch(state, std::sync::Arc::default(), flake, Some(follow)).await
+        Self::launch(state, std::sync::Arc::default(), flake, Some(follow), None).await
     }
 
     async fn launch(
@@ -134,7 +162,9 @@ impl Harness {
         release: std::sync::Arc<Notify>,
         flake: String,
         follow: Option<FollowSettings>,
+        push: Option<PushSettings>,
     ) -> Self {
+        let outcome = Arc::new(Mutex::new(Outcome::Succeeded));
         let stillborn = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let host = FakeHost {
             info: HostInfo {
@@ -144,6 +174,7 @@ impl Harness {
                 version: "test".into(),
             },
             release: release.clone(),
+            outcome: outcome.clone(),
             spawned: Mutex::default(),
             stillborn: stillborn.clone(),
         };
@@ -151,6 +182,7 @@ impl Harness {
         let settings = DaemonSettings {
             flake,
             follow,
+            push,
             state_dir: state.path().to_owned(),
             guard: GuardSettings {
                 enable: false,
@@ -175,6 +207,7 @@ impl Harness {
             engine,
             release,
             stillborn,
+            outcome,
             state,
             shutdown,
         }
@@ -368,6 +401,8 @@ pub mod push {
         pub payloads: BTreeMap<String, Vec<serde_json::Value>>,
         pub keys: Vec<String>,
         pub topics: Vec<String>,
+        /// each message's `Urgency`, in arrival order
+        pub urgencies: Vec<String>,
     }
 
     /// a push service on loopback that answers per device: `delivered`, `gone`,
@@ -389,6 +424,8 @@ pub mod push {
                             .push(authorization.rsplit_once("k=").unwrap().1.to_owned());
                         seen.topics
                             .push(headers["topic"].to_str().unwrap().to_owned());
+                        seen.urgencies
+                            .push(headers["urgency"].to_str().unwrap().to_owned());
                         seen.payloads
                             .entry(device.clone())
                             .or_default()

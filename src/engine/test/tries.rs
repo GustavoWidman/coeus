@@ -5,7 +5,7 @@ use crate::{
         Action, Failure, JobId, JobState, JobSummary, OrderId, Origin, Outcome, Phase, Source,
         Timestamp,
     },
-    engine::tries::may_try,
+    engine::tries::{Retry, may_try, retry},
 };
 
 const OLD: &str = "1111111111111111111111111111111111111111";
@@ -108,4 +108,15 @@ fn only_failures_since_the_last_success_count() {
 fn snapshots_and_generations_are_never_held_back() {
     let recent = VecDeque::from([tried(NEW, Outcome::Cancelled, 0)]);
     assert!(may_try(&recent, &Source::Generation(3), at(0)));
+}
+
+#[test]
+fn the_tries_end_on_the_third_failure_before_building() {
+    let mut recent = VecDeque::new();
+    let mut said = Vec::new();
+    for minutes in [10, 11, 13] {
+        recent.push_front(tried(NEW, failed(Phase::Fetching), minutes));
+        said.push(retry(&recent, &git(NEW)));
+    }
+    assert_eq!(said, [Retry::At(at(11)), Retry::At(at(13)), Retry::Never]);
 }

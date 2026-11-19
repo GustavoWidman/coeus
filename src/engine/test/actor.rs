@@ -1,12 +1,23 @@
-use std::{collections::VecDeque, time::Duration};
+use std::{
+    collections::VecDeque,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+
+use gjallar::{Receiver, VapidKey};
 
 use crate::{
     common::model::{
-        Action, CancelReport, JobId, JobSelector, JobState, JobSummary, MachineView, NixOptions,
-        Order, OrderId, Origin, Outcome, Phase, Placement, Source, StorePath, Timestamp,
+        Action, CancelReport, Failure, JobId, JobSelector, JobState, JobSummary, MachineView,
+        NixOptions, Order, OrderId, Origin, Outcome, Phase, Placement, Source, StorePath,
+        Timestamp,
     },
+    config::PushSettings,
     engine::{SystemFacts, actor::deployed},
-    testing::{Harness, TOPLEVEL},
+    testing::{
+        Harness, TOPLEVEL,
+        push::{Seen, entry, fake_push_service, settings},
+    },
 };
 
 fn order(id: u64) -> Order {
@@ -269,4 +280,105 @@ fn a_boot_the_machine_rebooted_into_is_its_deployment() {
     let pending = deployed(&recent, &facts(Some(stock.parse().unwrap()))).unwrap();
     assert_eq!(pending.source, None);
     assert_eq!(pending.at, Timestamp(1_500));
+}
+
+/// orders job `id` and lets its runner finish it
+async fn run(harness: &Harness, order: Order) {
+    let id = order.id.0;
+    harness.engine.deploy(order).await.unwrap().unwrap();
+    harness.release.notify_one();
+    harness.until(|view| finished(view, id).is_some()).await;
+}
+
+/// a push service, and settings that reach it with `device` subscribed
+async fn subscribed(device: &str) -> (PushSettings, Arc<Mutex<Seen>>, tempfile::TempDir) {
+    let receiver = Receiver::generate().unwrap();
+    let (service, seen) = fake_push_service(receiver.clone()).await;
+    let files = tempfile::tempdir().unwrap();
+    let entries = [entry(
+        device,
+        &receiver,
+        &format!("{service}/push/{device}"),
+    )];
+    let push = settings(files.path(), &VapidKey::generate().unwrap(), &entries);
+    (push, seen, files)
+}
+
+/// each notification the service received with its urgency, once there are
+/// `count` of them
+async fn received(seen: &Mutex<Seen>, count: usize) -> Vec<(serde_json::Value, String)> {
+    let all = || {
+        let seen = seen.lock().unwrap();
+        let notifications = seen.payloads.values().flatten();
+        notifications
+            .map(|payload| payload["notification"].clone())
+            .zip(seen.urgencies.iter().cloned())
+            .collect::<Vec<_>>()
+    };
+    let reached = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let received = all();
+            if received.len() >= count {
+                return received;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
+    reached.unwrap_or_else(|_| panic!("received only {:?}", all()))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_catch_up_is_pushed_and_a_deploy_is_not() {
+    let (push, seen, _files) = subscribed("phone").await;
+    let harness = Harness::pushing(tempfile::tempdir().unwrap(), push).await;
+
+    let mut deploy = order(1);
+    deploy.origin = Origin::User {
+        user: "gustavo".into(),
+        host: "altar".into(),
+    };
+    run(&harness, deploy).await;
+    run(&harness, order(2)).await;
+
+    let received = received(&seen, 1).await;
+    assert_eq!(received.len(), 1, "{received:?}");
+    let (notice, urgency) = &received[0];
+    assert_eq!(notice["title"], "lab caught up to caf4e2b");
+    assert_eq!(
+        notice["navigate"],
+        "https://coeus.example.com/machines/lab/jobs/2"
+    );
+    assert_eq!(notice["tag"], "catch-up/lab");
+    assert_eq!(urgency, "normal");
+    harness.shutdown.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_failing_catch_up_is_pushed_once_its_tries_run_out() {
+    let (push, seen, _files) = subscribed("phone").await;
+    let harness = Harness::pushing(tempfile::tempdir().unwrap(), push).await;
+    *harness.outcome.lock().unwrap() = Outcome::Failed(Failure::new(
+        Phase::Fetching,
+        "could not resolve github.com",
+    ));
+
+    run(&harness, order(1)).await;
+    run(&harness, order(2)).await;
+    run(&harness, order(3)).await;
+
+    let received = received(&seen, 1).await;
+    assert_eq!(received.len(), 1, "{received:?}");
+    let (notice, urgency) = &received[0];
+    assert_eq!(notice["title"], "lab stopped catching up to caf4e2b");
+    assert_eq!(
+        notice["body"],
+        "failed fetching 3 times: could not resolve github.com\ntries again when main moves"
+    );
+    assert_eq!(
+        notice["navigate"],
+        "https://coeus.example.com/machines/lab/jobs/3"
+    );
+    assert_eq!(urgency, "high");
+    harness.shutdown.cancel();
 }
