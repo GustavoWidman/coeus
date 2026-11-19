@@ -1,5 +1,5 @@
-# evaluates a nix-darwin system serving the dashboard, and checks the daemons
-# and the web.toml it renders without building the system
+# evaluates a nix-darwin system serving the dashboard, and checks the daemons,
+# the web.toml and the CLI's coeus.toml it renders without building the system
 {
   pkgs,
   self,
@@ -21,6 +21,11 @@ let
           readKeyFile = "/run/agenix/coeus-read-key";
           flake = "git+https://example.com/fleet";
           hosts.altar.tags = [ "darwin" ];
+          push = {
+            origin = "https://coeus.example.com";
+            vapidKeyFile = "/run/agenix/coeus-push-vapid";
+            subscriptionsFile = "/run/agenix/coeus-push-subscriptions";
+          };
           web = {
             enable = true;
             publicOrigin = "https://coeus.example.com";
@@ -48,6 +53,7 @@ pkgs.runCommandLocal "coeus-darwin-module"
   {
     facts = builtins.unsafeDiscardStringContext facts;
     toml = config.environment.etc."coeus/web.toml".source;
+    client = config.environment.etc."coeus/coeus.toml".source;
     nativeBuildInputs = [
       pkgs.jq
       pkgs.remarshal
@@ -61,5 +67,11 @@ pkgs.runCommandLocal "coeus-darwin-module"
     jq -e '.settings.web.origin_socket == "/var/lib/coeus-web/origin.sock"' web.json
     jq -e '.settings.web.signin.cert == "/var/lib/coeus-web/cert.pem"' web.json
     jq -e '.settings.web.tunnel.credentials_file == "/run/agenix/coeus-tunnel"' web.json
+    toml2json "$client" > client.json
+    jq -e '.settings.push == {
+      origin: "https://coeus.example.com",
+      vapid_key_file: "/run/agenix/coeus-push-vapid",
+      subscriptions_file: "/run/agenix/coeus-push-subscriptions"
+    }' client.json
     touch $out
   ''
