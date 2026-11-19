@@ -1,17 +1,9 @@
 use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
 };
 
 use age::armor::{ArmoredWriter, Format};
-use axum::{
-    Router,
-    body::Bytes,
-    extract::{Path as Route, State},
-    http::{HeaderMap, StatusCode},
-    routing::post,
-};
 use gjallar::{Receiver, VapidKey};
 use std::io::Write;
 
@@ -20,30 +12,8 @@ use crate::{
     bootstrap::secrets::generate::ssh_ed25519,
     cli::commands::push::{line, test_message},
     config::*,
+    testing::push::{entry, fake_push_service, origin, settings},
 };
-
-fn origin() -> Origin {
-    "https://coeus.example.com".parse().unwrap()
-}
-
-fn entry(name: &str, receiver: &Receiver, endpoint: &str) -> serde_json::Value {
-    let mut json = serde_json::to_value(receiver.subscription(endpoint).unwrap()).unwrap();
-    json["name"] = name.into();
-    json
-}
-
-fn settings(dir: &Path, key: &VapidKey, entries: &[serde_json::Value]) -> PushSettings {
-    let vapid_key_file = dir.join("vapid");
-    let subscriptions_file = dir.join("subscriptions.json");
-    std::fs::write(&vapid_key_file, format!("{}\n", key.to_base64url())).unwrap();
-    std::fs::write(&subscriptions_file, serde_json::to_vec(entries).unwrap()).unwrap();
-    PushSettings {
-        origin: origin(),
-        vapid_key_file,
-        subscriptions_file,
-        identity_file: None,
-    }
-}
 
 #[test]
 fn the_push_section_parses_into_settings() {
@@ -269,56 +239,6 @@ fn each_device_gets_one_line_saying_what_to_do() {
     for (delivery, expected) in cases {
         assert_eq!(ansi.replace_all(&line("iphone", &delivery), ""), expected);
     }
-}
-
-/// what the fake push service saw for each device
-#[derive(Default)]
-struct Seen {
-    payloads: BTreeMap<String, Vec<serde_json::Value>>,
-    keys: Vec<String>,
-    topics: Vec<String>,
-}
-
-/// a push service on loopback that answers per device: `delivered`, `gone`,
-/// `rotated` (refused under another VAPID key), `busy` (429 every time)
-async fn fake_push_service(receiver: Receiver) -> (String, Arc<Mutex<Seen>>) {
-    let seen = Arc::new(Mutex::new(Seen::default()));
-    let app = Router::new()
-        .route(
-            "/push/{device}",
-            post(
-                async |State((receiver, seen)): State<(Receiver, Arc<Mutex<Seen>>)>,
-                       Route(device): Route<String>,
-                       headers: HeaderMap,
-                       body: Bytes| {
-                    let plaintext = receiver.decrypt(&body).unwrap();
-                    let authorization = headers["authorization"].to_str().unwrap().to_owned();
-                    let mut seen = seen.lock().unwrap();
-                    seen.keys
-                        .push(authorization.rsplit_once("k=").unwrap().1.to_owned());
-                    seen.topics
-                        .push(headers["topic"].to_str().unwrap().to_owned());
-                    seen.payloads
-                        .entry(device.clone())
-                        .or_default()
-                        .push(serde_json::from_slice(&plaintext).unwrap());
-                    match device.as_str() {
-                        "gone" => (StatusCode::GONE, String::new()),
-                        "rotated" => (
-                            StatusCode::FORBIDDEN,
-                            r#"{"reason":"VapidPkHashMismatch"}"#.to_owned(),
-                        ),
-                        "busy" => (StatusCode::TOO_MANY_REQUESTS, String::new()),
-                        _ => (StatusCode::CREATED, String::new()),
-                    }
-                },
-            ),
-        )
-        .with_state((receiver, seen.clone()));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    (address, seen)
 }
 
 #[tokio::test(flavor = "multi_thread")]

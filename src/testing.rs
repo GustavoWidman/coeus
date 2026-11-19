@@ -7,13 +7,18 @@ use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    common::model::{
-        Action, FdaStatus, Generation, HostInfo, JobEvent, JobId, MachineView, Outcome, Phase,
-        Platform,
+    client::CoeusClient,
+    common::{
+        model::{
+            Action, FdaStatus, Generation, HostInfo, JobEvent, JobId, MachineView, Outcome, Phase,
+            Platform,
+        },
+        proto::Role,
     },
-    config::{DaemonSettings, FollowSettings, GuardSettings},
+    config::{ClientSettings, DaemonSettings, Endpoint, FollowSettings, GuardSettings, Key},
     engine::{Engine, EngineHandle, Host, SystemFacts},
     job::JobDir,
+    server::CoeusServer,
 };
 
 pub const TOPLEVEL: &str = "/nix/store/h0myp2wfggr0x8pfacciv8sfhxyb845d-nixos-system-lab-26.11";
@@ -249,5 +254,161 @@ impl GitFlake {
             eprintln!("skipped: no nix daemon to resolve a flake with");
         }
         resolvable
+    }
+}
+
+/// an engine behind a coeus server on loopback, with a full and a read-only
+/// key
+pub struct Served {
+    pub harness: Harness,
+    pub endpoint: Endpoint,
+    pub key: Key,
+    pub read_key: Key,
+    pub restart: CancellationToken,
+}
+
+impl Served {
+    pub async fn start() -> Self {
+        Self::serve(Harness::start(tempfile::tempdir().unwrap()).await).await
+    }
+
+    pub async fn serve(harness: Harness) -> Self {
+        let key = Key::generate();
+        let read_key = Key::generate();
+        let keys = [(Role::Full, key.clone()), (Role::Read, read_key.clone())];
+        let server = CoeusServer::bind(
+            "127.0.0.1:0".parse().unwrap(),
+            &keys,
+            harness.engine.clone(),
+        )
+        .await
+        .unwrap();
+        let endpoint = Endpoint {
+            host: "127.0.0.1".into(),
+            port: server.local_addr().unwrap().port(),
+        };
+
+        let restart = CancellationToken::new();
+        tokio::spawn(server.run(restart.clone()));
+
+        Self {
+            harness,
+            endpoint,
+            key,
+            read_key,
+            restart,
+        }
+    }
+
+    pub async fn client(&self) -> CoeusClient {
+        self.client_with(&self.key).await
+    }
+
+    pub async fn reader(&self) -> CoeusClient {
+        self.client_with(&self.read_key).await
+    }
+
+    pub async fn client_with(&self, key: &Key) -> CoeusClient {
+        CoeusClient::connect(&ClientSettings::default(), &self.endpoint, key)
+            .await
+            .unwrap()
+    }
+
+    pub fn stop(&self) {
+        self.restart.cancel();
+        self.harness.shutdown.cancel();
+    }
+}
+
+/// a push service on loopback and the push settings that reach it
+pub mod push {
+    use std::{
+        collections::BTreeMap,
+        path::Path,
+        sync::{Arc, Mutex},
+    };
+
+    use axum::{
+        Router,
+        body::Bytes,
+        extract::{Path as Route, State},
+        http::{HeaderMap, StatusCode},
+        routing::post,
+    };
+    use gjallar::{Receiver, VapidKey};
+
+    use crate::config::{Origin, PushSettings};
+
+    pub fn origin() -> Origin {
+        "https://coeus.example.com".parse().unwrap()
+    }
+
+    pub fn entry(name: &str, receiver: &Receiver, endpoint: &str) -> serde_json::Value {
+        let mut json = serde_json::to_value(receiver.subscription(endpoint).unwrap()).unwrap();
+        json["name"] = name.into();
+        json
+    }
+
+    pub fn settings(dir: &Path, key: &VapidKey, entries: &[serde_json::Value]) -> PushSettings {
+        let vapid_key_file = dir.join("vapid");
+        let subscriptions_file = dir.join("subscriptions.json");
+        std::fs::write(&vapid_key_file, format!("{}\n", key.to_base64url())).unwrap();
+        std::fs::write(&subscriptions_file, serde_json::to_vec(entries).unwrap()).unwrap();
+        PushSettings {
+            origin: origin(),
+            vapid_key_file,
+            subscriptions_file,
+            identity_file: None,
+        }
+    }
+
+    /// what the fake push service saw for each device
+    #[derive(Default)]
+    pub struct Seen {
+        pub payloads: BTreeMap<String, Vec<serde_json::Value>>,
+        pub keys: Vec<String>,
+        pub topics: Vec<String>,
+    }
+
+    /// a push service on loopback that answers per device: `delivered`, `gone`,
+    /// `rotated` (refused under another VAPID key), `busy` (429 every time)
+    pub async fn fake_push_service(receiver: Receiver) -> (String, Arc<Mutex<Seen>>) {
+        let seen = Arc::new(Mutex::new(Seen::default()));
+        let app = Router::new()
+            .route(
+                "/push/{device}",
+                post(
+                    async |State((receiver, seen)): State<(Receiver, Arc<Mutex<Seen>>)>,
+                           Route(device): Route<String>,
+                           headers: HeaderMap,
+                           body: Bytes| {
+                        let plaintext = receiver.decrypt(&body).unwrap();
+                        let authorization = headers["authorization"].to_str().unwrap().to_owned();
+                        let mut seen = seen.lock().unwrap();
+                        seen.keys
+                            .push(authorization.rsplit_once("k=").unwrap().1.to_owned());
+                        seen.topics
+                            .push(headers["topic"].to_str().unwrap().to_owned());
+                        seen.payloads
+                            .entry(device.clone())
+                            .or_default()
+                            .push(serde_json::from_slice(&plaintext).unwrap());
+                        match device.as_str() {
+                            "gone" => (StatusCode::GONE, String::new()),
+                            "rotated" => (
+                                StatusCode::FORBIDDEN,
+                                r#"{"reason":"VapidPkHashMismatch"}"#.to_owned(),
+                            ),
+                            "busy" => (StatusCode::TOO_MANY_REQUESTS, String::new()),
+                            _ => (StatusCode::CREATED, String::new()),
+                        }
+                    },
+                ),
+            )
+            .with_state((receiver, seen.clone()));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (address, seen)
     }
 }
