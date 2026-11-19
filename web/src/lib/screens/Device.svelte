@@ -1,9 +1,10 @@
 <!--
-	This device: who it is signed in as and until when, and which host serves it. It loads only
-	once opened.
+	This device: who it is signed in as and until when, which host serves it, and its
+	notifications. It loads only once opened.
 -->
 <script lang="ts">
 	import { day } from '#lib/derive/format.ts';
+	import Notifications from '#lib/push/Notifications.svelte';
 	import { fleet } from '#lib/stream/fleet.svelte.ts';
 	import Label from '#lib/ui/Label.svelte';
 	import { noun, standalone } from '#lib/ui/platform.ts';
@@ -46,5 +47,6 @@
 				</dd>
 			</div>
 		</dl>
+		<Notifications name={v.device} />
 	</div>
 {/if}

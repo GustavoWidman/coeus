@@ -45,6 +45,7 @@ import {
 } from '@playwright/test';
 import { ALLOWED, EXCEPTIONS } from './motion-lint.ts';
 import { probe, type ProbeConfig, type Seen } from '../tests/matrix/probe.ts';
+import { stubPush } from '../tests/matrix/push.ts';
 import {
 	STATES,
 	cells as allCells,
@@ -680,6 +681,7 @@ class Worker {
 			);
 		}
 		await ctx.addInitScript(probe, config);
+		if (state.push) await ctx.addInitScript(stubPush, state.push);
 		for (const net of state.net ?? []) await route(ctx, net);
 		const page = await ctx.newPage();
 		await page.goto(url);

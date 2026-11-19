@@ -15,8 +15,9 @@
  *
  * Steps that need an element name it by the prototype's markup, which the screens keep.
  */
+import type { PushStub } from './push.ts';
 
-export type Screen = 'fleet' | 'machine' | 'deployment' | 'log' | 'signin' | 'down';
+export type Screen = 'fleet' | 'machine' | 'deployment' | 'log' | 'device' | 'signin' | 'down';
 export type Theme = 'light' | 'dark';
 export type Viewport = 'phone' | 'desktop';
 export type Motion = 'full' | 'reduced';
@@ -65,6 +66,8 @@ export interface State {
 	live?: number;
 	net?: Net[];
 	rewrite?: Rewrite[];
+	/** what the browser says about notifications; without it, what the browser itself says */
+	push?: PushStub;
 	steps?: Step[];
 	/**
 	 * The same state in the prototype: the screen its `#s=` opens, more of its hash, then
@@ -130,6 +133,54 @@ const session: Record<'ok' | 'refused', Net> = {
 		body: 'the tailnet policy grants no access'
 	}
 };
+
+// Notifications. The simulated fleet's `/api/push` answers its key and one subscription
+// (src/web/fixture/mod.rs); these are the subscriptions the browser holds.
+const PUSH_KEY =
+	'BBgqG0VbQAPnBlmSzWD_uRkfTJJ7rNkfZc3HbxlUfhd8DBhqYt_DqIxDFK71gxU01Umj-1CqpRCOP0NQP_4183g';
+const ROTATED =
+	'BA1MWds1hwEBqXBwJs858BCz2aokDANojOcDnn2RKAF5Nrm3n4dfeOldxakyl-dkpJKNGN7MFrjh3_yENprVJdI';
+const LISTED = 'https://web.push.apple.com/QGxfixture-iphone';
+const NEW = 'https://web.push.apple.com/QGx7dK2v_AfMzW1u0oPq3RjLhXbc9TnY4eSgUiVoNw8yH5kZ';
+const push = {
+	off: { permission: 'default', subscription: null, subscribe: { endpoint: NEW } },
+	asking: { permission: 'default', subscription: null, subscribe: 'hold' },
+	denied: { permission: 'denied', subscription: null, subscribe: 'hold' },
+	install: {
+		supported: false,
+		ios: true,
+		permission: 'default',
+		subscription: null,
+		subscribe: 'hold'
+	},
+	uncommitted: {
+		permission: 'granted',
+		subscription: { endpoint: NEW, key: PUSH_KEY },
+		subscribe: { endpoint: NEW }
+	},
+	on: {
+		permission: 'granted',
+		subscription: { endpoint: LISTED, key: PUSH_KEY },
+		subscribe: { endpoint: LISTED }
+	},
+	// made under a key the fleet no longer sends with, so the app subscribes again
+	rotated: {
+		permission: 'granted',
+		subscription: { endpoint: LISTED, key: ROTATED },
+		subscribe: { endpoint: NEW }
+	}
+} satisfies Record<string, PushStub>;
+
+/** the device screen with the browser saying `stub` */
+const device = (name: string, stub: PushStub | undefined, extra: Partial<State> = {}): State => ({
+	screen: 'device',
+	name,
+	path: '/device',
+	t: 100,
+	push: stub,
+	reference: null,
+	...extra
+});
 
 /** the machine screen of `host` at `t`, with the prototype's machine screen for it */
 const machine = (name: string, host: string, t: number, extra: Partial<State> = {}): State => ({
@@ -348,6 +399,20 @@ export const STATES: State[] = [
 	log('empty', 'lab', 62),
 	log('20k lines', 'lab', 61, { rewrite: [{ lines: 20_000 }], reference: null }),
 
+	// this device
+	device('no push', push.off, { net: [{ url: '**/api/push', status: 404, body: '' }] }),
+	device('Safari tab', push.install),
+	device('off', push.off),
+	device('asking', push.asking, { steps: [{ click: '.pb', text: 'Turn on' }] }),
+	device('denied', push.denied),
+	device('not in the list', push.uncommitted),
+	device('on', push.on),
+	device('changed', push.rotated),
+	device('turned off', push.on, { steps: [{ click: '.pb', text: 'Turn off' }] }),
+	device('list unreadable', push.on, {
+		net: [{ url: '**/api/push', status: 503, body: 'the subscription list could not be read' }]
+	}),
+
 	// sign-in
 	{
 		screen: 'signin',
@@ -373,8 +438,19 @@ export const STATES: State[] = [
 		path: '/signin',
 		t: 10,
 		net: [hello, ping.up, session.ok],
+		push: push.off,
 		steps: [{ wait: 500 }],
 		reference: { s: 'signedin' }
+	},
+	{
+		screen: 'signin',
+		name: 'signed in, subscribed',
+		path: '/signin',
+		t: 10,
+		net: [hello, ping.up, session.ok],
+		push: push.uncommitted,
+		steps: [{ wait: 500 }],
+		reference: null
 	},
 	{
 		// signed in, then off the tailnet when the server stops taking the session
