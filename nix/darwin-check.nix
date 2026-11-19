@@ -36,6 +36,11 @@ let
               id = "6f1c2a9e-3b7d-4e58-9a0c-d2e4f6a8b1c3";
               credentialsFile = "/run/agenix/coeus-tunnel";
             };
+            push = {
+              publicKey = "BBgqG0VbQAPnBlmSzWD_uRkfTJJ7rNkfZc3HbxlUfhd8DBhqYt_DqIxDFK71gxU01Umj-1CqpRCOP0NQP_4183g";
+              subscriptionsFile = "/run/agenix/coeus-push-subscriptions-web";
+              edit = "agenix -e push/subscriptions.age";
+            };
           };
         };
       }
@@ -69,6 +74,11 @@ pkgs.runCommandLocal "coeus-darwin-module"
     jq -e '.settings.web.origin_socket == "/var/lib/coeus-web/origin.sock"' web.json
     jq -e '.settings.web.signin.cert == "/var/lib/coeus-web/cert.pem"' web.json
     jq -e '.settings.web.tunnel.credentials_file == "/run/agenix/coeus-tunnel"' web.json
+    jq -e '.settings.web.push == {
+      public_key: "BBgqG0VbQAPnBlmSzWD_uRkfTJJ7rNkfZc3HbxlUfhd8DBhqYt_DqIxDFK71gxU01Umj-1CqpRCOP0NQP_4183g",
+      subscriptions_file: "/run/agenix/coeus-push-subscriptions-web",
+      edit: "agenix -e push/subscriptions.age"
+    }' web.json
     toml2json "$client" > client.json
     jq -e '.settings.push == {
       origin: "https://coeus.example.com",

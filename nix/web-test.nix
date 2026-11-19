@@ -12,6 +12,7 @@
       "coeus-test/key".text = "4c1f0e3b8a2d5c7e9f6a1b3d5e7f9a2c4e6b8d0f1a3c5e7b9d2f4a6c8e0b1d3f";
       "coeus-test/read-key".text = "9e2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a3c5e7b9d2f4a6c8e0b1d3f5a7c9e1b";
       "coeus-test/session-key".text = "1d3f5a7c9e1b2d4f6a8c0e2b4d6f8a0c1e3b5d7f9a2c4e6b8d0f1a3c5e7b9d2f";
+      "coeus-test/push-subscriptions.json".text = "[]";
       "coeus-test/tunnel.json".text = builtins.toJSON {
         AccountTag = "0123456789abcdef0123456789abcdef";
         TunnelID = "6f1c2a9e-3b7d-4e58-9a0c-d2e4f6a8b1c3";
@@ -37,12 +38,17 @@
           id = "6f1c2a9e-3b7d-4e58-9a0c-d2e4f6a8b1c3";
           credentialsFile = "/etc/coeus-test/tunnel.json";
         };
+        push = {
+          publicKey = "BBgqG0VbQAPnBlmSzWD_uRkfTJJ7rNkfZc3HbxlUfhd8DBhqYt_DqIxDFK71gxU01Umj-1CqpRCOP0NQP_4183g";
+          subscriptionsFile = "/etc/coeus-test/push-subscriptions.json";
+        };
       };
     };
   };
 
   testScript = ''
     import json
+    import tomllib
     from datetime import timedelta
 
     socket = "/run/coeus-web/origin.sock"
@@ -59,6 +65,7 @@
         hello = json.loads(machine.succeed(f"{site}/api/hello --fail"))
         assert hello["signin"] == ["https://machine.tail0000.ts.net:45730"], hello
         assert answer("/api/stream") == (401, 0), "nothing but the app without a session"
+        assert answer("/api/push") == (401, 0), "nor which devices get pushes"
 
     def tunnel_down():
         machine.fail("pgrep --uid coeus-web cloudflared")
@@ -68,6 +75,18 @@
     machine.wait_until_succeeds(f"test -S {socket}")
     assert machine.succeed(f"stat -c '%U %a' {socket}").split() == ["coeus-web", "600"]
     serves()
+
+    # the subscription list reaches the service as a credential, and nothing
+    # secret about push is in its config
+    push = tomllib.loads(machine.succeed("cat /etc/coeus/web.toml"))["settings"]["web"]["push"]
+    assert push == {
+        "public_key": "BBgqG0VbQAPnBlmSzWD_uRkfTJJ7rNkfZc3HbxlUfhd8DBhqYt_DqIxDFK71gxU01Umj-1CqpRCOP0NQP_4183g",
+        "subscriptions_file": "/run/credentials/coeus-web.service/coeus-web.push-subscriptions",
+    }, push
+    pid = machine.succeed("systemctl show --property=MainPID --value coeus-web.service").strip()
+    assert machine.succeed(
+        f"nsenter --target {pid} --mount cat /run/credentials/coeus-web.service/coeus-web.push-subscriptions"
+    ).strip() == "[]"
 
     # the probe reaches tailscaled from inside the sandbox. tailscaled is not
     # logged in, so the host never becomes ready and cloudflared never starts
