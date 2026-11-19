@@ -49,7 +49,7 @@ let
         push = lib.mapNullable (push: {
           inherit (push) edit;
           public_key = push.publicKey;
-          subscriptions_file = secret "push-subscriptions" push.subscriptionsFile;
+          subscriptions_file = push.subscriptionsFile;
         }) web.push;
       };
     } web.settings
@@ -206,7 +206,8 @@ in
               description = ''
                 The subscription list `services.coeus.push` sends to, a JSON
                 array, read on every request so an edit needs no restart.
-                It must be readable by the service's user on nix-darwin.
+                It must be readable by the service's user, `coeus-web` on
+                NixOS and `_coeusweb` on nix-darwin.
               '';
             };
             edit = mkOption {

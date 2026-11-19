@@ -20,12 +20,6 @@ let
     "coeus-web.session-key" = web.sessionKeyFile;
   }
   // lib.optionalAttrs (web.tunnel != null) { "coeus-web.tunnel" = web.tunnel.credentialsFile; };
-  # read on every request, so the dashboard starts without them and a
-  # missing list only leaves the app unable to tell which devices get pushes
-  optional = lib.optionalAttrs (web.push != null) {
-    "coeus-web.push-subscriptions" = web.push.subscriptionsFile;
-  };
-
   # a credential systemd cannot find in /run/credstore is left out, where a
   # missing file named by its path fails the start, and the switch with it.
   # coeus web exiting at once would fail it too, so it waits a while first,
@@ -63,7 +57,7 @@ in
 
     systemd.tmpfiles.rules = lib.mapAttrsToList (
       name: file: "L+ /run/credstore/${name} - - - - ${file}"
-    ) (secrets // optional);
+    ) secrets;
 
     systemd.services.coeus-web = {
       description = "coeus web, the fleet's dashboard";
@@ -92,7 +86,7 @@ in
 
         User = user;
         Group = user;
-        LoadCredential = lib.attrNames (secrets // optional);
+        LoadCredential = lib.attrNames secrets;
         # the origin socket and cloudflared's config
         RuntimeDirectory = "coeus-web";
         RuntimeDirectoryMode = "0700";
