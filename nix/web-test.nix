@@ -133,5 +133,21 @@
     assert machine.succeed("systemctl show --property=MainPID --value coeus-web.service").strip() == pid
     serves()
     tunnel_down()
+
+    # a machine that vanishes without closing the connection, as a laptop
+    # going to sleep can, is let go of within about a minute, and watched
+    # again once it answers
+    watches = "ss --tcp --numeric --options --no-header state established '( dport = :45729 )'"
+    watch = machine.wait_until_succeeds(f"{watches} | grep .").split()
+    assert "timer:(keepalive," in watch[-1], watch
+    port = watch[2].rsplit(":", 1)[1]
+    silent = "OUTPUT --out-interface lo --protocol tcp --source-port 45729 --jump DROP"
+    machine.succeed(f"iptables --insert {silent}")
+    machine.wait_until_succeeds(
+        f"! ss --tcp --numeric --no-header state established '( sport = :{port} and dport = :45729 )' | grep .",
+        timeout=90,
+    )
+    machine.succeed(f"iptables --delete {silent}")
+    machine.wait_until_succeeds(f"{watches} | grep .", timeout=90)
   '';
 }

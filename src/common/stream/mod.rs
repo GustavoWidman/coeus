@@ -13,7 +13,8 @@ use eyre::{Result, WrapErr, eyre};
 pub use listener::EncryptedListener;
 pub use listener::PendingConnection;
 use snow::{Builder, HandshakeState, params::NoiseParams};
-use std::{net::SocketAddr, sync::Arc};
+use socket2::{SockRef, TcpKeepalive};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 use tokio::{
     io::{self, AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -95,8 +96,21 @@ impl EncryptedStream {
         ))
     }
 
+    /// a connection silent for 30 s is probed every 10 s, and closed after
+    /// three probes go unanswered: a dead peer surfaces within a minute
+    fn keepalive() -> TcpKeepalive {
+        TcpKeepalive::new()
+            .with_time(Duration::from_secs(30))
+            .with_interval(Duration::from_secs(10))
+            .with_retries(3)
+    }
+
     async fn handshake(mut stream: TcpStream, mut state: HandshakeState) -> Result<Self> {
         stream.set_nodelay(true)?;
+        // a peer that sleeps or drops off its network can vanish without
+        // closing the connection, and a watch only ever reads, so without
+        // the kernel's probes it would wait on a dead connection forever
+        SockRef::from(&stream).set_tcp_keepalive(&Self::keepalive())?;
 
         let mut message = vec![0u8; Self::MAX_FRAME];
         let mut payload = vec![0u8; Self::MAX_FRAME];

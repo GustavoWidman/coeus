@@ -700,6 +700,7 @@ dependencies = [
  "sha-crypt",
  "sha2 0.10.9",
  "snow",
+ "socket2",
  "ssh-key",
  "tempfile",
  "tokio",
