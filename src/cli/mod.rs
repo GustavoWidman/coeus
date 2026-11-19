@@ -10,6 +10,7 @@ mod deployment;
 mod dispatch;
 mod follow;
 mod notify;
+mod push;
 mod rollout;
 
 #[cfg(test)]

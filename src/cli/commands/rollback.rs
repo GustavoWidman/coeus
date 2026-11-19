@@ -69,6 +69,7 @@ impl RollbackArgs {
             following,
             notify: self.notify,
             skip_unreachable: false,
+            push: context.settings.push.clone(),
         }
         .run()
         .await

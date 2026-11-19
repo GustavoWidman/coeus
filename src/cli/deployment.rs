@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{io::Write, path::Path};
 
 use colored::Colorize;
 use eyre::Result;
@@ -10,11 +10,13 @@ use super::{
     exit::Exit,
     follow::{Ending, Follow, View},
     notify::notify,
+    push::{self, End, Machine},
     rollout::Rollout,
 };
 use crate::{
     client::Fleet,
     common::model::{Action, Admission, Hostname, JobSelector, Placement, Timestamp},
+    config::PushSettings,
     nix::strip_ansi,
     ui::{Board, Heading, Summary, Theme, board::Verdict, describe, diff, say},
 };
@@ -27,6 +29,8 @@ pub struct Deployment {
     pub following: Following,
     pub notify: bool,
     pub skip_unreachable: bool,
+    /// where the summary of an order followed to its end goes
+    pub push: Option<PushSettings>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -76,14 +80,27 @@ impl Deployment {
     }
 
     async fn attach(self) -> Result<Exit> {
+        let since = Timestamp::now();
         let host = &self.fleet.hosts()[0];
         let answer = self.shipment.place(&self.fleet, host).await;
         println!("{}", placement(host, &answer));
 
+        let ended = |end| {
+            vec![Machine {
+                host: host.clone(),
+                end,
+            }]
+        };
         let admission = match answer {
             Ok(Ok(admission)) => admission,
-            Ok(Err(_)) => return Ok(Exit::Unreached),
-            Err(_) => return Ok(Exit::of([Verdict::Unreachable], self.skip_unreachable)),
+            Ok(Err(rejection)) => {
+                self.announce(ended(End::Rejected(rejection)), since).await;
+                return Ok(Exit::Unreached);
+            }
+            Err(reason) => {
+                self.announce(ended(End::Unreachable(reason)), since).await;
+                return Ok(Exit::of([Verdict::Unreachable], self.skip_unreachable));
+            }
         };
 
         let attached = Attach {
@@ -107,10 +124,12 @@ impl Deployment {
                 &format!("{host}: {}", Theme::outcome_label(&outcome)),
             );
         }
-        Ok(match outcome.is_success() {
+        let exit = match outcome.is_success() {
             true => Exit::Success,
             false => Exit::Failed,
-        })
+        };
+        self.announce(ended(End::Finished(outcome)), since).await;
+        Ok(exit)
     }
 
     async fn follow(self, live: bool) -> Result<Exit> {
@@ -148,7 +167,7 @@ impl Deployment {
             true => println!("{}", summary.verdict()),
             false => summary.lines().iter().for_each(|line| println!("{line}")),
         }
-        step_summary(&summary);
+        append_step_summary(&summary.markdown());
 
         if self.shipment.order.action == Action::Build {
             self.previews(&board).await;
@@ -161,8 +180,25 @@ impl Deployment {
                 verdict.trim_start_matches(['✓', '✗', ' ']),
             );
         }
+        self.announce(push::machines(&board), board.heading.since())
+            .await;
 
         Ok(Exit::of(board.verdicts(), self.skip_unreachable))
+    }
+
+    /// pushes the summary of the order, which ended on `machines`, to every
+    /// subscribed device, when pushes are set up
+    async fn announce(&self, machines: Vec<Machine>, since: Timestamp) {
+        let Some(settings) = self.push.clone() else {
+            return;
+        };
+        let order = self.shipment.order.clone();
+        let took = since.until(Timestamp::now());
+        push::announce(settings, move || {
+            let subject = push::subject(Path::new("."), &order.source);
+            push::deploy_notice(&order, &machines, took, subject.as_deref())
+        })
+        .await;
     }
 
     /// the closure diff of every machine that built, as a build preview
@@ -253,8 +289,8 @@ pub fn placement(host: &Hostname, answer: &Answer) -> String {
     }
 }
 
-/// appends the summary to the GitHub Actions job page, when running there
-fn step_summary(summary: &Summary<'_>) {
+/// appends `markdown` to the GitHub Actions job page, when running there
+pub fn append_step_summary(markdown: &str) {
     let Some(path) = std::env::var_os("GITHUB_STEP_SUMMARY") else {
         return;
     };
@@ -263,7 +299,7 @@ fn step_summary(summary: &Summary<'_>) {
         .append(true)
         .create(true)
         .open(&path)
-        .and_then(|mut file| file.write_all(summary.markdown().as_bytes()));
+        .and_then(|mut file| file.write_all(markdown.as_bytes()));
     if let Err(error) = written {
         eprintln!(
             "{}",
