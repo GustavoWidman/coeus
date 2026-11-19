@@ -1,5 +1,9 @@
 //! Web Push to the devices in the subscription list, through gjallar
 
+mod notice;
+
+pub use notice::Notice;
+
 use std::{collections::BTreeSet, fmt, path::Path, time::Duration};
 
 use eyre::{Result, WrapErr, bail, ensure};
