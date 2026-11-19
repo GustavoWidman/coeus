@@ -243,6 +243,17 @@ both files are read at every send, so a deploy that changes them needs no restar
 
 a gone subscription stays in the file until you take it out, and a `VapidPkHashMismatch` is a subscription made under another vapid key, which the browser has to make again. what a push service answers never changes an exit status: `coeus push test` fails only when the settings or their files can't be used.
 
+`coeus deploy` and `coeus rollback` push one notification for each order they follow to its end, never one per machine. it names the commit and its subject (when the repository you run it from has that commit), counts the machines that got there, and lists the ones that failed, were held back or are still pending:
+
+```text
+Deployed 3f2a9c1 · 4 of 6
+chore(flake): bump nixpkgs
+4 switched in 6m40s
+pending: laptop-mac, desktop-nixos (asleep)
+```
+
+a machine that is asleep or out of reach is pending, not failed, since it catches up once it's back. only a failure or a refusal makes the notification urgent. a tap opens the deployment in the dashboard. the tag comes from the action and the commit, so a retried ci run replaces the notification from the run it retries instead of stacking a second one. a detached deploy doesn't know how things ended, so it sends nothing. sending waits at most ten seconds and, like everything push does, never changes the exit status. a device that comes back gone is a warning on stderr and a line in the GitHub Actions step summary.
+
 ## how a deployment runs
 
 each job is a directory under `/var/lib/coeus/jobs` holding its order, an append-only log and, once finished, a summary. `coeusd` hands the job to a runner it starts through the service manager, a transient systemd unit or a transient launchd job, so the runner survives `coeusd` restarting, crashing or replacing itself with a newer version in the middle of a switch. the runner:
