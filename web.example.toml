@@ -56,3 +56,12 @@ credentials_file = "/run/agenix/coeus-tunnel"
 interval = "2s"
 up_after = 3
 down_after = 5
+
+# notifications: the app subscribes this device with the VAPID public key
+# that `coeus push keygen` printed, and tells whether the subscription is in
+# the list the fleet sends to. coeus web never holds the private key
+[settings.web.push]
+public_key = "BBgqG0VbQAPnBlmSzWD_uRkfTJJ7rNkfZc3HbxlUfhd8DBhqYt_DqIxDFK71gxU01Umj-1CqpRCOP0NQP_4183g"
+subscriptions_file = "/run/agenix/coeus-push-subscriptions"
+# shown beside a new subscription, as the way to add it to the list
+edit = "agenix -e push/subscriptions.age"

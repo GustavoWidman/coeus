@@ -4,6 +4,7 @@ mod contract;
 mod deployment;
 mod fixture;
 mod live;
+mod push;
 mod ready;
 mod session;
 mod signin;

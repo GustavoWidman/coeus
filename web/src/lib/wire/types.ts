@@ -46,6 +46,15 @@ export type Hello = {
   schema: number;
 };
 
+/** `/api/push`: the key a browser subscribes with, and the subscriptions the fleet sends to, each the first 16 hex digits of its endpoint's SHA-256 */
+export type PushView = {
+  /** the VAPID public key, base64url, the browser's `applicationServerKey` */
+  key: string;
+  subscribed: Array<string>;
+  /** the command that edits the subscription list */
+  edit: string | null;
+};
+
 /** what a browser sends to sign in: its public key, and its signature over `coeus-signin-v1\n<public origin>\n<ts>` by the matching private key */
 export type SignIn = {
   key: Jwk;

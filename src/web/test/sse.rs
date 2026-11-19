@@ -18,6 +18,7 @@ use crate::{
     config::{ClientSettings, Key},
     web::{
         fleet::Input,
+        push::Push,
         site::{Access, Settings, Site},
         source::Source,
         view::Viewer,
@@ -38,6 +39,15 @@ pub fn site(hosts: &[&str], access: Access) -> Site {
 }
 
 pub fn serving(hosts: &[&str], access: Access, web_dir: Option<std::path::PathBuf>) -> Site {
+    start(hosts, access, web_dir, None)
+}
+
+pub fn start(
+    hosts: &[&str],
+    access: Access,
+    web_dir: Option<std::path::PathBuf>,
+    push: Option<Push>,
+) -> Site {
     let settings = ClientSettings::default();
     let names: Vec<String> = hosts.iter().map(|name| (*name).to_owned()).collect();
     let targets = crate::client::Targets::select(&names, &settings).unwrap();
@@ -50,6 +60,7 @@ pub fn serving(hosts: &[&str], access: Access, web_dir: Option<std::path::PathBu
             web_dir,
             served_by: "lab".parse().unwrap(),
             access,
+            push,
         },
     )
 }

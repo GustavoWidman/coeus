@@ -41,6 +41,27 @@ pub struct WebSection {
 
     #[serde(default)]
     pub readiness: ReadinessSettings,
+
+    /// what the app needs to turn on notifications; without it the app
+    /// offers none
+    #[serde(default)]
+    pub push: Option<WebPushSettings>,
+}
+
+/// the public half of the fleet's push setup: the key browsers subscribe
+/// with, and the list of subscriptions the fleet sends to, which the app
+/// checks its own against. never the VAPID private key
+#[derive(Debug, PartialEq, Eq, Deserialize, Clone)]
+pub struct WebPushSettings {
+    /// the VAPID public key, base64url of the 65-byte uncompressed point
+    /// `coeus push keygen` prints
+    pub public_key: String,
+    /// the same JSON array the senders read, decrypted
+    pub subscriptions_file: PathBuf,
+    /// the command that edits the subscription list, which the app shows
+    /// beside a subscription to add, `agenix -e push/subscriptions.age`
+    #[serde(default)]
+    pub edit: Option<String>,
 }
 
 /// signing in, served on this machine's tailnet addresses alone

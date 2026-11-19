@@ -42,6 +42,19 @@ pub struct Hello {
     pub schema: u16,
 }
 
+/// `/api/push`: the key a browser subscribes with, and the subscriptions
+/// the fleet sends to, each the first 16 hex digits of its endpoint's
+/// SHA-256
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+pub struct PushView {
+    /// the VAPID public key, base64url, the browser's `applicationServerKey`
+    pub key: String,
+    pub subscribed: Vec<String>,
+    /// the command that edits the subscription list
+    pub edit: Option<String>,
+}
+
 /// what signing in on the tailnet answers: the session to send as
 /// `Authorization: Coeus <token>`, and who it is for
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
