@@ -604,7 +604,8 @@ impl<H: Host> Actor<H> {
         }
     }
 
-    /// exits into a newer coeusd once nothing runs
+    /// exits into a newer coeusd once nothing runs and the notifications
+    /// in flight went out
     fn upgrade_when_idle(&mut self) {
         if self.lane != Lane::Idle
             || self.daemon == DaemonState::Restarting
@@ -615,7 +616,12 @@ impl<H: Host> Actor<H> {
 
         info!("a newer coeusd or configuration is installed, restarting into it");
         self.daemon = DaemonState::Restarting;
-        self.restart.cancel();
+        let drained = self.notifier.drain();
+        let restart = self.restart.clone();
+        tokio::spawn(async move {
+            drained.await;
+            restart.cancel();
+        });
     }
 
     fn publish(&self) {

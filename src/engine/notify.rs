@@ -24,6 +24,9 @@ pub(super) struct Notifier {
 }
 
 impl Notifier {
+    /// how long a restart waits for the sends in flight
+    const DRAIN: Duration = Duration::from_secs(10);
+
     pub fn new(settings: &DaemonSettings) -> Self {
         Self {
             ntfy: settings.notify.clone(),
@@ -58,6 +61,18 @@ impl Notifier {
             let push = push.clone();
             let at = job.finished_at.unwrap_or(job.ordered_at);
             self.sends.spawn_blocking(move || send(&push, &notice, at));
+        }
+    }
+
+    /// waits for the sends in flight, at most [Self::DRAIN], so a restart
+    /// does not take them down with the process
+    pub fn drain(&mut self) -> impl Future<Output = ()> + use<> {
+        let mut sends = std::mem::take(&mut self.sends);
+        async move {
+            let drained = async { while sends.join_next().await.is_some() {} };
+            if tokio::time::timeout(Self::DRAIN, drained).await.is_err() {
+                warn!("restarting with notifications still unsent");
+            }
         }
     }
 }

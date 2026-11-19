@@ -115,6 +115,8 @@ pub struct Harness {
     /// how the runners finish when nobody asked them to stop
     pub outcome: Arc<Mutex<Outcome>>,
     pub state: tempfile::TempDir,
+    /// cancelled when the engine wants coeusd to exit into a newer version
+    pub restart: CancellationToken,
     pub shutdown: CancellationToken,
 }
 
@@ -191,17 +193,12 @@ impl Harness {
             ..Default::default()
         };
 
+        let restart = CancellationToken::new();
         let shutdown = CancellationToken::new();
         let config = state.path().join("coeusd.toml");
-        let engine = Engine::start(
-            host,
-            settings,
-            &config,
-            CancellationToken::new(),
-            shutdown.clone(),
-        )
-        .await
-        .unwrap();
+        let engine = Engine::start(host, settings, &config, restart.clone(), shutdown.clone())
+            .await
+            .unwrap();
 
         Self {
             engine,
@@ -209,6 +206,7 @@ impl Harness {
             stillborn,
             outcome,
             state,
+            restart,
             shutdown,
         }
     }
@@ -369,6 +367,7 @@ pub mod push {
         routing::post,
     };
     use gjallar::{Receiver, VapidKey};
+    use tokio::sync::watch;
 
     use crate::config::{Origin, PushSettings};
 
@@ -403,10 +402,13 @@ pub mod push {
         pub topics: Vec<String>,
         /// each message's `Urgency`, in arrival order
         pub urgencies: Vec<String>,
+        /// while true, the `held` device gets no answer
+        pub hold: watch::Sender<bool>,
     }
 
     /// a push service on loopback that answers per device: `delivered`, `gone`,
-    /// `rotated` (refused under another VAPID key), `busy` (429 every time)
+    /// `rotated` (refused under another VAPID key), `busy` (429 every time),
+    /// `held` (delivered once [Seen::hold] is false)
     pub async fn fake_push_service(receiver: Receiver) -> (String, Arc<Mutex<Seen>>) {
         let seen = Arc::new(Mutex::new(Seen::default()));
         let app = Router::new()
@@ -419,17 +421,23 @@ pub mod push {
                            body: Bytes| {
                         let plaintext = receiver.decrypt(&body).unwrap();
                         let authorization = headers["authorization"].to_str().unwrap().to_owned();
-                        let mut seen = seen.lock().unwrap();
-                        seen.keys
-                            .push(authorization.rsplit_once("k=").unwrap().1.to_owned());
-                        seen.topics
-                            .push(headers["topic"].to_str().unwrap().to_owned());
-                        seen.urgencies
-                            .push(headers["urgency"].to_str().unwrap().to_owned());
-                        seen.payloads
-                            .entry(device.clone())
-                            .or_default()
-                            .push(serde_json::from_slice(&plaintext).unwrap());
+                        let mut held = {
+                            let mut seen = seen.lock().unwrap();
+                            seen.keys
+                                .push(authorization.rsplit_once("k=").unwrap().1.to_owned());
+                            seen.topics
+                                .push(headers["topic"].to_str().unwrap().to_owned());
+                            seen.urgencies
+                                .push(headers["urgency"].to_str().unwrap().to_owned());
+                            seen.payloads
+                                .entry(device.clone())
+                                .or_default()
+                                .push(serde_json::from_slice(&plaintext).unwrap());
+                            seen.hold.subscribe()
+                        };
+                        if device == "held" {
+                            let _ = held.wait_for(|hold| !hold).await;
+                        }
                         match device.as_str() {
                             "gone" => (StatusCode::GONE, String::new()),
                             "rotated" => (

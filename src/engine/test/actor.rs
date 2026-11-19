@@ -8,9 +8,9 @@ use gjallar::{Receiver, VapidKey};
 
 use crate::{
     common::model::{
-        Action, CancelReport, Failure, JobId, JobSelector, JobState, JobSummary, MachineView,
-        NixOptions, Order, OrderId, Origin, Outcome, Phase, Placement, Source, StorePath,
-        Timestamp,
+        Action, CancelReport, DaemonState, Failure, JobId, JobSelector, JobState, JobSummary,
+        MachineView, NixOptions, Order, OrderId, Origin, Outcome, Phase, Placement, Source,
+        StorePath, Timestamp,
     },
     config::PushSettings,
     engine::{SystemFacts, actor::deployed},
@@ -380,5 +380,33 @@ async fn a_failing_catch_up_is_pushed_once_its_tries_run_out() {
         "https://coeus.example.com/machines/lab/jobs/3"
     );
     assert_eq!(urgency, "high");
+    harness.shutdown.cancel();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_waits_for_the_push_in_flight() {
+    let (push, seen, _files) = subscribed("held").await;
+    seen.lock().unwrap().hold.send_replace(true);
+    let harness = Harness::pushing(tempfile::tempdir().unwrap(), push).await;
+
+    harness.engine.deploy(order(1)).await.unwrap().unwrap();
+    // a newer configuration lands while the job runs
+    std::fs::write(harness.state.path().join("coeusd.toml"), "[settings]\n").unwrap();
+    harness.release.notify_one();
+    harness.until(|view| finished(view, 1).is_some()).await;
+
+    received(&seen, 1).await;
+    harness
+        .until(|view| view.daemon == DaemonState::Restarting)
+        .await;
+    assert!(
+        !harness.restart.is_cancelled(),
+        "coeusd exits with the push still unanswered"
+    );
+
+    seen.lock().unwrap().hold.send_replace(false);
+    tokio::time::timeout(Duration::from_secs(10), harness.restart.cancelled())
+        .await
+        .expect("coeusd never exits once the push is answered");
     harness.shutdown.cancel();
 }
