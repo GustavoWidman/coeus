@@ -38,6 +38,12 @@ let
     lib.recursiveUpdate {
       key_file = cfg.keyFile;
       inherit (cfg) hosts;
+      push = lib.mapNullable (push: {
+        inherit (push) origin;
+        vapid_key_file = push.vapidKeyFile;
+        subscriptions_file = push.subscriptionsFile;
+        identity_file = push.identityFile;
+      }) cfg.push;
     } cfg.clientSettings
   );
 in
@@ -189,6 +195,48 @@ in
             tags = mkOption {
               type = types.listOf types.str;
               default = [ ];
+            };
+          };
+        }
+      );
+    };
+
+    push = mkOption {
+      default = null;
+      description = ''
+        Where `coeus push test` sends Web Push notifications from. Both files
+        are read at every send, so changing them needs no restart.
+      '';
+      type = types.nullOr (
+        types.submodule {
+          options = {
+            origin = mkOption {
+              type = types.str;
+              example = "https://coeus.example.com";
+              description = "The dashboard's https origin: the VAPID subject, and where a tap on a notification leads.";
+            };
+            vapidKeyFile = mkOption {
+              type = types.str;
+              example = "/run/agenix/coeus-push-vapid";
+              description = "File holding the VAPID private key that `coeus push keygen` printed.";
+            };
+            subscriptionsFile = mkOption {
+              type = types.str;
+              example = "/run/agenix/coeus-push-subscriptions";
+              description = ''
+                File holding a JSON array of the devices to notify, each a
+                browser's `PushSubscription.toJSON()` with a `name` beside its
+                `endpoint` and `keys`.
+              '';
+            };
+            identityFile = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              description = ''
+                An ssh private key that opens both files in memory, for when
+                they are still age-encrypted. Leave it null where agenix has
+                already decrypted them.
+              '';
             };
           };
         }
