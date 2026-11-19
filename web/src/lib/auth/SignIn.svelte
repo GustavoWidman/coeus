@@ -124,6 +124,9 @@
 			>
 				Open the fleet
 			</a>
+			{#await import('#lib/push/Notifications.svelte') then m}
+				<m.default name={s.viewer.device} signin />
+			{/await}
 		</div>
 	</div>
 {:else}

@@ -1,0 +1,136 @@
+/* notifications: the device screen's section and the signed-in page's button. Loaded with the
+   control, outside every screen's first load. */
+.push .pr {
+	display: grid;
+	grid-template-columns: 7px minmax(0, 1fr) auto;
+	gap: 12px;
+	align-items: baseline;
+	padding: 13px 0;
+	border-bottom: 1px solid var(--rule);
+}
+.push .pr > .d {
+	display: flex;
+	transform: translateY(-1px);
+}
+.probe > .d {
+	display: flex;
+}
+/* as a status dot rings when it changes */
+.ring .dot > b {
+	animation: ring 520ms cubic-bezier(0.2, 0.6, 0.3, 1);
+}
+@keyframes ring {
+	from {
+		transform: scale(1);
+		opacity: 0.6;
+	}
+	to {
+		transform: scale(3.4);
+		opacity: 0;
+	}
+}
+.push .pr b {
+	display: block;
+	font-weight: 500;
+	font-size: 15px;
+	letter-spacing: -0.01em;
+}
+.push .pr b.m {
+	color: var(--mute);
+}
+.push .pr p {
+	margin-top: 3px;
+	color: var(--ink2);
+	font-size: 13.5px;
+	line-height: 1.45;
+}
+.pb {
+	align-self: center;
+	padding: 9px 12px;
+	border: 1px solid var(--rule2);
+	border-radius: 999px;
+	font: 500 11px/1 var(--m);
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--acc);
+	white-space: nowrap;
+}
+.pb.q {
+	color: var(--ink2);
+}
+.pb:disabled,
+.btn.q:disabled {
+	color: var(--mute);
+	cursor: default;
+}
+.push .note {
+	margin-top: 12px;
+	color: var(--ink2);
+	font-size: 13.5px;
+	line-height: 1.5;
+}
+.push .note b {
+	font-weight: 500;
+	font-size: 12.5px;
+	color: var(--ink);
+}
+.push .bad,
+.probe.bad {
+	color: var(--bad);
+}
+.entry {
+	position: relative;
+	margin-top: 16px;
+	border: 1px solid var(--rule2);
+	border-radius: 10px;
+}
+.entry pre {
+	padding: 14px 64px 14px 16px;
+	font-size: 12px;
+	line-height: 1.55;
+	color: var(--ink);
+	white-space: pre-wrap;
+	word-break: break-all;
+}
+.entry .cp {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	padding: 6px 8px;
+	border-radius: 6px;
+	font: 500 11px/1 var(--m);
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--acc);
+}
+.cmd {
+	margin-top: 10px;
+	font-size: 12px;
+	line-height: 1.5;
+	color: var(--ink2);
+	overflow-wrap: anywhere;
+}
+.cmd .m {
+	color: var(--mute);
+}
+.btn.q {
+	width: 100%;
+	margin-top: 10px;
+	background: transparent;
+	color: var(--ink);
+	border: 1px solid var(--rule2);
+	font-weight: 500;
+}
+.push-in {
+	margin-top: 4px;
+}
+/* a state replacing another drops in, as a new row does */
+.pin {
+	animation: pin 220ms var(--e) backwards;
+}
+@keyframes pin {
+	from {
+		opacity: 0;
+		transform: translateY(-6px);
+	}
+}
