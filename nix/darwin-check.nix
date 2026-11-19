@@ -1,5 +1,6 @@
 # evaluates a nix-darwin system serving the dashboard, and checks the daemons,
-# the web.toml and the CLI's coeus.toml it renders without building the system
+# the web.toml, coeusd.toml and the CLI's coeus.toml it renders without
+# building the system
 {
   pkgs,
   self,
@@ -54,6 +55,7 @@ pkgs.runCommandLocal "coeus-darwin-module"
     facts = builtins.unsafeDiscardStringContext facts;
     toml = config.environment.etc."coeus/web.toml".source;
     client = config.environment.etc."coeus/coeus.toml".source;
+    daemon = config.environment.etc."coeus/coeusd.toml".source;
     nativeBuildInputs = [
       pkgs.jq
       pkgs.remarshal
@@ -73,5 +75,7 @@ pkgs.runCommandLocal "coeus-darwin-module"
       vapid_key_file: "/run/agenix/coeus-push-vapid",
       subscriptions_file: "/run/agenix/coeus-push-subscriptions"
     }' client.json
+    toml2json "$daemon" > daemon.json
+    jq -e --slurpfile client client.json '.settings.push == $client[0].settings.push' daemon.json
     touch $out
   ''

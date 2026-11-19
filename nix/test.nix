@@ -147,7 +147,12 @@
     assert "phone: delivered" in report, report
     assert "old-laptop: gone (410)" in report, report
 
-    seen = [json.loads(line) for line in machine.succeed("cat /var/lib/fake-push/seen.jsonl").splitlines()]
+    def pushed(tag):
+        lines = machine.succeed("cat /var/lib/fake-push/seen.jsonl").splitlines()
+        seen = [json.loads(line) for line in lines]
+        return [each for each in seen if each["message"]["notification"]["tag"] == tag]
+
+    seen = pushed("coeus/test")
     assert sorted(each["path"] for each in seen) == ["/push/gone", "/push/phone"], seen
     for each in seen:
         assert each["key"] == public, each
@@ -157,5 +162,21 @@
         notification = each["message"]["notification"]
         assert notification["title"] == "coeus test \u00b7 from machine", notification
         assert notification["navigate"] == "https://coeus.example.com/", notification
+
+    # the commit the machine caught up with is no system of it, so every try
+    # fails to evaluate it. the first two say nothing, as the next might work;
+    # the third ends the tries, and coeusd says so once from its rendered config
+    machine.wait_until_succeeds("grep -q 'stopped catching up' /var/lib/fake-push/seen.jsonl")
+    history = machine.succeed("coeus history loopback")
+    seen = pushed("catch-up/machine")
+    assert sorted(each["path"] for each in seen) == ["/push/gone", "/push/phone"], (seen, history)
+    for each in seen:
+        assert each["urgency"] == "high", each
+        assert each["ttl"] == "86400", each
+        notification = each["message"]["notification"]
+        assert notification["title"] == f"machine stopped catching up to {rev[:7]}", notification
+        assert " 3 times: " in notification["body"], notification
+        assert notification["body"].endswith("tries again when deployed moves"), notification
+        assert notification["navigate"].startswith("https://coeus.example.com/machines/machine/jobs/"), notification
   '';
 }
