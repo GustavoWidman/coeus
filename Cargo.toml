@@ -64,6 +64,7 @@ p256 = "0.13.2"
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["ring", "tls12", "logging"] }
 gjallar = { version = "0.1.0", features = ["client"] }
+socket2 = "0.6.5"
 
 
 [dev-dependencies]
