@@ -173,6 +173,32 @@
                   '';
                 }
                 {
+                  name = "matrix-diff";
+                  help = "photograph the state matrix at a base revision (origin/main unless named), run it on this tree, and list the screens that changed";
+                  # both runs draw on this machine, since another cpu draws some pixels
+                  # differently, and both take this tree's states, so a screen differs only
+                  # where the app does. the base builds from the cache when it was released.
+                  command = ''
+                    set -eu
+                    base=origin/main
+                    case "''${1:-}" in
+                      "" | -*) ;;
+                      *) base=$1; shift ;;
+                    esac
+                    rev=$(git -C "$PRJ_ROOT" rev-parse --verify "$base^{commit}")
+                    build() { nix build --no-link --print-out-paths "$1"; }
+                    before="git+file://$PRJ_ROOT?rev=$rev"
+                    cd "$PRJ_ROOT/web"
+                    bun install --frozen-lockfile
+                    out=test-results/matrix-diff
+                    rm -rf "$out"
+                    bun scripts/matrix.ts --out "$out/base" --shots-only --no-gate \
+                      --coeus "$(build "$before#default")/bin/coeus" --web-dir "$(build "$before#coeus-web")" "$@"
+                    bun scripts/matrix.ts --out "$out/head" --against "$out/base" \
+                      --coeus "$(build "$PRJ_ROOT#default")/bin/coeus" --web-dir "$(build "$PRJ_ROOT#coeus-web")" "$@"
+                  '';
+                }
+                {
                   name = "lock-web";
                   help = "regenerate web/.bun.nix from web/bun.lock";
                   # bun2nix refuses bun.lock's lockfileVersion 2, although the package layout

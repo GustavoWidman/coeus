@@ -10,8 +10,8 @@
  *   bun scripts/matrix.ts [--only screen=fleet,log] [--only state=building] [--only target=app]
  *     [--engines chromium,webkit] [--workers 4] [--window 10] [--repeat 1]
  *     [--out test-results/matrix] [--trace] [--reference <prototype dir>] [--web-dir build]
- *     [--coeus <binary>] [--no-timings] [--no-gate] [--update]
- *   bun scripts/matrix.ts --from <matrix-results.json> [--no-timings] [--update]
+ *     [--coeus <binary>] [--no-timings] [--no-gate] [--shots-only] [--against <run dir>]
+ *   bun scripts/matrix.ts --from <matrix-results.json> [--no-timings] [--against <run dir>]
  *
  * Chromium measures every cell through the DevTools protocol: long tasks, frames presented and
  * dropped, layouts, style recalcs, paints and the area they cover, main-thread time,
@@ -20,13 +20,14 @@
  * animation the page starts is recorded with the property it animates.
  *
  * The run writes matrix-results.json and a screenshot per cell into --out, then checks the
- * app's cells against matrix-budget.json and tests/matrix/baselines/<platform>.json (screenshot
- * hashes, where that file exists). Counts are checked everywhere; frame timing and GPU memory
- * only without --no-timings, since a machine without a GPU rasterizes on its CPU. Dropped frames
- * vary from run to run on a busy machine, so --repeat runs each live window that many times and
- * keeps the one with the median share of dropped frames. --update rewrites the baselines from
- * the results. --reference also runs each state in the design prototype and reports how far
- * each app screenshot is from the prototype's.
+ * app's cells against matrix-budget.json. Counts are checked everywhere; frame timing and GPU
+ * memory only without --no-timings, since a machine without a GPU rasterizes on its CPU. Dropped
+ * frames vary from run to run on a busy machine, so --repeat runs each live window that many
+ * times and keeps the one with the median share of dropped frames. --shots-only takes the
+ * screenshots and measures nothing. --against lists the app's screens whose screenshots differ
+ * from another run's, with a picture of where, and that run must come from the same machine:
+ * an AMD and an Intel CPU draw some pixels differently. --reference also runs each state in the
+ * design prototype and reports how far each app screenshot is from the prototype's.
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -34,7 +35,7 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer } from 'node:net';
 import { cpus } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import {
 	chromium,
 	webkit,
@@ -91,7 +92,8 @@ function args() {
 		from: get('--from'),
 		timings: !a.includes('--no-timings'),
 		gate: !a.includes('--no-gate'),
-		update: a.includes('--update')
+		shotsOnly: a.includes('--shots-only'),
+		against: get('--against')
 	};
 }
 const opt = args();
@@ -590,6 +592,7 @@ class Worker {
 				file: `shots/${name}.png`,
 				sha256: createHash('sha256').update(png).digest('hex')
 			};
+			if (opt.shotsOnly) return result;
 			// the screenshot stops endless animations and they start over once it is taken, which
 			// belongs to the screenshot, not to the page at rest
 			await settle(page, false);
@@ -922,7 +925,6 @@ interface Budget {
 	timings: { dropped: number; gpuMB: number };
 }
 
-const BASELINES = join(WEB, 'tests/matrix/baselines');
 const platform = () => `${process.platform}-${process.arch}`;
 const key = (r: Result) => `${r.id}.${r.engine}`;
 
@@ -942,21 +944,10 @@ function composited(animation: string) {
 function gate(all: Results, timings: boolean): string[] {
 	const budget = JSON.parse(readFileSync(join(WEB, 'matrix-budget.json'), 'utf8')) as Budget;
 	const c = budget.counts;
-	const file = join(BASELINES, `${all.platform}.json`);
-	const baselines: Record<string, string> | null = existsSync(file)
-		? JSON.parse(readFileSync(file, 'utf8'))
-		: null;
 	const problems: string[] = [];
 	for (const r of all.results.filter((r) => r.target === 'app')) {
 		const fail = (what: string) => problems.push(`${key(r)}: ${what}`);
 		if (r.outcome.startsWith('error')) fail(r.outcome);
-		if (baselines) {
-			const want = baselines[key(r)];
-			const got = r.shot?.sha256 ?? r.outcome;
-			if (want === undefined) fail('no baseline');
-			else if (want !== got)
-				fail(r.outcome === 'ok' ? `screenshot differs from its baseline` : r.outcome);
-		}
 		for (const a of Object.keys(r.animations)) if (!composited(a)) fail(`animates ${a}`);
 		if (r.lasting) fail(`${r.lasting} animation(s) longer than 1 ms under reduced motion`);
 		for (const [name, w] of [
@@ -984,6 +975,46 @@ function gate(all: Results, timings: boolean): string[] {
 		}
 	}
 	return problems;
+}
+
+// ---------------------------------------------------------------------------------------
+// against another run
+
+/**
+ * the app's cells whose screenshot, or why there is none, differs from the same cell in the run
+ * in `dir`, each changed screenshot with a picture of the pixels that moved
+ */
+async function against(all: Results, here: string, dir: string): Promise<string[]> {
+	const other = JSON.parse(readFileSync(join(dir, 'matrix-results.json'), 'utf8')) as Results;
+	if (other.platform !== all.platform)
+		throw new Error(`${dir} ran on ${other.platform}, this run on ${all.platform}`);
+	const before = new Map(other.results.filter((r) => r.target === 'app').map((r) => [key(r), r]));
+	const out = join(opt.out, 'against');
+	mkdirSync(out, { recursive: true });
+	const changes: string[] = [];
+	const browser = await chromium.launch({ channel: 'chromium' });
+	try {
+		for (const r of all.results.filter((r) => r.target === 'app')) {
+			const was = before.get(key(r));
+			before.delete(key(r));
+			if (!was) {
+				changes.push(`${key(r)}: new`);
+				continue;
+			}
+			if ((was.shot?.sha256 ?? was.outcome) === (r.shot?.sha256 ?? r.outcome)) continue;
+			if (!was.shot || !r.shot) {
+				changes.push(`${key(r)}: ${was.shot ? 'ok' : was.outcome} -> ${r.shot ? 'ok' : r.outcome}`);
+				continue;
+			}
+			const diff = join(out, `${key(r)}.png`);
+			const share = await compare(browser, join(dir, was.shot.file), join(here, r.shot.file), diff);
+			changes.push(`${key(r)}: ${(share * 100).toFixed(2)}% of pixels differ, ${diff}`);
+		}
+	} finally {
+		await browser.close();
+	}
+	for (const k of before.keys()) changes.push(`${k}: gone`);
+	return changes;
 }
 
 // ---------------------------------------------------------------------------------------
@@ -1155,15 +1186,11 @@ if (!opt.from) {
 	writeFileSync(join(opt.out, 'matrix-results.json'), JSON.stringify(all, null, '\t') + '\n');
 	report(all);
 }
-if (opt.update) {
-	mkdirSync(BASELINES, { recursive: true });
-	const file = join(BASELINES, `${all.platform}.json`);
-	const old = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
-	for (const r of all.results.filter((r) => r.target === 'app' && !r.outcome.startsWith('error')))
-		old[key(r)] = r.shot?.sha256 ?? r.outcome;
-	const sorted = Object.fromEntries(Object.entries(old).sort(([a], [b]) => a.localeCompare(b)));
-	writeFileSync(file, JSON.stringify(sorted, null, '\t') + '\n');
-	console.error(`matrix: wrote ${file}`);
+if (opt.against) {
+	const here = opt.from ? dirname(resolve(opt.from)) : opt.out;
+	const changes = await against(all, here, resolve(opt.against));
+	if (changes.length) console.error(changes.join('\n'));
+	console.error(`matrix: ${changes.length} screen(s) differ from ${opt.against}`);
 }
 if (opt.gate || opt.from) {
 	if (all.calibration) {
