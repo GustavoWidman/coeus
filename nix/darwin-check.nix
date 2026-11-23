@@ -1,6 +1,6 @@
 # evaluates a nix-darwin system serving the dashboard, and checks the daemons,
-# the web.toml, coeusd.toml and the CLI's coeus.toml it renders without
-# building the system
+# the web.toml, coeusd.toml and the CLI's coeus.toml it renders, and how the
+# boot activation starts, without building the system
 {
   pkgs,
   self,
@@ -47,17 +47,36 @@ let
     ];
   };
   inherit (darwin) config;
+  inherit (pkgs) lib;
+  activate = config.launchd.daemons.activate-system;
+  # the boot activation's start line, with the launcher, the activation and
+  # the wait for the store swapped for stand-ins the check runs
+  boot =
+    lib.replaceStrings
+      [
+        "/bin/wait4path /nix/store"
+        (lib.escapeShellArg config.services.coeus.launcher)
+        (builtins.unsafeDiscardStringContext activate.command)
+      ]
+      [
+        "true"
+        "./launcher"
+        "./activation"
+      ]
+      (builtins.unsafeDiscardStringContext (builtins.elemAt activate.serviceConfig.ProgramArguments 2));
   facts = builtins.toJSON {
     # forces the whole system, every daemon's plist and /etc included
     system = builtins.unsafeDiscardStringContext config.system.build.toplevel.drvPath;
     web = config.launchd.daemons.coeus-web.serviceConfig;
     cert = config.launchd.daemons.coeus-web-cert.serviceConfig;
     user = config.users.users._coeusweb.uid;
+    activate = activate.serviceConfig.ProgramArguments;
   };
 in
 pkgs.runCommandLocal "coeus-darwin-module"
   {
     facts = builtins.unsafeDiscardStringContext facts;
+    inherit boot;
     toml = config.environment.etc."coeus/web.toml".source;
     client = config.environment.etc."coeus/coeus.toml".source;
     daemon = config.environment.etc."coeus/coeusd.toml".source;
@@ -69,6 +88,15 @@ pkgs.runCommandLocal "coeus-darwin-module"
   ''
     jq -e '.web.UserName == "_coeusweb" and .web.KeepAlive and .web.AbandonProcessGroup == false' <<< "$facts"
     jq -e '.cert.UserName == null and .cert.StartInterval == 3600' <<< "$facts"
+    jq -e '.activate[0:2] == ["/bin/sh", "-c"] and (.activate | length) == 3' <<< "$facts"
+    # the boot activation starts as nix-darwin starts it until there is a
+    # launcher, and under the launcher once there is one
+    printf '#!/bin/sh\necho "activated''${LAUNCHED:+ under $LAUNCHED}"\n' > activation
+    chmod +x activation
+    [ "$(sh -c "$boot")" = activated ]
+    printf '#!/bin/sh\nLAUNCHED=launcher exec "$@"\n' > launcher
+    chmod +x launcher
+    [ "$(sh -c "$boot")" = "activated under launcher" ]
     toml2json "$toml" > web.json
     jq -e '.settings.key_file == "/run/agenix/coeus-read-key"' web.json
     jq -e '.settings.web.origin_socket == "/var/lib/coeus-web/origin.sock"' web.json

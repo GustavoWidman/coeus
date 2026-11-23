@@ -63,7 +63,7 @@ services.coeus = {
 
 the first switch that enables it comes from `coeus bootstrap` (below), or from somewhere else, like `nixos-rebuild` or `darwin-rebuild`. from then on coeus deploys the machine, coeus itself included.
 
-on nixos, `coeusd` runs as root under systemd and opens its port on `tailscale0` with `openFirewall`. on macos it runs as a root launchd daemon. macos asks for one thing by hand: nix-darwin can only create or delete users with full disk access, and macos only lets a person grant it. run `coeus doctor --fix` on the mac and drag `coeus-launcher` into the list it opens. routine deployments work without it.
+on nixos, `coeusd` runs as root under systemd and opens its port on `tailscale0` with `openFirewall`. on macos it runs as a root launchd daemon. macos asks for one thing by hand: full disk access for `coeus-launcher`, the program deployments and nix-darwin's activation at boot run under. nix-darwin needs it to create or delete users and to update the apps in `/Applications/Nix Apps`, and macos only lets a person grant it. run `coeus doctor --fix` on the mac and drag `coeus-launcher` into the list it opens. a mac whose configuration installs no apps and leaves its users alone deploys without it.
 
 ## bringing a machine in
 
