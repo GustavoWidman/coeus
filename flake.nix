@@ -81,7 +81,6 @@
             bunLib = bun2nix.packages.${system}.default;
             coeus-web = pkgs.callPackage ./nix/web.nix {
               bun2nix = bunLib;
-              inherit coeus;
               inherit (coeus) version;
             };
           in
@@ -93,10 +92,6 @@
                 mkdir $out
                 cp ${offlineWorker} $out/worker.js
               '';
-            }
-            # every cell of the state matrix, screenshots included, where its check runs
-            // lib.optionalAttrs (system == "x86_64-linux") {
-              coeus-web-matrix = coeus-web.matrix;
             };
 
             checks = {
@@ -175,18 +170,6 @@
                     bun install --frozen-lockfile
                     bun run build
                     bunx playwright test "$@"
-                  '';
-                }
-                {
-                  name = "matrix-bless";
-                  help = "run the state matrix on x86_64-linux and write its screenshots' hashes as the check's baselines";
-                  command = ''
-                    set -eu
-                    cd "$PRJ_ROOT/web"
-                    bun install --frozen-lockfile
-                    out=$(nix build "$PRJ_ROOT#packages.x86_64-linux.coeus-web-matrix" --no-link --print-out-paths)
-                    echo "screenshots: $out/shots"
-                    bun scripts/matrix.ts --from "$out/matrix-results.json" --no-timings --update
                   '';
                 }
                 {
